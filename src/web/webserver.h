@@ -1,8 +1,9 @@
 #pragma once
+#include <Arduino.h>
 
-// Initialisierung & Loop des Webservers
 void web_init();
 void web_loop();
 
-// WebSocket: Status an alle Clients senden
-void ws_sendStatus();
+// Wird vom Mega-Link aufgerufen, um JSON per WebSocket zu senden
+void ws_sendMegaStatus(const String& json);
+void ws_sendStatus();   // bestehende WiFi/WebUI Statusfunktion

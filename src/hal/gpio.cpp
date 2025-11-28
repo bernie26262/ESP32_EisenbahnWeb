@@ -2,13 +2,14 @@
 #include "../config/pins.h"
 
 void hal_init() {
-    pinMode(LED_PIN, OUTPUT);
+    pinMode(PIN_LED, OUTPUT);
+    digitalWrite(PIN_LED, LOW);
 }
 
 void hal_ledOn() {
-    digitalWrite(LED_PIN, HIGH);
+    digitalWrite(PIN_LED, HIGH);
 }
 
 void hal_ledOff() {
-    digitalWrite(LED_PIN, LOW);
+    digitalWrite(PIN_LED, LOW);
 }

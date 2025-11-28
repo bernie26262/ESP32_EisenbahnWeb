@@ -1,13 +1,11 @@
 #pragma once
-#include <Arduino.h>
 
-// I2C Pins ESP32-S3
-static const uint8_t I2C_SDA_PIN = 8;
-static const uint8_t I2C_SCL_PIN = 9;
+// I2C
+#define PIN_I2C_SDA  42
+#define PIN_I2C_SCL  41
 
-// Interrupt vom Mega2560 (Mega → ESP)
-static const uint8_t MEGA_INT_PIN = 4;
+// DataReady vom Mega2560
+#define PIN_MEGA_DATAREADY  40
 
-// I2C-Adressen der Slaves
-static const uint8_t I2C_ADDR_MEGA   = 0x10;  // Bahnhofssteuerung
-static const uint8_t I2C_ADDR_SLAVE2 = 0x11;  // zweiter Slave (z.B. Booster)
+// LED
+#define PIN_LED 48

@@ -2,21 +2,27 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ESP32 Eisenbahnsteuerung</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" href="/favicon.ico">
 </head>
 <body>
 
-    <h1>🚂 ESP32 Eisenbahnsteuerung</h1>
+<h1>ESP32 Eisenbahnsteuerung</h1>
 
-    <div class="card">
-        <h2>WLAN-Status</h2>
-        <p><strong>Status:</strong> <span id="wifiStatus">–</span></p>
-        <p><strong>IP-Adresse:</strong> <span id="ipAddress">–</span></p>
-    </div>
+<div class="card">
+    <h2>WLAN</h2>
+    <p><b>Status:</b> <span id="wifiStatus">…</span></p>
+    <p><b>IP-Adresse:</b> <span id="wifiIp">…</span></p>
+</div>
 
-    <script src="script.js"></script>
+<div class="card">
+    <h2>Mega-Controller</h2>
+    <p><b>Verbindung:</b> <span id="megaConn">…</span></p>
+    <p><b>Letztes Update:</b> <span id="megaUpdate">…</span></p>
+    <pre id="megaRaw" class="jsonbox"></pre>
+</div>
+
+<script src="script.js"></script>
 </body>
 </html>

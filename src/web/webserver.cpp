@@ -6,15 +6,16 @@
 #include <ArduinoJson.h>
 
 #include "../network/wifi_manager.h"
+#include "../core/mega_link.h"
 
 // -----------------------------------------------------------------------------
-// Globale Objekte
+// Globale Webserver-Objekte
 // -----------------------------------------------------------------------------
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
 // -----------------------------------------------------------------------------
-// WebSocket: Status an alle Clients senden
+// Sendet den WiFi/Webserver-Status an alle WebSocket-Clients
 // -----------------------------------------------------------------------------
 void ws_sendStatus() {
     StaticJsonDocument<128> doc;
@@ -25,8 +26,24 @@ void ws_sendStatus() {
 
     String json;
     serializeJson(doc, json);
-
     ws.textAll(json);
+}
+
+// -----------------------------------------------------------------------------
+// Sendet Mega-Status an alle WebSocket-Clients
+// -----------------------------------------------------------------------------
+void ws_sendMegaStatus(const String& jsonData) {
+    StaticJsonDocument<256> doc;
+
+    doc["type"] = "megaStatus";  
+    doc["connected"] = mega_isConnected();
+    doc["lastUpdate"] = mega_lastUpdate();
+    doc["raw"] = jsonData;
+
+    String out;
+    serializeJson(doc, out);
+
+    ws.textAll(out);
 }
 
 // -----------------------------------------------------------------------------
@@ -43,7 +60,7 @@ void handleWebSocketEvent(AsyncWebSocket * server,
 
         case WS_EVT_CONNECT:
             Serial.printf("[WebSocket] Client %u verbunden\n", client->id());
-            ws_sendStatus();  // Neue Clients sofort updaten
+            ws_sendStatus();
             break;
 
         case WS_EVT_DISCONNECT:
@@ -52,7 +69,7 @@ void handleWebSocketEvent(AsyncWebSocket * server,
 
         case WS_EVT_DATA:
             Serial.printf("[WebSocket] Daten von Client %u erhalten\n", client->id());
-            // TODO: später Steuerbefehle
+            // TODO: später Weichen-Steuerbefehle hier auswerten
             break;
 
         case WS_EVT_ERROR:
@@ -65,62 +82,64 @@ void handleWebSocketEvent(AsyncWebSocket * server,
 }
 
 // -----------------------------------------------------------------------------
-// Webserver initialisieren
+// Initialisierung des Webservers
 // -----------------------------------------------------------------------------
 void web_init() {
 
-    // --- LittleFS starten ----------------------------------------------------
+    // --- LittleFS ------------------------------------------------------------
     if (!LittleFS.begin()) {
         Serial.println("[FS] Fehler beim Starten von LittleFS!");
     } else {
         Serial.println("[FS] LittleFS bereit.");
     }
 
-    // -------------------------------------------------------------------------
-    // WICHTIG: WebSocket und API vor static files registrieren!
-    // -------------------------------------------------------------------------
-
-    // --- WebSocket zuerst ----------------------------------------------------
+    // --- WebSocket aktivieren ------------------------------------------------
     ws.onEvent(handleWebSocketEvent);
     server.addHandler(&ws);
+
+    // --- Statische Dateien ---------------------------------------------------
+    server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+
+    // Favicon
+    server.serveStatic("/favicon.ico", LittleFS, "/favicon.ico");
 
     // --- API: Ping -----------------------------------------------------------
     server.on("/api/ping", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send(200, "application/json", "{\"pong\":true}");
     });
 
-    // --- API: Status ---------------------------------------------------------
+    // --- API: WiFi-Status ----------------------------------------------------
     server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request){
         StaticJsonDocument<128> doc;
-
         doc["wifi"] = wifi_isConnected();
         doc["ip"] = wifi_isConnected() ? WiFi.localIP().toString() : "";
 
         String json;
         serializeJson(doc, json);
-
         request->send(200, "application/json", json);
     });
 
-    // -------------------------------------------------------------------------
-    // Statische Dateien (erst *nach* API & WebSocket!)
-    // -------------------------------------------------------------------------
+    // --- API: Mega-Status ----------------------------------------------------
+    server.on("/api/mega/status", HTTP_GET, [](AsyncWebServerRequest *request){
 
-    // favicon.ico direkt liefern
-    server.serveStatic("/favicon.ico", LittleFS, "/favicon.ico");
+        StaticJsonDocument<256> doc;
 
-    // Root → index.html
-    server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+        doc["connected"] = mega_isConnected();
+        doc["lastUpdate"] = mega_lastUpdate();
+        doc["data"] = mega_getLastJson();
 
-    // -------------------------------------------------------------------------
-    // Server starten
-    // -------------------------------------------------------------------------
+        String json;
+        serializeJson(doc, json);
+        request->send(200, "application/json", json);
+    });
+
+    // --- Start ---------------------------------------------------------------
     server.begin();
     Serial.println("[Web] Webserver gestartet auf Port 80");
 }
 
 // -----------------------------------------------------------------------------
-// Loop
+// Loop (Async → minimal)
 // -----------------------------------------------------------------------------
 void web_loop() {
     ws.cleanupClients();

@@ -1,67 +1,85 @@
-let ws = null;
+let ws;
 
-// -----------------------------------------------------------------------------
-// WebSocket initialisieren
-// -----------------------------------------------------------------------------
-function initWebSocket() {
-    ws = new WebSocket(`ws://${location.host}/ws`);
-
-    ws.onopen = () => {
-        console.log("WebSocket verbunden");
-    };
-
-    ws.onmessage = (event) => {
-        console.log("WS:", event.data);
-
-        try {
-            const msg = JSON.parse(event.data);
-
-            if (msg.type === "status") {
-                updateStatusUI(msg.wifi, msg.ip);
-            }
-        } catch (e) {
-            console.warn("Ungültige WS-Nachricht:", event.data);
-        }
-    };
-
-    ws.onclose = () => {
-        console.log("WebSocket getrennt – neuer Versuch in 2s...");
-        setTimeout(initWebSocket, 2000);
-    };
-}
-
-// -----------------------------------------------------------------------------
-// API-Fallback: Status regelmäßig abfragen
-// -----------------------------------------------------------------------------
-function updateStatusPoll() {
+// -------------------------------------------------
+// API Polling (WLAN)
+// -------------------------------------------------
+function updateWifiStatus() {
     fetch("/api/status")
         .then(r => r.json())
         .then(data => {
-            updateStatusUI(data.wifi, data.ip);
-        })
-        .catch(() => {
-            updateStatusUI(false, null);
+            document.getElementById("wifiStatus").textContent =
+                data.wifi ? "Verbunden" : "Getrennt";
+
+            document.getElementById("wifiIp").textContent =
+                data.ip || "–";
         });
 }
 
-setInterval(updateStatusPoll, 3000);
-updateStatusPoll();
+// -------------------------------------------------
+// API Polling (Mega-Status)
+// -------------------------------------------------
+function updateMegaStatus() {
+    fetch("/api/mega/status")
+        .then(r => r.json())
+        .then(data => {
 
+            document.getElementById("megaConn").textContent =
+                data.connected ? "Verbunden" : "Getrennt";
 
-// -----------------------------------------------------------------------------
-// UI-Update
-// -----------------------------------------------------------------------------
-function updateStatusUI(isConnected, ip) {
-    document.getElementById("wifiStatus").textContent =
-        isConnected ? "Verbunden" : "Getrennt";
+            document.getElementById("megaUpdate").textContent =
+                data.lastUpdate ? data.lastUpdate + " ms" : "–";
 
-    document.getElementById("wifiStatus").style.color =
-        isConnected ? "#0a0" : "#c00";
-
-    document.getElementById("ipAddress").textContent =
-        isConnected && ip ? ip : "–";
+            // Rohdaten anzeigen
+            document.getElementById("megaRaw").textContent =
+                data.data && data.data.length > 0 ? data.data : "(leer)";
+        });
 }
 
+// -------------------------------------------------
+// WebSocket Live Updates
+// -------------------------------------------------
+function initWebSocket() {
+    ws = new WebSocket(`ws://${location.host}/ws`);
 
-// Start
+    ws.onopen = () => console.log("WebSocket verbunden.");
+
+    ws.onclose = () => {
+        console.log("WebSocket getrennt, retry in 1s...");
+        setTimeout(initWebSocket, 1000);
+    };
+
+    ws.onmessage = (event) => {
+        let msg = JSON.parse(event.data);
+
+        // WiFi-Update?
+        if (msg.type === "status") {
+            document.getElementById("wifiStatus").textContent =
+                msg.wifi ? "Verbunden" : "Getrennt";
+
+            document.getElementById("wifiIp").textContent =
+                msg.ip || "–";
+        }
+
+        // Mega-Update?
+        if (msg.type === "megaStatus") {
+            document.getElementById("megaConn").textContent =
+                msg.connected ? "Verbunden" : "Getrennt";
+
+            document.getElementById("megaUpdate").textContent =
+                msg.lastUpdate + " ms";
+
+            document.getElementById("megaRaw").textContent =
+                msg.raw && msg.raw.length > 0 ? msg.raw : "(leer)";
+        }
+    };
+}
+
+// -------------------------------------------------
+// Startintervall
+// -------------------------------------------------
+setInterval(updateWifiStatus, 3000);
+setInterval(updateMegaStatus, 3000);
+
+updateWifiStatus();
+updateMegaStatus();
 initWebSocket();
