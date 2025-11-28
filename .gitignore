@@ -1,0 +1,39 @@
+# PlatformIO core files
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# VSCode settings
+.vscode/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# LittleFS / SPIFFS images
+*.bin
+*.elf
+*.map
+
+# Build artifacts
+*.obj
+*.o
+*.d
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+
+# Backup files
+*.bak
+*.tmp
+
+# Do not ignore source folders
+!src/
+!lib/
+!include/
+!data/
+!test/
