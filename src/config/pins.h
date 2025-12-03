@@ -1,11 +1,34 @@
-#pragma once
+#ifndef PINS_H
+#define PINS_H
 
-// I2C Pins für ESP32-S3
-#define PIN_I2C_SDA 10
-#define PIN_I2C_SCL 11
+// ========================================================
+// I2C – ESP32-S3 als MASTER (frei wählbar, konfliktfrei)
+// ========================================================
+#define PIN_I2C_SDA      17
+#define PIN_I2C_SCL      18
 
-// Mega2560 DATAREADY Leitung
-#define PIN_MEGA_DATAREADY 12
+// ========================================================
+// DataReady von den Mega2560-Slaves (freie Pins!)
+// ========================================================
+#define PIN_DATAREADY_1  1
+#define PIN_DATAREADY_2  2
+#define PIN_DATAREADY_3  5
+#define PIN_DATAREADY_4  16
 
-// Onboard LED (ESP32-S3 DevKitC-1)
-#define PIN_LED 48
+// ========================================================
+// Status LED (frei verfügbar)
+// ========================================================
+#define PIN_STATUS_LED   35
+
+// ========================================================
+// Ethernet W5500 – fest verdrahtet auf Waveshare Board
+// NICHT ÄNDERN!
+// ========================================================
+// MOSI 11
+// MISO 13
+// CLK  12
+// CS   10
+// INT  14
+// RST   9
+
+#endif

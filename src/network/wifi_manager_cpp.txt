@@ -1,0 +1,42 @@
+#include "wifi_manager.h"
+#include <WiFi.h>
+
+static String cached_ip;
+
+// -------------------------------------------------------------------
+
+void wifi_init() {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin("DEIN_SSID", "DEIN_PASSWORT");
+
+    int retries = 20;
+    while (WiFi.status() != WL_CONNECTED && retries-- > 0) {
+        delay(500);
+    }
+
+    cached_ip = WiFi.localIP().toString();
+}
+
+void wifi_loop() {
+    // optional: Reconnect-Handling
+    if (WiFi.status() != WL_CONNECTED) {
+        // hier später reconnect einbauen
+    }
+}
+
+// -------------------------------------------------------------------
+// API für Webserver
+// -------------------------------------------------------------------
+
+const char* wifi_getSSID() {
+    return WiFi.SSID().c_str();
+}
+
+const char* wifi_getIP() {
+    cached_ip = WiFi.localIP().toString();
+    return cached_ip.c_str();
+}
+
+int wifi_getRSSI() {
+    return WiFi.RSSI();
+}

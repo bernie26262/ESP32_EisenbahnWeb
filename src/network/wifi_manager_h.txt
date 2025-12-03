@@ -1,0 +1,11 @@
+#pragma once
+#include <Arduino.h>
+
+// Setup & Loop
+void wifi_init();
+void wifi_loop();
+
+// API für Webserver
+const char* wifi_getSSID();
+const char* wifi_getIP();
+int wifi_getRSSI();
