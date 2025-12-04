@@ -1,14 +1,23 @@
-#ifndef ETH_MANAGER_H
-#define ETH_MANAGER_H
+#pragma once
 
 #include <Arduino.h>
-#include <WiFi.h>
-#include <ETH.h>
+#include <IPAddress.h>
 
-void eth_init();
-void eth_loop();
+namespace Net
+{
+  class EthManager
+  {
+  public:
+    // Startet W5500 + Ethernet, versucht DHCP und fällt bei Bedarf auf Static zurück.
+    static bool begin();
 
-bool eth_is_ready();
-IPAddress eth_get_ip();
+    // Ist eine gültige IP konfiguriert?
+    static bool isConnected();
 
-#endif
+    // Liefert die aktuelle IP-Adresse (oder 0.0.0.0, wenn keine)
+    static IPAddress localIP();
+
+  private:
+    static bool s_connected;
+  };
+}

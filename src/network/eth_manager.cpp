@@ -1,81 +1,115 @@
-#include "eth_manager.h"
+#include "network/eth_manager.h"
+#include "network/net_config.h"
 
-// ----- WICHTIG -----
-// NIE Namen wie ETH_PHY_ADDR verwenden → kollidiert mit ETH.h
-// -------------------
+using Net::EthManager;
 
-// Waveshare ESP32-S3-ETH RMII Pins
-static constexpr int PIN_PHY_ADDR  = 1;
-static constexpr int PIN_PHY_POWER = 17;
-static constexpr int PIN_PHY_MDC   = 16;
-static constexpr int PIN_PHY_MDIO  = 15;
+bool EthManager::s_connected = false;
 
-static constexpr eth_phy_type_t   PHY_TYPE     = ETH_PHY_LAN8720;
-static constexpr eth_clock_mode_t PHY_CLK_MODE = ETH_CLOCK_GPIO0_IN;
+bool EthManager::begin()
+{
+  Serial.println();
+  Serial.println(F("=== EthManager: ESP32-S3 + W5500 initialisieren ==="));
 
-static bool eth_connected = false;
+  Serial.printf("MOSI_GPIO: %d\n", MOSI_GPIO);
+  Serial.printf("MISO_GPIO: %d\n", MISO_GPIO);
+  Serial.printf("SCK_GPIO : %d\n", SCK_GPIO);
+  Serial.printf("CS_GPIO  : %d\n", CS_GPIO);
+  Serial.printf("INT_GPIO : %d\n", INT_GPIO);
+  Serial.printf("RST_GPIO : %d\n", RST_GPIO);
+  Serial.printf("SPI_HOST : %d\n", ETH_SPI_HOST);
+  Serial.printf("SPI_CLK  : %d MHz\n", SPI_CLOCK_MHZ);
 
-bool eth_is_ready() {
-    return eth_connected && ETH.linkUp() && ETH.localIP() != INADDR_NONE;
-}
+  // W5500-Reset-Pin kurz betätigen (Low-Active, je nach Board; Waveshare nutzt i.d.R. LOW = reset)
+  pinMode(RST_GPIO, OUTPUT);
+  digitalWrite(RST_GPIO, LOW);
+  delay(10);
+  digitalWrite(RST_GPIO, HIGH);
+  delay(100);
 
-IPAddress eth_get_ip() {
-    return ETH.localIP();
-}
+  // Event-Handler der Library aktivieren (Link-Up/Down usw.)
+  ESP32_W5500_onEvent();
 
-// Ethernet-Event-Handler
-static void onEthEvent(WiFiEvent_t event) {
-    switch (event) {
-        case ARDUINO_EVENT_ETH_START:
-            Serial.println("[ETH] Started");
-            ETH.setHostname("esp32-s3-eth");
-            break;
+  // Zufällige MAC-Adresse aus Pool wählen (wie im Example)
+  uint16_t macIndex = millis() % NUMBER_OF_MAC;
+  uint8_t* macAddr  = MAC_POOL[macIndex];
 
-        case ARDUINO_EVENT_ETH_CONNECTED:
-            Serial.println("[ETH] Connected");
-            break;
+  Serial.print(F("Verwende MAC: "));
+  for (int i = 0; i < 6; i++)
+  {
+    if (i) Serial.print(':');
+    if (macAddr[i] < 0x10) Serial.print('0');
+    Serial.print(macAddr[i], HEX);
+  }
+  Serial.println();
 
-        case ARDUINO_EVENT_ETH_GOT_IP:
-            Serial.printf("[ETH] Got IP: %s\n", ETH.localIP().toString().c_str());
-            eth_connected = true;
-            break;
+  // ETH.begin(MISO, MOSI, SCK, CS, INT, CLK_MHz, HOST, MAC)
+  bool ok = ETH.begin(MISO_GPIO, MOSI_GPIO, SCK_GPIO, CS_GPIO, INT_GPIO,
+                      SPI_CLOCK_MHZ, ETH_SPI_HOST, macAddr);
 
-        case ARDUINO_EVENT_ETH_DISCONNECTED:
-            Serial.println("[ETH] Disconnected");
-            eth_connected = false;
-            break;
+  if (!ok)
+  {
+    Serial.println(F("ETH.begin() fehlgeschlagen!"));
+    s_connected = false;
+    return false;
+  }
 
-        case ARDUINO_EVENT_ETH_STOP:
-            Serial.println("[ETH] Stopped");
-            eth_connected = false;
-            break;
+  // DHCP versuchen
+  Serial.println(F("DHCP wird versucht..."));
 
-        default:
-            break;
+  // Warte bis zu 10 Sekunden auf eine zugewiesene IP
+  const unsigned long start = millis();
+  IPAddress ip;
+
+  do
+  {
+    ip = ETH.localIP();
+    if (ip != IPAddress(0, 0, 0, 0))
+      break;
+
+    delay(200);
+  } while (millis() - start < 10000UL);
+
+  if (ip == IPAddress(0, 0, 0, 0))
+  {
+    // DHCP ist gescheitert -> Fallback auf statische IP
+    Serial.println(F("DHCP fehlgeschlagen, setze Fallback-IP 192.168.11.160"));
+
+    bool cfgOk = ETH.config(FALLBACK_IP, FALLBACK_GW, FALLBACK_SN, FALLBACK_DNS);
+
+    if (!cfgOk)
+    {
+      Serial.println(F("ETH.config(Fallback) fehlgeschlagen!"));
+      s_connected = false;
+      return false;
     }
+
+    ip = FALLBACK_IP;
+  }
+
+  Serial.println(F("Ethernet ist aktiv."));
+  Serial.print(F("IP-Adresse: "));
+  Serial.println(ip);
+
+  Serial.print(F("Gateway   : "));
+  Serial.println(FALLBACK_GW);
+
+  Serial.print(F("Subnet    : "));
+  Serial.println(FALLBACK_SN);
+
+  Serial.print(F("DNS       : "));
+  Serial.println(FALLBACK_DNS);
+
+  s_connected = true;
+  return true;
 }
 
-void eth_init() {
-    Serial.println("[ETH] Initializing...");
-
-    WiFi.onEvent(onEthEvent);
-
-    if (!ETH.begin(
-            PIN_PHY_ADDR,
-            PIN_PHY_POWER,
-            PIN_PHY_MDC,
-            PIN_PHY_MDIO,
-            PHY_TYPE,
-            PHY_CLK_MODE)) {
-
-        Serial.println("[ETH] ERROR: ETH.begin() FAILED!");
-        eth_connected = false;
-        return;
-    }
-
-    Serial.println("[ETH] ETH.begin() OK, waiting for IP...");
+bool EthManager::isConnected()
+{
+  IPAddress ip = ETH.localIP();
+  return (ip != IPAddress(0, 0, 0, 0));
 }
 
-void eth_loop() {
-    // Platz für spätere Funktionen (Reconnect etc.)
+IPAddress EthManager::localIP()
+{
+  return ETH.localIP();
 }

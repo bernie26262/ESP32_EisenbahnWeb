@@ -1,10 +1,15 @@
-#ifndef WEBSERVER_H
-#define WEBSERVER_H
+#pragma once
 
-void web_init();
-void web_loop();
+#include <Arduino.h>
 
-// WebSocket Broadcast für andere Module
-void ws_broadcast(const char* key, int value);
+namespace Web
+{
+  // Startet AsyncWebServer + WebSocket
+  void begin();
 
-#endif
+  // Optional: in loop() aufrufen, um Clients aufzuräumen
+  void loop();
+
+  // Hilfsfunktion: Text an alle WebSocket-Clients senden
+  void broadcastText(const String& msg);
+}

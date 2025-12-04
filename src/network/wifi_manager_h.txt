@@ -1,11 +1,6 @@
 #pragma once
-#include <Arduino.h>
+#include <Ethernet_Generic.h>
 
-// Setup & Loop
-void wifi_init();
-void wifi_loop();
-
-// API für Webserver
-const char* wifi_getSSID();
-const char* wifi_getIP();
-int wifi_getRSSI();
+void eth_init();
+bool eth_isConnected();
+IPAddress eth_ip();

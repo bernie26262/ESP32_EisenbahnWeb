@@ -1,42 +1,58 @@
-#include "wifi_manager.h"
-#include <WiFi.h>
+#include "eth_manager.h"
+#include <Arduino.h>
 
-static String cached_ip;
+EthernetClient ethClient;
+static bool eth_ready = false;
 
-// -------------------------------------------------------------------
+void eth_init() {
+    Serial.println("[ETH] Starte W5500…");
 
-void wifi_init() {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin("DEIN_SSID", "DEIN_PASSWORT");
+    // Waveshare ESP32-S3-ETH SPI-Pins:
+    const uint8_t PIN_MISO = 12;
+    const uint8_t PIN_MOSI = 11;
+    const uint8_t PIN_SCK  = 13;  // CLK
+    const uint8_t PIN_CS   = 14;
+    const uint8_t PIN_RST  = 9;
 
-    int retries = 20;
-    while (WiFi.status() != WL_CONNECTED && retries-- > 0) {
-        delay(500);
+    // Reset W5500
+    pinMode(PIN_RST, OUTPUT);
+    digitalWrite(PIN_RST, LOW);
+    delay(50);
+    digitalWrite(PIN_RST, HIGH);
+    delay(200);
+
+    // SPI starten
+    SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI);
+
+    Ethernet.init(PIN_CS);
+
+    Serial.println("[ETH] Frage DHCP an…");
+
+    if (Ethernet.begin() == 0) {
+        Serial.println("[ETH] DHCP fehlgeschlagen → statische IP");
+
+        IPAddress ip(192,168,11,50);
+        IPAddress gw(192,168,11,1);
+        IPAddress mask(255,255,255,0);
+
+        Ethernet.begin(ip, gw, gw, gw, mask);
     }
 
-    cached_ip = WiFi.localIP().toString();
-}
+    delay(500);
 
-void wifi_loop() {
-    // optional: Reconnect-Handling
-    if (WiFi.status() != WL_CONNECTED) {
-        // hier später reconnect einbauen
+    if (Ethernet.linkStatus() == LinkON) {
+        eth_ready = true;
+        Serial.print("[ETH] Link OK – IP: ");
+        Serial.println(Ethernet.localIP());
+    } else {
+        Serial.println("[ETH] Link DOWN – Kabel eingesteckt?");
     }
 }
 
-// -------------------------------------------------------------------
-// API für Webserver
-// -------------------------------------------------------------------
-
-const char* wifi_getSSID() {
-    return WiFi.SSID().c_str();
+bool eth_isConnected() {
+    return eth_ready && Ethernet.linkStatus() == LinkON;
 }
 
-const char* wifi_getIP() {
-    cached_ip = WiFi.localIP().toString();
-    return cached_ip.c_str();
-}
-
-int wifi_getRSSI() {
-    return WiFi.RSSI();
+IPAddress eth_ip() {
+    return Ethernet.localIP();
 }
