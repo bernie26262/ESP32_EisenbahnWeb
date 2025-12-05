@@ -2,25 +2,42 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>ESP32 Eisenbahnsteuerung</title>
+    <title>ESP32 Eisenbahnsteuerung – Dashboard</title>
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="/favicon.ico">
 </head>
 <body>
 
-<h1>ESP32 Eisenbahnsteuerung</h1>
+<h1>ESP32 Eisenbahnsteuerung – Live Dashboard</h1>
 
 <div class="card">
-    <h2>WLAN</h2>
-    <p><b>Status:</b> <span id="wifiStatus">…</span></p>
-    <p><b>IP-Adresse:</b> <span id="wifiIp">…</span></p>
+    <h2>Ethernet</h2>
+    <p><b>IP-Adresse:</b> <span id="ethIp">…</span></p>
+    <p><b>Status:</b> <span id="ethStatus">verbunden</span></p>
 </div>
 
 <div class="card">
-    <h2>Mega-Controller</h2>
-    <p><b>Verbindung:</b> <span id="megaConn">…</span></p>
-    <p><b>Letztes Update:</b> <span id="megaUpdate">…</span></p>
-    <pre id="megaRaw" class="jsonbox"></pre>
+    <h2>Mega-Controller Status (Slaves 0–3)</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Slave</th>
+                <th>WeichenBits</th>
+                <th>BhfBits</th>
+                <th>Mode</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody id="slaveTableBody">
+            <!-- wird dynamisch befüllt -->
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Live Rohdaten</h2>
+    <pre id="rawLog" class="jsonbox">(noch nichts empfangen)</pre>
 </div>
 
 <script src="script.js"></script>

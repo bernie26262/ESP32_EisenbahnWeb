@@ -8,8 +8,13 @@
 
 // --- Kommandos vom ESP an Mega ------------------------
 enum : uint8_t {
-    I2C_CMD_GET_FULL  = 0x01,
-    I2C_CMD_GET_DELTA = 0x02
+    I2C_CMD_GET_FULL    = 0x01,
+    I2C_CMD_GET_DELTA   = 0x02,
+
+    // NEUE KOMMANDOS: ESP → Mega
+    I2C_CMD_SET_WEICHE  = 0x10,  // payload: id, value
+    I2C_CMD_SET_BHF     = 0x11,  // payload: id, value
+    I2C_CMD_SET_MODE    = 0x12   // payload: mode
 };
 
 // --- Antworten vom Mega an ESP ------------------------
@@ -41,7 +46,7 @@ struct I2C_DeltaEvent {
 } __attribute__((packed));
 
 struct I2C_DeltaPayload {
-    uint8_t pktType;     // = I2C_PKT_DELTA
-    uint8_t count;       // Anzahl Events
-    I2C_DeltaEvent ev[8]; // grouping light: max. 8
+    uint8_t        pktType;   // = I2C_PKT_DELTA
+    uint8_t        count;     // Anzahl Events
+    I2C_DeltaEvent ev[8];     // grouping light: max. 8
 } __attribute__((packed));

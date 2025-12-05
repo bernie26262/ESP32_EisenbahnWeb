@@ -1,9 +1,10 @@
 #include <Arduino.h>
-#include "Wire.h"
+#include <Wire.h>
 #include <string.h>
 #include "mega_link.h"
 #include "i2c_packets.h"
 #include "config/pins.h"
+#include "web/webserver.h"   // für Web::broadcastText
 
 // =====================================================================
 //   Slave-State Speicher
@@ -40,8 +41,8 @@ static bool requestDelta(uint8_t sid);
 // =====================================================================
 void mega_init()
 {
-    // I2C Master initialisieren
-    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 400000);  // 400 kHz
+    // I2C Master initialisieren (400 kHz)
+    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 400000);
 
     // States leeren
     memset(slaves, 0, sizeof(slaves));
@@ -108,11 +109,24 @@ static bool requestFull(uint8_t sid)
     st.bhfStromBits = pkt.bhfStromBits;
     st.mode         = pkt.mode;
 
+    // Optional: FULL auch einmal als "state"-JSON broadcasten
+    String json = "{";
+    json += "\"type\":\"state\",";
+    json += "\"slave\":" + String(sid) + ",";
+    json += "\"timestamp\":" + String(st.timestamp) + ",";
+    json += "\"weichen\":{\"bits\":" + String(st.weichenBits) + "},";
+    json += "\"bahnhoefe\":{\"bits\":" + String(st.bhfStromBits) + "},";
+    json += "\"mode\":" + String(st.mode);
+    json += "}";
+
+    Web::broadcastText(json);
+
     return true;
 }
 
 // =====================================================================
 //   DELTA – grouping light: bis zu 8 Events
+//   + JSON-Update per WebSocket
 // =====================================================================
 static bool requestDelta(uint8_t sid)
 {
@@ -143,9 +157,19 @@ static bool requestDelta(uint8_t sid)
     SlaveState &st = slaves[sid];
     st.valid = true;    // Wir haben frische Daten
 
+    // -----------------------------------------------------------
+    // JSON-Builder für WebSocket-Update
+    // -----------------------------------------------------------
+    String json = "{";
+    json += "\"type\":\"update\",";
+    json += "\"slave\":" + String(sid) + ",";
+    json += "\"events\":[";
+    bool firstEvent = true;
+
     // Events anwenden
     const uint8_t n = pkt.count;
     for (uint8_t i = 0; i < n && i < 8; i++) {
+
         const I2C_DeltaEvent &ev = pkt.ev[i];
 
         switch (ev.type) {
@@ -158,6 +182,11 @@ static bool requestDelta(uint8_t sid)
                         st.weichenBits &= ~(1u << wid);
                     }
                 }
+
+                if (!firstEvent) json += ",";
+                json += "{\"kind\":\"weiche\",\"id\":" + String(ev.id)
+                        + ",\"value\":" + String(ev.value) + "}";
+                firstEvent = false;
                 break;
             }
 
@@ -170,21 +199,47 @@ static bool requestDelta(uint8_t sid)
                         st.bhfStromBits &= ~(1u << bid);
                     }
                 }
+
+                if (!firstEvent) json += ",";
+                json += "{\"kind\":\"bahnhof\",\"id\":" + String(ev.id)
+                        + ",\"value\":" + String(ev.value) + "}";
+                firstEvent = false;
                 break;
             }
 
             case EVT_MODUS_CHANGE: {
                 // value entspricht dem Betriebsmodus (MOD_AUTOMATIK / MOD_MANUELL)
                 st.mode = ev.value;
+
+                if (!firstEvent) json += ",";
+                json += "{\"kind\":\"mode\",\"value\":" + String(ev.value) + "}";
+                firstEvent = false;
                 break;
             }
 
-            case EVT_SENSOR:
+            case EVT_SENSOR: {
+                // Sensor-Events optional für spätere Nutzung
+                if (!firstEvent) json += ",";
+                json += "{\"kind\":\"sensor\",\"id\":" + String(ev.id)
+                        + ",\"value\":" + String(ev.value) + "}";
+                firstEvent = false;
+                break;
+            }
+
             case EVT_RECOVERY_DONE:
             default:
                 // aktuell keine Auswertung nötig
                 break;
         }
+    }
+
+    json += "]}"; // Events[] schließen + JSON-Ende
+
+    // -----------------------------------------------------------
+    // JSON per WebSocket broadcasten (falls es überhaupt Events gab)
+    // -----------------------------------------------------------
+    if (!firstEvent) {
+        Web::broadcastText(json);
     }
 
     return true;
@@ -202,7 +257,7 @@ void mega_update()
         dr_flag[i] = false;
 
         // Delta abholen; falls das schiefgeht, könnte man hier fallback-mäßig
-        // einen FULL versuchen – aktuell einfach nur ignoriert.
+        // einen FULL versuchen – aktuell einfach nur loggen.
         if (!requestDelta(i)) {
             Serial.printf("[MEGA] DELTA %u FAILED\n", i);
         }
@@ -220,4 +275,52 @@ const SlaveState& mega_getState(uint8_t sid)
         return dummy;
     }
     return slaves[sid];
+}
+
+// =====================================================================
+//   Kommandos ESP → Mega
+// =====================================================================
+
+bool mega_cmd_setWeiche(uint8_t sid, uint8_t id, uint8_t value)
+{
+    if (sid >= NUM_SLAVES) return false;
+    const uint8_t addr = I2C_ADDR[sid];
+
+    Wire.beginTransmission(addr);
+    Wire.write(I2C_CMD_SET_WEICHE);
+    Wire.write(id);
+    Wire.write(value);
+
+    return Wire.endTransmission() == 0;
+}
+
+bool mega_cmd_setBahnhof(uint8_t sid, uint8_t id, uint8_t value)
+{
+    if (sid >= NUM_SLAVES) return false;
+    const uint8_t addr = I2C_ADDR[sid];
+
+    Wire.beginTransmission(addr);
+    Wire.write(I2C_CMD_SET_BHF);
+    Wire.write(id);
+    Wire.write(value);
+
+    return Wire.endTransmission() == 0;
+}
+
+bool mega_cmd_setMode(uint8_t sid, uint8_t mode)
+{
+    if (sid >= NUM_SLAVES) return false;
+    const uint8_t addr = I2C_ADDR[sid];
+
+    Wire.beginTransmission(addr);
+    Wire.write(I2C_CMD_SET_MODE);
+    Wire.write(mode);
+
+    return Wire.endTransmission() == 0;
+}
+
+bool mega_cmd_requestFull(uint8_t sid)
+{
+    if (sid >= NUM_SLAVES) return false;
+    return requestFull(sid);
 }
