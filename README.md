@@ -2,6 +2,7 @@
 ESP32 I2C Master + Webserver für Weichensteuerung, Blocksteuerung und Schattenbahnhof
 
 🎉 v1.2.0 — ESP32-S3 W5500 Ethernet + WebSockets
+
 🚀 Highlights
 
 Vollständige W5500-Ethernetintegration für Waveshare ESP32-S3 ETH
