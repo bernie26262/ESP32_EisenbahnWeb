@@ -10,9 +10,9 @@
 // ========================================================
 // DataReady von den Mega2560-Slaves (freie Pins!)
 // ========================================================
-#define PIN_DATAREADY_1  1
+#define PIN_DATAREADY_1  21
 #define PIN_DATAREADY_2  2
-#define PIN_DATAREADY_3  5
+#define PIN_DATAREADY_3  15
 #define PIN_DATAREADY_4  16
 
 // ========================================================

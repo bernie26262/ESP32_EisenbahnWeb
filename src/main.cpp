@@ -1,39 +1,46 @@
 #include <Arduino.h>
+
+#include "config/pins.h"
+
 #include "network/net_config.h"
 #include "network/eth_manager.h"
 #include "web/webserver.h"
 
-using Net::EthManager;
+#include "core2/mega/mega2_link.h"
 
+// ============================================================================
+// SETUP
+// ============================================================================
 void setup()
 {
-  Serial.begin(115200);
-  while (!Serial && millis() < 3000) { /* auf USB-Seriell warten */ }
+    Serial.begin(115200);
+    delay(200);
 
-  Serial.println();
-  Serial.println(F("===== ESP32-S3 + W5500 Eisenbahn-Projekt ====="));
-  Serial.print(F("Board: "));
-  Serial.println(ARDUINO_BOARD);
-  Serial.print(F("Shield: "));
-  Serial.println(SHIELD_TYPE);
-  Serial.print(F("Lib Version: "));
-  Serial.println(ASYNC_WEBSERVER_ESP32_SC_W5500_VERSION);
+    Serial.println();
+    Serial.println(F("===== ESP32-S3 Eisenbahn (core2) ====="));
 
-  // Ethernet/W5500 starten (mit DHCP + Fallback)
-  if (!EthManager::begin())
-  {
-    Serial.println(F("FEHLER: Ethernet konnte nicht initialisiert werden."));
-  }
+    Net::EthManager::begin();
+    Web::begin();
 
-  // Webserver + WebSocket starten
-  Web::begin();
+    Mega2Link::begin();
+
+    Serial.println(F("[ESP] Setup abgeschlossen"));
 }
 
+// ============================================================================
+// LOOP
+// ============================================================================
 void loop()
 {
-  // WebSocket-Clients aufräumen
-  Web::loop();
+    Web::loop();
+    Mega2Link::update();
 
-  // Hier später deine Eisenbahn-Logik, Timer, etc.
-  delay(50);
+    if (Serial.available())
+    {
+        char c = Serial.read();
+        if (c == 'a')
+        {
+            Mega2Link::safetyAck();
+        }
+    }
 }

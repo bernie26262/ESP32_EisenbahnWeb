@@ -2,14 +2,14 @@
 
 #include <Arduino.h>
 
-namespace Web
-{
-  // Startet AsyncWebServer + WebSocket
-  void begin();
+class Web {
+public:
+    static void begin();
+    static void loop();
 
-  // Optional: in loop() aufrufen, um Clients aufzuräumen
-  void loop();
+    // Text über WebSocket an alle Clients
+    static void broadcastText(const String &msg);
 
-  // Hilfsfunktion: Text an alle WebSocket-Clients senden
-  void broadcastText(const String& msg);
-}
+    // Status-JSON an alle Clients senden
+    static void broadcastStatus();
+};
