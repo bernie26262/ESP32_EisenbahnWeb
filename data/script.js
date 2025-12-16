@@ -1,102 +1,160 @@
-let ws;
+let socket;
 
-// Lokaler Cache aller Slavezustände
-let slaves = {
-    0: { weichenBits: 0, bhfBits: 0, mode: 0, timestamp: 0 },
-    1: { weichenBits: 0, bhfBits: 0, mode: 0, timestamp: 0 },
-    2: { weichenBits: 0, bhfBits: 0, mode: 0, timestamp: 0 },
-    3: { weichenBits: 0, bhfBits: 0, mode: 0, timestamp: 0 }
+let SIMULATION = localStorage.getItem("SIMULATION") === "true";
+
+const IMG_PATH = "img/";
+
+const weichenTypen = [
+    "Linksweiche","Rechtsweiche","Kreuzweiche","Kreuzweiche",
+    "Kreuzweiche","Rechtsweiche","Linksweiche","Rechtsweiche",
+    "Linksweiche","Rechtsweiche","Rechtsweiche","Rechtsweiche"
+];
+
+let simState = {
+    weichen: Array(12).fill(0),
+    strom: Array(4).fill(2)
 };
 
-// -------------------------------------------------
-// Tabelle neu zeichnen
-// -------------------------------------------------
-function renderTable() {
-    const tbody = document.getElementById("slaveTableBody");
-    tbody.innerHTML = "";
+window.addEventListener("load", () => {
+    if (!SIMULATION) initWebSocket();
+    else {
+        showWarning("Simulation aktiv – Mega1 wird ignoriert.");
+        updateUI(simState);
+    }
+    initSimUI();
+});
 
-    for (let sid = 0; sid < 4; sid++) {
-        const st = slaves[sid];
-        const row = document.createElement("tr");
+/* ========================== SIMULATION SWITCH ========================== */
 
-        row.innerHTML = `
-            <td>${sid}</td>
-            <td>${st.weichenBits}</td>
-            <td>${st.bhfBits}</td>
-            <td>${st.mode}</td>
-            <td>${st.timestamp}</td>
-        `;
+function initSimUI() {
+    const toggle = document.getElementById("sim-toggle");
+    toggle.checked = SIMULATION;
+    updateSimLabel();
+    applySimVisuals();
 
-        tbody.appendChild(row);
+    toggle.addEventListener("change", () => {
+        SIMULATION = toggle.checked;
+        localStorage.setItem("SIMULATION", SIMULATION);
+
+        if (SIMULATION) {
+            if (socket) socket.close();
+            showWarning("Simulation aktiv – Mega1 wird ignoriert.");
+            updateUI(simState);
+            log("[SIM] aktiviert");
+        } else {
+            hideWarning();
+            initWebSocket();
+            log("[SIM] deaktiviert – Realbetrieb");
+        }
+
+        updateSimLabel();
+        applySimVisuals();
+    });
+}
+
+function updateSimLabel() {
+    document.getElementById("sim-label").textContent =
+        SIMULATION ? "Simulation" : "Realbetrieb";
+
+    document.getElementById("title").textContent =
+        SIMULATION ? "Eisenbahn Steuerung (SIMULATION)" : "Eisenbahn Steuerung";
+}
+
+/* Farbmodus an/aus */
+function applySimVisuals() {
+    if (SIMULATION)
+        document.body.classList.add("sim-mode");
+    else
+        document.body.classList.remove("sim-mode");
+}
+
+/* ========================== WEBSOCKET ========================== */
+
+function initWebSocket() {
+    socket = new WebSocket(`ws://${location.hostname}/ws`);
+
+    socket.onopen = () => {
+        log("WebSocket verbunden");
+    };
+
+    socket.onclose = () => {
+        log("WebSocket getrennt");
+        setTimeout(initWebSocket, 1500);
+    };
+
+    socket.onmessage = (event) => {
+        if (SIMULATION) return;
+        updateUI(JSON.parse(event.data));
+    };
+}
+
+/* ========================== WEICHEN ========================== */
+
+function toggleWeiche(i) {
+    if (SIMULATION) {
+        simState.weichen[i] ^= 1;
+        updateUI(simState);
+        log(`[SIM] W${i} → ${simState.weichen[i] ? "Abzweig" : "Gerade"}`);
+        return;
+    }
+
+    socket.send(JSON.stringify({ cmd: "weiche", index: i }));
+}
+
+function toggleBahnhof(i) {
+    if (SIMULATION) {
+        simState.strom[i] = simState.strom[i] ? 0 : 1;
+        updateUI(simState);
+        log(`[SIM] B${i} strom=${simState.strom[i]}`);
+        return;
+    }
+
+    socket.send(JSON.stringify({ cmd: "bahnhof", index: i }));
+}
+
+/* ========================== UI UPDATE ========================== */
+
+function updateUI(d) {
+    if (d.weichen) {
+        for (let i = 0; i < d.weichen.length; i++) {
+            const img = document.getElementById("weiche-img-" + i);
+            const txt = document.getElementById("weiche-txt-" + i);
+            img.src = `${IMG_PATH}${weichenTypen[i]}_${d.weichen[i] ? "Abzweig" : "gerade"}.png`;
+            txt.textContent = d.weichen[i] ? "Abzweig" : "Gerade";
+        }
+    }
+
+    const signalImages = {
+        1: IMG_PATH + "Signal_gruen.png",
+        0: IMG_PATH + "Signal_rot.png",
+        2: IMG_PATH + "Signal_aus.png"
+    };
+
+    if (d.strom) {
+        for (let i = 0; i < d.strom.length; i++) {
+            document.getElementById("signal-img-" + i).src = signalImages[d.strom[i]];
+        }
     }
 }
 
-// -------------------------------------------------
-// Live WebSocket Updates
-// -------------------------------------------------
-function initWebSocket() {
-    ws = new WebSocket(`ws://${location.host}/ws`);
+/* ========================== WARNING ========================== */
 
-    ws.onopen = () => {
-        console.log("WebSocket verbunden.");
-        document.getElementById("ethStatus").textContent = "verbunden";
-        document.getElementById("ethIp").textContent = location.host;
-    };
-
-    ws.onclose = () => {
-        console.log("WebSocket getrennt → retry in 1s");
-        document.getElementById("ethStatus").textContent = "getrennt";
-        setTimeout(initWebSocket, 1000);
-    };
-
-    ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-
-        // Rohdaten-Liveausgabe
-        document.getElementById("rawLog").textContent = JSON.stringify(msg, null, 2);
-
-        // -------------- FULL-STATE ----------------
-        if (msg.type === "state") {
-            const sid = msg.slave;
-            slaves[sid].weichenBits = msg.weichen.bits;
-            slaves[sid].bhfBits = msg.bahnhoefe.bits;
-            slaves[sid].mode = msg.mode;
-            slaves[sid].timestamp = msg.timestamp;
-            renderTable();
-        }
-
-        // -------------- UPDATE (DELTA) ------------
-        if (msg.type === "update") {
-            const sid = msg.slave;
-            msg.events.forEach(ev => {
-                if (ev.kind === "weiche")
-                    slaves[sid].weichenBits = updateBit(slaves[sid].weichenBits, ev.id, ev.value);
-
-                if (ev.kind === "bahnhof")
-                    slaves[sid].bhfBits = updateBit(slaves[sid].bhfBits, ev.id, ev.value);
-
-                if (ev.kind === "mode")
-                    slaves[sid].mode = ev.value;
-
-                // sensor-Events ignorieren wir im Dashboard vorerst
-            });
-
-            slaves[sid].timestamp = Date.now();
-            renderTable();
-        }
-    };
+function showWarning(msg) {
+    const w = document.getElementById("mega-warning");
+    w.textContent = "⚠ " + msg;
+    w.classList.remove("hidden");
 }
 
-// Hilfsfunktion: Bit setzen/löschen
-function updateBit(bits, id, val) {
-    if (val)
-        return bits | (1 << id);
-    else
-        return bits & ~(1 << id);
+function hideWarning() {
+    document.getElementById("mega-warning").classList.add("hidden");
 }
 
-// -------------------------------------------------
-// Los geht’s
-// -------------------------------------------------
-renderTable();
-initWebSocket();
+/* ========================== LOG ========================== */
+
+function log(msg) {
+    const win = document.getElementById("log-window");
+    const t = document.createElement("div");
+    t.textContent = msg;
+    win.appendChild(t);
+    win.scrollTop = win.scrollHeight;
+}

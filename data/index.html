@@ -2,42 +2,76 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>ESP32 Eisenbahnsteuerung – Dashboard</title>
+    <title>Elektrische Eisenbahn – Mega1</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="icon" href="/favicon.ico">
 </head>
 <body>
 
-<h1>ESP32 Eisenbahnsteuerung – Live Dashboard</h1>
+<h1>Elektrische Eisenbahn – Mega1</h1>
 
-<div class="card">
-    <h2>Ethernet</h2>
-    <p><b>IP-Adresse:</b> <span id="ethIp">…</span></p>
-    <p><b>Status:</b> <span id="ethStatus">verbunden</span></p>
+<!-- ================== MODUS ================== -->
+<div class="panel">
+    <h2>Modus</h2>
+    <button onclick="setMode(0)">MANUELL</button>
+    <button onclick="setMode(1)">AUTOMATIK</button>
 </div>
 
-<div class="card">
-    <h2>Mega-Controller Status (Slaves 0–3)</h2>
+<!-- ================== WEICHEN ================== -->
+<div class="panel">
+    <h2>Weichen</h2>
+    <div class="grid">
+        <!-- W0–W11 -->
+        <div class="weiche" id="weiche-img-0">W0</div>
+        <div class="weiche" id="weiche-img-1">W1</div>
+        <div class="weiche" id="weiche-img-2">W2</div>
+        <div class="weiche" id="weiche-img-3">W3</div>
+        <div class="weiche" id="weiche-img-4">W4</div>
+        <div class="weiche" id="weiche-img-5">W5</div>
+        <div class="weiche" id="weiche-img-6">W6</div>
+        <div class="weiche" id="weiche-img-7">W7</div>
+        <div class="weiche" id="weiche-img-8">W8</div>
+        <div class="weiche" id="weiche-img-9">W9</div>
+        <div class="weiche" id="weiche-img-10">W10</div>
+        <div class="weiche" id="weiche-img-11">W11</div>
+    </div>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Slave</th>
-                <th>WeichenBits</th>
-                <th>BhfBits</th>
-                <th>Mode</th>
-                <th>Timestamp</th>
-            </tr>
-        </thead>
-        <tbody id="slaveTableBody">
-            <!-- wird dynamisch befüllt -->
-        </tbody>
-    </table>
+    <button id="ack-weichen-error" onclick="ackWeichenError()" style="display:none">
+        Weichenfehler quittieren
+    </button>
 </div>
 
-<div class="card">
-    <h2>Live Rohdaten</h2>
-    <pre id="rawLog" class="jsonbox">(noch nichts empfangen)</pre>
+<!-- ================== BAHNHÖFE ================== -->
+<div class="panel">
+    <h2>Bahnhöfe</h2>
+    <div class="grid">
+        <div class="bhf" id="signal-img-0" onclick="releaseBhf(0)">Bhf 0</div>
+        <div class="bhf" id="signal-img-1" onclick="releaseBhf(1)">Bhf 1</div>
+        <div class="bhf" id="signal-img-2" onclick="releaseBhf(2)">Bhf 2</div>
+        <div class="bhf" id="signal-img-3" onclick="releaseBhf(3)">Bhf 3</div>
+    </div>
+</div>
+
+<!-- ================== SENSOREN ================== -->
+<div class="panel">
+    <h2>Sensoren</h2>
+    <div id="sensor-grid">
+        <div class="sensor" id="sensor-0">S0</div>
+        <div class="sensor" id="sensor-1">S1</div>
+        <div class="sensor" id="sensor-2">S2</div>
+        <div class="sensor" id="sensor-3">S3</div>
+        <div class="sensor" id="sensor-4">S4</div>
+        <div class="sensor" id="sensor-5">S5</div>
+        <div class="sensor" id="sensor-6">S6</div>
+        <div class="sensor" id="sensor-7">S7</div>
+        <div class="sensor" id="sensor-8">S8</div>
+        <div class="sensor" id="sensor-9">S9</div>
+    </div>
+</div>
+
+<!-- ================== LOG ================== -->
+<div class="panel">
+    <h2>Log</h2>
+    <pre id="log"></pre>
 </div>
 
 <script src="script.js"></script>
