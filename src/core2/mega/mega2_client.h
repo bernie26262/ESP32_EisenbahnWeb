@@ -1,7 +1,7 @@
 #pragma once
 
 #include <stdint.h>
-#include "system/status_system.h"
+#include "system/system_status_payload.h"
 
 namespace Mega2Client
 {

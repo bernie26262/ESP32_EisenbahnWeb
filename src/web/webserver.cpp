@@ -6,8 +6,10 @@
 
 #include "network/eth_manager.h"
 
-#include "core2/state/system_state.h"
+#include "core2/state/system_runtime_state.h"
 #include "core2/mega/mega2_client.h"
+
+#include <LittleFS.h>   // oder SPIFFS.h, je nach Setup
 
 // ---------------------------------------------------------
 // Globale Objekte
@@ -27,11 +29,31 @@ static String buildStatusJson()
     doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
 
     // Mega2 Safety
-    if (SystemState::mega2Online())
+    if (SystemRuntimeState::mega2Online())
     {
-        const auto& st = SystemState::mega2Status();
+        const auto& st = SystemRuntimeState::mega2Status();
+
         doc["mega2"]["online"] = true;
         doc["mega2"]["flags"]  = st.flags;
+
+        doc["mega2"]["safety_lock"] =
+            SystemRuntimeState::safetyLock();
+
+        doc["mega2"]["safety_reason"] =
+            static_cast<uint8_t>(
+                SystemRuntimeState::safetyReason()
+            );
+
+        // -----------------------------
+        // Safety (abgeleitet, ESP-seitig)
+        // -----------------------------
+        doc["mega2"]["safety_lock"] =
+            SystemRuntimeState::safetyLock();
+
+        doc["mega2"]["safety_reason"] =
+            static_cast<uint8_t>(
+                SystemRuntimeState::safetyReason()
+            );
     }
     else
     {
@@ -94,12 +116,24 @@ static void onWsEvent(AsyncWebSocket*,
 // ---------------------------------------------------------
 void Web::begin()
 {
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest* req){
-        req->send(200, "text/plain", "ESP32-S3 Eisenbahn (core2)");
+    if (!LittleFS.begin(true)) {
+        Serial.println("[FS] LittleFS Mount FAILED");
+    } else {
+        Serial.println("[FS] LittleFS mounted");
+    }
+
+    server.serveStatic("/", LittleFS, "/");
+
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
+        req->send(LittleFS, "/index.html", "text/html");
     });
 
     server.on("/status", HTTP_GET, [](AsyncWebServerRequest* req){
         req->send(200, "application/json", buildStatusJson());
+    });
+
+    server.onNotFound([](AsyncWebServerRequest *req) {
+        req->send(LittleFS, "/index.html", "text/html");
     });
 
     ws.onEvent(onWsEvent);

@@ -9,6 +9,20 @@
 
 <h1>Elektrische Eisenbahn – Mega1</h1>
 
+<!-- ================== SAFETY ================== -->
+<div class="panel safety-panel" id="safety-panel">
+    <h2>Safety</h2>
+    <div id="safety-status" class="safety-ok">
+        🟢 System OK
+    </div>
+
+    <button id="safety-ack-btn"
+            onclick="ackSafety()"
+            style="display:none">
+        Safety quittieren
+    </button>
+</div>
+
 <!-- ================== MODUS ================== -->
 <div class="panel">
     <h2>Modus</h2>

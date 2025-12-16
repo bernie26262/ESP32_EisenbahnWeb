@@ -7,6 +7,7 @@
 
 #include "core2/bus/i2c_bus.h"
 #include "core2/mega/mega2_client.h"
+#include "network/eth_manager.h"
 
 // ------------------------------------------------------------
 // Konfiguration
@@ -28,6 +29,7 @@ static bool     s_scanned     = false;
 // ------------------------------------------------------------
 // I2C-Scanner (Debug, bewusst drin)
 // ------------------------------------------------------------
+#if DEBUG_ENABLED
 static void i2cScanOnce()
 {
     Serial.println(F("[I2C] Scan start"));
@@ -43,6 +45,10 @@ static void i2cScanOnce()
 
     Serial.println(F("[I2C] Scan done"));
 }
+#else
+static void i2cScanOnce() {}
+#endif
+
 
 // ------------------------------------------------------------
 // Public API
@@ -54,6 +60,12 @@ void Mega2Link::begin()
 
 void Mega2Link::update()
 {
+    // ------------------------------
+    // WICHTIG: Erst starten, wenn Ethernet läuft
+    // ------------------------------
+    if (!Net::EthManager::isConnected())
+        return;
+
     uint32_t now = millis();
 
     // --------------------------------------------------

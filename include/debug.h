@@ -1,0 +1,19 @@
+#pragma once
+#include <Arduino.h>
+
+// Minimaler Debug-Stub für ESP32
+
+// Schalter: 0 = Debug aus, 1 = Debug an
+#ifndef DEBUG_ENABLED
+#define DEBUG_ENABLED 1
+#endif
+
+#if DEBUG_ENABLED
+  #define DBG_PRINT(x)        Serial.print(x)
+  #define DBG_PRINTLN(x)      Serial.println(x)
+  #define DBG_PRINTF(...)     Serial.printf(__VA_ARGS__)
+#else
+  #define DBG_PRINT(x)
+  #define DBG_PRINTLN(x)
+  #define DBG_PRINTF(...)
+#endif

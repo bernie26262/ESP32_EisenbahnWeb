@@ -77,3 +77,22 @@ pre {
     height: 150px;
     overflow-y: auto;
 }
+/* ================== SAFETY ================== */
+
+.safety-panel {
+    border-left: 6px solid #2ecc71;
+}
+
+.safety-ok {
+    color: #2ecc71;
+    font-weight: bold;
+}
+
+.safety-lock {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.safety-panel.lock {
+    border-left-color: #e74c3c;
+}

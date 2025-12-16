@@ -1,10 +1,12 @@
 #include "mega2_client.h"
 
 #include "../bus/i2c_bus.h"
-#include "../state/system_state.h"
+#include "../state/system_runtime_state.h"
 
-#include "proto_common.h"          // M2_CMD_ACK_ERROR, NODE_MEGA2
-#include "system/status_system.h"
+#include "proto_common.h"
+#include "system/system_status_payload.h"
+
+#include "debug.h"
 
 static constexpr uint8_t MEGA2_ADDR = 0x11;
 
@@ -28,8 +30,22 @@ bool Mega2Client::pollStatus()
 
     if (st.version != SYSTEM_STATUS_VERSION || st.nodeId != NODE_MEGA2)
         return false;
+    
+    static uint16_t lastFlags = 0xFFFF;
 
-    SystemState::updateMega2Status(st);
+    if (st.flags != lastFlags)
+    {
+        lastFlags = st.flags;
+
+        DBG_PRINTF(
+            "[M2] flags=0x%04X NOTAUS=%d ERROR=%d\n",
+            st.flags,
+            (st.flags & SYS_NOTAUS_ACTIVE) != 0,
+            (st.flags & SYS_ERROR_PRESENT) != 0
+        );
+    }
+
+    SystemRuntimeState::updateMega2Status(st);
     return true;
 }
 

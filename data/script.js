@@ -1,5 +1,10 @@
 let socket;
 
+// ================== SAFETY ==================
+if (d.mega2 && d.mega2.online) {
+    updateSafetyUI(d.mega2);
+}
+
 let SIMULATION = localStorage.getItem("SIMULATION") === "true";
 
 const IMG_PATH = "img/";
@@ -137,6 +142,35 @@ function updateUI(d) {
     }
 }
 
+/* ========================== Safety ========================== */
+function updateSafetyUI(m2) {
+    const panel = document.getElementById("safety-panel");
+    const status = document.getElementById("safety-status");
+    const btn = document.getElementById("safety-ack-btn");
+
+    if (!m2.safety_lock) {
+        panel.classList.remove("lock");
+        status.className = "safety-ok";
+        status.textContent = "🟢 System OK";
+        btn.style.display = "none";
+        return;
+    }
+
+    // Safety aktiv
+    panel.classList.add("lock");
+    status.className = "safety-lock";
+
+    let reasonText = "Unbekannter Fehler";
+    switch (m2.safety_reason) {
+        case 1: reasonText = "NOT-AUS aktiv"; break;
+        case 2: reasonText = "Interner Fehler"; break;
+        case 3: reasonText = "Controller-Reset"; break;
+    }
+
+    status.textContent = "🔴 SAFETY AKTIV – " + reasonText;
+    btn.style.display = "inline-block";
+}
+
 /* ========================== WARNING ========================== */
 
 function showWarning(msg) {
@@ -157,4 +191,14 @@ function log(msg) {
     t.textContent = msg;
     win.appendChild(t);
     win.scrollTop = win.scrollHeight;
+}
+
+function ackSafety() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+        log("⚠ WebSocket nicht verbunden");
+        return;
+    }
+
+    log("Safety ACK gesendet");
+    socket.send(JSON.stringify({ action: "safetyAck" }));
 }

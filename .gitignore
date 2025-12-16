@@ -37,3 +37,5 @@ __pycache__/
 !include/
 !data/
 !test/
+*.code-workspace
+*.xlsx
