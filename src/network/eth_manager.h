@@ -1,23 +1,23 @@
 #pragma once
 
-#include <Arduino.h>
 #include <IPAddress.h>
 
 namespace Net
 {
-  class EthManager
-  {
-  public:
-    // Startet W5500 + Ethernet, versucht DHCP und fällt bei Bedarf auf Static zurück.
-    static bool begin();
+    class EthManager
+    {
+    public:
+        static void begin();
+        static void update();
 
-    // Ist eine gültige IP konfiguriert?
-    static bool isConnected();
+        static bool isConnected();
+        static IPAddress localIP();
 
-    // Liefert die aktuelle IP-Adresse (oder 0.0.0.0, wenn keine)
-    static IPAddress localIP();
+        // Wird vom Webserver signalisiert
+        static void markConnected(IPAddress ip);
 
-  private:
-    static bool s_connected;
-  };
+    private:
+        static bool      s_connected;
+        static IPAddress s_ip;
+    };
 }

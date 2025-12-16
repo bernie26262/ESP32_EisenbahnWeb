@@ -6,10 +6,11 @@
 
 #include "network/eth_manager.h"
 
+
 #include "core2/state/system_runtime_state.h"
 #include "core2/mega/mega2_client.h"
 
-#include <LittleFS.h>   // oder SPIFFS.h, je nach Setup
+#include <LittleFS.h>
 
 // ---------------------------------------------------------
 // Globale Objekte
@@ -28,7 +29,7 @@ static String buildStatusJson()
     doc["eth"]["connected"] = Net::EthManager::isConnected();
     doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
 
-    // Mega2 Safety
+    // Mega2 / Safety
     if (SystemRuntimeState::mega2Online())
     {
         const auto& st = SystemRuntimeState::mega2Status();
@@ -36,17 +37,6 @@ static String buildStatusJson()
         doc["mega2"]["online"] = true;
         doc["mega2"]["flags"]  = st.flags;
 
-        doc["mega2"]["safety_lock"] =
-            SystemRuntimeState::safetyLock();
-
-        doc["mega2"]["safety_reason"] =
-            static_cast<uint8_t>(
-                SystemRuntimeState::safetyReason()
-            );
-
-        // -----------------------------
-        // Safety (abgeleitet, ESP-seitig)
-        // -----------------------------
         doc["mega2"]["safety_lock"] =
             SystemRuntimeState::safetyLock();
 
@@ -116,23 +106,41 @@ static void onWsEvent(AsyncWebSocket*,
 // ---------------------------------------------------------
 void Web::begin()
 {
-    if (!LittleFS.begin(true)) {
+    if (!LittleFS.begin(true))
+    {
         Serial.println("[FS] LittleFS Mount FAILED");
-    } else {
+    }
+    else
+    {
         Serial.println("[FS] LittleFS mounted");
     }
 
-    server.serveStatic("/", LittleFS, "/");
+    // -----------------------------
+    // Statische Assets unter /static
+    // -----------------------------
+    server.serveStatic("/static", LittleFS, "/");
 
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
+    // -----------------------------
+    // Root-Seite
+    // -----------------------------
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest* req)
+    {
         req->send(LittleFS, "/index.html", "text/html");
     });
 
-    server.on("/status", HTTP_GET, [](AsyncWebServerRequest* req){
+    // -----------------------------
+    // JSON-Status
+    // -----------------------------
+    server.on("/status", HTTP_GET, [](AsyncWebServerRequest* req)
+    {
         req->send(200, "application/json", buildStatusJson());
     });
 
-    server.onNotFound([](AsyncWebServerRequest *req) {
+    // -----------------------------
+    // SPA-Fallback
+    // -----------------------------
+    server.onNotFound([](AsyncWebServerRequest* req)
+    {
         req->send(LittleFS, "/index.html", "text/html");
     });
 
@@ -140,6 +148,11 @@ void Web::begin()
     server.addHandler(&ws);
 
     server.begin();
+
+    Net::EthManager::markConnected(
+        IPAddress(1,1,1,1)   // Platzhalter reicht
+    );
+    
     Serial.println("[Web] Server gestartet");
 }
 

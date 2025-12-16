@@ -20,20 +20,34 @@ void setup()
     Serial.println(F("===== ESP32-S3 Eisenbahn (core2) ====="));
 
     Net::EthManager::begin();
-    Web::begin();
-
-    Mega2Link::begin();
+    Mega2Link::begin();   // darf bleiben, wartet intern auf ETH
 
     Serial.println(F("[ESP] Setup abgeschlossen"));
 }
+
 
 // ============================================================================
 // LOOP
 // ============================================================================
 void loop()
 {
-    Web::loop();
-    Mega2Link::update();
+    static bool webStarted = false;
+
+    Net::EthManager::update();
+
+    if (Net::EthManager::isConnected())
+    {
+        if (!webStarted)
+        {
+            Web::begin();
+            webStarted = true;
+        }
+
+        Web::loop();
+        Mega2Link::update();
+    }
+
+    
 
     if (Serial.available())
     {
