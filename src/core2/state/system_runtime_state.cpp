@@ -11,6 +11,9 @@ static uint32_t     s_lastRxMs = 0;
 static bool         s_safetyLock   = false;
 static SafetyReason s_safetyReason = SafetyReason::NONE;
 
+// 🔴 NEU: Dirty-Flag (extern definiert, z. B. in main.cpp)
+extern volatile bool g_stateDirty;
+
 // ----------------------------------------------------
 // Interne Ableitung des Safety-Grundes
 // ----------------------------------------------------
@@ -18,16 +21,12 @@ static SafetyReason deriveSafetyReason(const SystemStatus& st)
 {
     if (st.flags & SYS_NOTAUS_ACTIVE)
         return SafetyReason::NOTAUS;
-
     if (st.flags & SYS_ERROR_PRESENT)
         return SafetyReason::ERROR_PRESENT;
-
     if (st.flags & SYS_CONTROLLER_RESET)
         return SafetyReason::CONTROLLER_RESET;
-
     if (st.flags != 0)
         return SafetyReason::UNKNOWN;
-
     return SafetyReason::NONE;
 }
 
@@ -39,12 +38,10 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     s_m2Status = st;
     s_lastRxMs = millis();
 
-    // Harte Safety-Logik (binär)
     s_safetyLock =
         (st.flags & SYS_NOTAUS_ACTIVE) ||
         (st.flags & SYS_ERROR_PRESENT);
 
-    // Weiche Diagnose
     s_safetyReason = deriveSafetyReason(st);
 
     static uint16_t lastFlags = 0xFFFF;
@@ -61,6 +58,8 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
         );
     }
 
+    // 🔴 NEU: Event markieren
+    g_stateDirty = true;
 }
 
 // ----------------------------------------------------

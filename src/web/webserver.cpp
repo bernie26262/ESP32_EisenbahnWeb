@@ -5,11 +5,10 @@
 #include <AsyncTCP.h>
 
 #include "network/eth_manager.h"
-
 #include "core2/state/system_runtime_state.h"
 #include "core2/mega/mega2_client.h"
 
-#include <LittleFS.h>   // oder SPIFFS.h, je nach Setup
+#include <LittleFS.h>
 
 // ---------------------------------------------------------
 // Globale Objekte
@@ -17,47 +16,53 @@
 static AsyncWebServer server(80);
 static AsyncWebSocket ws("/ws");
 
+// 🔴 NEU: Dirty-Flag (Definition)
+volatile bool g_stateDirty = true;
+
 // ---------------------------------------------------------
-// Status JSON
+// Status JSON (LEGACY / Debug)
 // ---------------------------------------------------------
 static String buildStatusJson()
 {
     StaticJsonDocument<512> doc;
 
-    // Ethernet
     doc["eth"]["connected"] = Net::EthManager::isConnected();
     doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
 
-    // Mega2 Safety
+    doc["mega2"]["online"] = SystemRuntimeState::mega2Online();
     if (SystemRuntimeState::mega2Online())
     {
-        const auto& st = SystemRuntimeState::mega2Status();
-
-        doc["mega2"]["online"] = true;
-        doc["mega2"]["flags"]  = st.flags;
-
-        doc["mega2"]["safety_lock"] =
-            SystemRuntimeState::safetyLock();
-
+        doc["mega2"]["flags"] = SystemRuntimeState::mega2Status().flags;
+        doc["mega2"]["safety_lock"] = SystemRuntimeState::safetyLock();
         doc["mega2"]["safety_reason"] =
-            static_cast<uint8_t>(
-                SystemRuntimeState::safetyReason()
-            );
-
-        // -----------------------------
-        // Safety (abgeleitet, ESP-seitig)
-        // -----------------------------
-        doc["mega2"]["safety_lock"] =
-            SystemRuntimeState::safetyLock();
-
-        doc["mega2"]["safety_reason"] =
-            static_cast<uint8_t>(
-                SystemRuntimeState::safetyReason()
-            );
+            (uint8_t)SystemRuntimeState::safetyReason();
     }
-    else
+
+    String out;
+    serializeJson(doc, out);
+    return out;
+}
+
+// ---------------------------------------------------------
+// 🔴 NEU: WebSocket State JSON (EVENT-BASIERT)
+// ---------------------------------------------------------
+static String buildWsStateJson()
+{
+    StaticJsonDocument<512> doc;
+
+    doc["type"] = "state";
+    doc["ts"]   = (uint32_t)millis();
+
+    doc["eth"]["connected"] = Net::EthManager::isConnected();
+    doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
+
+    doc["mega2"]["online"] = SystemRuntimeState::mega2Online();
+    if (SystemRuntimeState::mega2Online())
     {
-        doc["mega2"]["online"] = false;
+        doc["mega2"]["flags"] = SystemRuntimeState::mega2Status().flags;
+        doc["mega2"]["safety_lock"] = SystemRuntimeState::safetyLock();
+        doc["mega2"]["safety_reason"] =
+            (uint8_t)SystemRuntimeState::safetyReason();
     }
 
     String out;
@@ -71,44 +76,22 @@ static String buildStatusJson()
 static void onWsEvent(AsyncWebSocket*,
                       AsyncWebSocketClient* client,
                       AwsEventType type,
-                      void* arg,
+                      void*,
                       uint8_t* data,
                       size_t len)
 {
     if (type == WS_EVT_CONNECT)
     {
-        client->text(buildStatusJson());
+        // Initial Push
+        client->text(buildWsStateJson());
         return;
     }
 
     if (type != WS_EVT_DATA)
         return;
 
-    AwsFrameInfo* info = (AwsFrameInfo*)arg;
-    if (!info->final || info->index != 0 || info->len != len)
-        return;
-
-    data[len] = 0;
-
-    StaticJsonDocument<256> cmd;
-    if (deserializeJson(cmd, (char*)data))
-        return;
-
-    const char* action = cmd["action"];
-    if (!action)
-        return;
-
-    // -------------------------------------------------
-    // Safety ACK (Mega2)
-    // -------------------------------------------------
-    if (!strcmp(action, "safetyAck"))
-    {
-        bool ok = Mega2Client::safetyAck();
-        client->text(ok ? "ACK_OK" : "ACK_FAIL");
-    }
-
-    // Status zurückschicken
-    client->text(buildStatusJson());
+    AwsFrameInfo* info = (AwsFrameInfo*)data;
+    (void)info; // (Commands bleiben später)
 }
 
 // ---------------------------------------------------------
@@ -116,31 +99,36 @@ static void onWsEvent(AsyncWebSocket*,
 // ---------------------------------------------------------
 void Web::begin()
 {
-    if (!LittleFS.begin(true)) {
-        Serial.println("[FS] LittleFS Mount FAILED");
-    } else {
-        Serial.println("[FS] LittleFS mounted");
-    }
+    LittleFS.begin(true);
 
     server.serveStatic("/", LittleFS, "/");
+    server.on("/", HTTP_GET,
+        [](AsyncWebServerRequest *req){
+            req->send(LittleFS, "/index.html", "text/html");
+        });
 
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
-        req->send(LittleFS, "/index.html", "text/html");
-    });
-
-    server.on("/status", HTTP_GET, [](AsyncWebServerRequest* req){
-        req->send(200, "application/json", buildStatusJson());
-    });
-
-    server.onNotFound([](AsyncWebServerRequest *req) {
-        req->send(LittleFS, "/index.html", "text/html");
-    });
+    server.on("/status", HTTP_GET,
+        [](AsyncWebServerRequest* req){
+            req->send(200, "application/json", buildStatusJson());
+        });
 
     ws.onEvent(onWsEvent);
     server.addHandler(&ws);
 
     server.begin();
     Serial.println("[Web] Server gestartet");
+}
+
+// ---------------------------------------------------------
+// 🔴 NEU: Push bei Änderung
+// ---------------------------------------------------------
+void Web::pushStateIfDirty()
+{
+    if (!g_stateDirty)
+        return;
+
+    ws.textAll(buildWsStateJson());
+    g_stateDirty = false;
 }
 
 // ---------------------------------------------------------

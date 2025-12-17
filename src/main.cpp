@@ -32,6 +32,7 @@ void setup()
 // ============================================================================
 void loop()
 {
+    Web::pushStateIfDirty();
     Web::loop();
     Mega2Link::update();
 
@@ -43,4 +44,5 @@ void loop()
             Mega2Link::safetyAck();
         }
     }
+    
 }
