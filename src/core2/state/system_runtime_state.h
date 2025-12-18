@@ -29,4 +29,9 @@ namespace SystemRuntimeState
     // Abgeleitete Safety-Informationen
     bool safetyLock();
     SafetyReason safetyReason();
+    // 🔴 NEU: Klartext für Safety-Fehler
+    const char* safetyErrorText(uint8_t type, uint8_t index);
+
+    extern uint8_t  errorType;
+    extern uint8_t  errorIndex;
 }

@@ -56,13 +56,28 @@ static String buildWsStateJson()
     doc["eth"]["connected"] = Net::EthManager::isConnected();
     doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
 
-    doc["mega2"]["online"] = SystemRuntimeState::mega2Online();
-    if (SystemRuntimeState::mega2Online())
+    bool m2online = SystemRuntimeState::mega2Online();
+    doc["mega2"]["online"] = m2online;
+
+    JsonObject s = doc["safety"].to<JsonObject>();
+    s["lock"] = SystemRuntimeState::safetyLock();
+
+    if (m2online)
     {
         doc["mega2"]["flags"] = SystemRuntimeState::mega2Status().flags;
-        doc["mega2"]["safety_lock"] = SystemRuntimeState::safetyLock();
-        doc["mega2"]["safety_reason"] =
-            (uint8_t)SystemRuntimeState::safetyReason();
+
+        s["errorType"]  = SystemRuntimeState::errorType;
+        s["errorIndex"] = SystemRuntimeState::errorIndex;
+        s["text"] = SystemRuntimeState::safetyErrorText(
+            SystemRuntimeState::errorType,
+            SystemRuntimeState::errorIndex
+        );
+    }
+    else
+    {
+        s["errorType"]  = 0;
+        s["errorIndex"] = 0;
+        s["text"] = "Mega2 offline";
     }
 
     String out;
@@ -76,13 +91,12 @@ static String buildWsStateJson()
 static void onWsEvent(AsyncWebSocket*,
                       AsyncWebSocketClient* client,
                       AwsEventType type,
-                      void*,
+                      void* arg,
                       uint8_t* data,
                       size_t len)
 {
     if (type == WS_EVT_CONNECT)
     {
-        // Initial Push
         client->text(buildWsStateJson());
         return;
     }
@@ -90,9 +104,42 @@ static void onWsEvent(AsyncWebSocket*,
     if (type != WS_EVT_DATA)
         return;
 
-    AwsFrameInfo* info = (AwsFrameInfo*)data;
-    (void)info; // (Commands bleiben später)
+    AwsFrameInfo* info = (AwsFrameInfo*)arg;
+    if (!info->final || info->index != 0 || info->len != len)
+        return;
+
+    data[len] = 0;
+
+    StaticJsonDocument<256> cmd;
+    if (deserializeJson(cmd, (char*)data))
+        return;
+
+    const char* action = cmd["action"];
+    if (!action)
+        return;
+
+    // -------------------------------------------------
+    // Safety Commands
+    // -------------------------------------------------
+    if (!strcmp(action, "safetyAck"))
+    {
+        Mega2Client::safetyAck();
+        return;
+    }
+
+    if (!strcmp(action, "nothalt"))
+    {
+        Mega2Client::setNotaus(true);
+        return;
+    }
+
+    if (!strcmp(action, "powerOn"))
+    {
+        Mega2Client::setNotaus(false);
+        return;
+    }
 }
+
 
 // ---------------------------------------------------------
 // Web::begin

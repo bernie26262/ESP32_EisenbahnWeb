@@ -30,7 +30,7 @@ bool Mega2Client::pollStatus()
 
     if (st.version != SYSTEM_STATUS_VERSION || st.nodeId != NODE_MEGA2)
         return false;
-    
+
     static uint16_t lastFlags = 0xFFFF;
 
     if (st.flags != lastFlags)
@@ -50,7 +50,7 @@ bool Mega2Client::pollStatus()
 }
 
 // ------------------------------------------------------------
-// SAFETY: Notaus / Fehler quittieren
+// SAFETY: Fehler quittieren (ACK)
 // Protokoll: 1 Byte Command, 1 Byte Response
 // ------------------------------------------------------------
 bool Mega2Client::safetyAck()
@@ -61,7 +61,7 @@ bool Mega2Client::safetyAck()
     if (!I2CBus::write(MEGA2_ADDR, &cmd, sizeof(cmd)))
         return false;
 
-    // 2) ESP32 braucht kurze Pause
+    // 2) kurze Pause
     delayMicroseconds(1000);
 
     // 3) 1-Byte-Response lesen
@@ -70,4 +70,25 @@ bool Mega2Client::safetyAck()
         return false;
 
     return (resp == 1);
+}
+
+// ------------------------------------------------------------
+// SAFETY: NOTAUS setzen / lösen
+// Protokoll: [cmd, 0/1], keine Response
+// ------------------------------------------------------------
+bool Mega2Client::setNotaus(bool on)
+{
+    uint8_t buf[2];
+    buf[0] = M2_CMD_SET_NOTAUS;
+    buf[1] = on ? 1 : 0;
+
+    bool ok = I2CBus::write(MEGA2_ADDR, buf, sizeof(buf));
+
+    DBG_PRINTF(
+        ok
+            ? (on ? "[M2] NOTAUS SET\n" : "[M2] NOTAUS RELEASE\n")
+            : "[M2] NOTAUS CMD FAIL\n"
+    );
+
+    return ok;
 }

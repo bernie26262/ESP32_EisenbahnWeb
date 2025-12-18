@@ -10,6 +10,7 @@ namespace Mega2Client
     // Liefert true, wenn Mega2 erreichbar und Status gültig
     bool pollStatus();
 
-    // Safety-Quittierung (1-Byte Command / 1-Byte Response)
-    bool safetyAck();
+    // Safety
+    bool safetyAck();          // ACK (M2_CMD_ACK_ERROR)
+    bool setNotaus(bool on);   // NOTHALT / POWER ON (M2_CMD_SET_NOTAUS)
 }

@@ -7,6 +7,8 @@
 // ----------------------------------------------------
 static SystemStatus s_m2Status{};
 static uint32_t     s_lastRxMs = 0;
+uint8_t SystemRuntimeState::errorType  = 0;
+uint8_t SystemRuntimeState::errorIndex = 0;
 
 static bool         s_safetyLock   = false;
 static SafetyReason s_safetyReason = SafetyReason::NONE;
@@ -43,6 +45,10 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
         (st.flags & SYS_ERROR_PRESENT);
 
     s_safetyReason = deriveSafetyReason(st);
+
+    // 🔴 NEU: Fehlerdetails aus Mega2 übernehmen
+    SystemRuntimeState::errorType  = st.safetyErrorType;
+    SystemRuntimeState::errorIndex = st.safetyErrorIndex;
 
     static uint16_t lastFlags = 0xFFFF;
 
@@ -84,3 +90,28 @@ SafetyReason SystemRuntimeState::safetyReason()
 {
     return s_safetyReason;
 }
+
+const char* SystemRuntimeState::safetyErrorText(uint8_t type, uint8_t index)
+{
+    switch (type)
+    {
+        case 1:
+            return "Nothalt ausgelöst";
+
+        case 2: {
+            static char buf[32];
+            snprintf(buf, sizeof(buf), "Kurzschluss in Block %u", index);
+            return buf;
+        }
+
+        case 3: {
+            static char buf[48];
+            snprintf(buf, sizeof(buf), "Schattenbahnhof: Fehler an Weiche %u", index);
+            return buf;
+        }
+
+        default:
+            return "";
+    }
+}
+
