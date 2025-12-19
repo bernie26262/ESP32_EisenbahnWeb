@@ -13,4 +13,5 @@ namespace Mega2Client
     // Safety
     bool safetyAck();          // ACK (M2_CMD_ACK_ERROR)
     bool setNotaus(bool on);   // NOTHALT / POWER ON (M2_CMD_SET_NOTAUS)
+    bool powerOn();            // M2_CMD_POWER_ON
 }

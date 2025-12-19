@@ -60,25 +60,33 @@ static String buildWsStateJson()
     doc["mega2"]["online"] = m2online;
 
     JsonObject s = doc["safety"].to<JsonObject>();
-    s["lock"] = SystemRuntimeState::safetyLock();
 
-    if (m2online)
-    {
-        doc["mega2"]["flags"] = SystemRuntimeState::mega2Status().flags;
+// -----------------------------
+// Safety-Status (abgeleitet, ESP-Ebene)
+// -----------------------------
+s["lock"] = SystemRuntimeState::safetyLock();
+s["reason"] = static_cast<uint8_t>(
+    SystemRuntimeState::safetyReason()
+);
 
-        s["errorType"]  = SystemRuntimeState::errorType;
-        s["errorIndex"] = SystemRuntimeState::errorIndex;
-        s["text"] = SystemRuntimeState::safetyErrorText(
-            SystemRuntimeState::errorType,
-            SystemRuntimeState::errorIndex
-        );
-    }
-    else
-    {
-        s["errorType"]  = 0;
-        s["errorIndex"] = 0;
-        s["text"] = "Mega2 offline";
-    }
+if (m2online)
+{
+    doc["mega2"]["flags"] = SystemRuntimeState::mega2Status().flags;
+
+    s["errorType"]  = SystemRuntimeState::errorType;
+    s["errorIndex"] = SystemRuntimeState::errorIndex;
+
+    s["text"] = SystemRuntimeState::safetyErrorText(
+        SystemRuntimeState::errorType,
+        SystemRuntimeState::errorIndex
+    );
+}
+else
+{
+    s["errorType"]  = 0;
+    s["errorIndex"] = 0;
+    s["text"] = "Mega2 offline";
+}
 
     String out;
     serializeJson(doc, out);
@@ -135,7 +143,7 @@ static void onWsEvent(AsyncWebSocket*,
 
     if (!strcmp(action, "powerOn"))
     {
-        Mega2Client::setNotaus(false);
+        Mega2Client::powerOn();
         return;
     }
 }

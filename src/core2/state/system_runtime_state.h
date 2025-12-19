@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include "system/system_status_payload.h"
 
+
 // =====================================================
 // Safety-Grund (Diagnose, keine Logik!)
 // =====================================================

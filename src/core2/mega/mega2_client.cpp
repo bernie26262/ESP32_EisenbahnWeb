@@ -119,3 +119,22 @@ bool Mega2Client::setNotaus(bool on)
 
     return ok;
 }
+
+// ------------------------------------------------------------
+// SAFETY: explizites Wiedereinschalten der Leistung
+// Protokoll: [cmd], keine Response
+// ------------------------------------------------------------
+bool Mega2Client::powerOn()
+{
+    uint8_t cmd = M2_CMD_POWER_ON;
+
+    bool ok = I2CBus::write(MEGA2_ADDR, &cmd, sizeof(cmd));
+
+    DBG_PRINTF(
+        ok
+            ? "[M2] POWER ON CMD\n"
+            : "[M2] POWER ON CMD FAIL\n"
+    );
+
+    return ok;
+}

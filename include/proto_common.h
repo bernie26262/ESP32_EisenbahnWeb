@@ -16,6 +16,7 @@ enum : uint8_t
     M2_CMD_SET_NOTAUS         = 0x10, // [cmd, 0/1]
     M2_CMD_SET_SSR            = 0x11, // [cmd, ssrIndex, 0/1]
     M2_CMD_ACK_ERROR          = 0x12, // [cmd, mask]
+    M2_CMD_POWER_ON           = 0x13,   // explizit: Leistung EIN
 
     // --- Status Abfragen (read-only) ---
     M2_CMD_GET_SAFETY_STATUS  = 0x20, // -> Mega2SafetyStatus
@@ -37,11 +38,21 @@ enum SafetySSR : uint8_t
 // =====================================================
 //  Safety-Status (global, klein)
 // =====================================================
+
+enum SafetyBlockReason : uint8_t
+{
+    SAFETY_BLOCK_NONE      = 0,
+    SAFETY_BLOCK_BOOT      = 1,
+    SAFETY_BLOCK_EMERGENCY = 2
+};
+
 struct Mega2SafetyStatus
 {
     uint8_t notausActive;   // 0/1
     uint8_t ssrMask;        // Bit0=MAIN, Bit1=TRAFO_A, Bit2=TRAFO_B
     uint8_t errorFlags;     // global (z.B. Safety, I2C, Kurzschluss)
+
+    uint8_t blockReason;    // NEU: siehe SafetyBlockReason
 };
 
 // =====================================================
@@ -81,3 +92,10 @@ struct ShadowYardStatus
     uint8_t modus;              // 0=seriell, 1=zufall
     uint8_t state;              // interner Automat (nur Anzeige)
 };
+
+enum Mega2Command : uint8_t {
+    CMD_GET_M2_SAFETY = 0x20,
+    CMD_GET_M2_BLOCKS = 0x21,
+    CMD_GET_M2_SBH    = 0x22,
+};
+

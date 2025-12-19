@@ -5,18 +5,21 @@
 const DEBUG_WS = false;
 const DEBUG_UI = false;
 
-if (DEBUG_UI) console.log("script.js loaded");
-
 let socket = null;
 let wsConnected = false;
+
+// letzter empfangener safety-state vom WS
 let lastSafetyState = null;
+// letzter empfangener mega2-state (online/flags)
+let lastMega2Online = false;
 
 /* =========================================================
  *  INIT
  * ========================================================= */
 
 window.addEventListener("load", () => {
-    initWebSocket();
+  if (DEBUG_UI) console.log("script.js loaded");
+  initWebSocket();
 });
 
 /* =========================================================
@@ -24,36 +27,36 @@ window.addEventListener("load", () => {
  * ========================================================= */
 
 function initWebSocket() {
-    const proto = location.protocol === "https:" ? "wss://" : "ws://";
-    const url = proto + location.host + "/ws";
+  const proto = location.protocol === "https:" ? "wss://" : "ws://";
+  const url = proto + location.host + "/ws";
 
-    log(`[WS] connect ${url}`);
-    socket = new WebSocket(url);
+  log(`[WS] connect ${url}`);
+  socket = new WebSocket(url);
 
-    socket.onopen = () => {
-        wsConnected = true;
-        log("[WS] verbunden");
-    };
+  socket.onopen = () => {
+    wsConnected = true;
+    log("[WS] verbunden");
+  };
 
-    socket.onclose = () => {
-        wsConnected = false;
-        log("[WS] getrennt – Reconnect in 2s");
-        setTimeout(initWebSocket, 2000);
-    };
+  socket.onclose = () => {
+    wsConnected = false;
+    log("[WS] getrennt – Reconnect in 2s");
+    setTimeout(initWebSocket, 2000);
+  };
 
-    socket.onmessage = (event) => {
-        if (DEBUG_WS) console.log("[WS RAW]", event.data);
+  socket.onmessage = (event) => {
+    if (DEBUG_WS) console.log("[WS RAW]", event.data);
 
-        let msg;
-        try {
-            msg = JSON.parse(event.data);
-        } catch (e) {
-            console.error("JSON parse error", e);
-            return;
-        }
+    let msg;
+    try {
+      msg = JSON.parse(event.data);
+    } catch (e) {
+      console.error("JSON parse error", e);
+      return;
+    }
 
-        handleWsMessage(msg);
-    };
+    handleWsMessage(msg);
+  };
 }
 
 /* =========================================================
@@ -61,13 +64,14 @@ function initWebSocket() {
  * ========================================================= */
 
 function handleWsMessage(msg) {
-    if (DEBUG_WS) console.log("[WS MSG]", msg);
-    if (!msg || msg.type !== "state") return;
+  if (DEBUG_WS) console.log("[WS MSG]", msg);
+  if (!msg || msg.type !== "state") return;
 
-    lastSafetyState = msg.safety || null;
+  lastSafetyState = msg.safety || null;
+  lastMega2Online = !!(msg.mega2 && msg.mega2.online);
 
-    const uiState = getUiStateFromSafety(lastSafetyState);
-    applyUiState(uiState);
+  const uiState = getUiStateFromWs(msg, lastSafetyState, lastMega2Online);
+  applyUiState(uiState);
 }
 
 /* =========================================================
@@ -75,22 +79,22 @@ function handleWsMessage(msg) {
  * ========================================================= */
 
 function applyUiState(ui) {
-    const panel  = document.getElementById("safety-panel");
-    const status = document.getElementById("safety-status");
+  const panel = document.getElementById("safety-panel");
+  const status = document.getElementById("safety-status");
 
-    if (!panel || !status) return;
+  if (!panel || !status) return;
 
-    panel.className = "safety-panel " + ui.level.toLowerCase();
-    status.textContent = ui.text[0] || "";
+  panel.className = "safety-panel " + ui.level.toLowerCase();
+  status.textContent = ui.text[0] || "";
 
-    if (ui.overlay) {
-        showOverlay(ui.title, ui.text, ui.ackRequired);
-    } else {
-        hideOverlay();
-    }
+  if (ui.overlay) {
+    showOverlay(ui.title, ui.text, ui.ackRequired);
+  } else {
+    hideOverlay();
+  }
 
-    // Power nur erlauben, wenn Safety NICHT locked
-    updatePowerButton(ui.locked === true);
+  // Power nur erlauben, wenn NICHT locked und Mega2 online
+  updatePowerButton(ui.locked === true || ui.mega2Online === false);
 }
 
 /* =========================================================
@@ -98,28 +102,40 @@ function applyUiState(ui) {
  * ========================================================= */
 
 function sendNothalt() {
-    sendAction("nothalt");
+  sendAction("nothalt");
 }
 
 function sendPowerOn() {
-    if (lastSafetyState && lastSafetyState.lock === true) {
-        showOverlay(
-            "Power On nicht möglich",
-            ["Safety-Lock aktiv"],
-            false
-        );
-        return;
-    }
-    sendAction("powerOn");
+  // UI-Sperre: wenn locked, zeigen wir Overlay – und senden NICHT.
+  if (lastSafetyState && lastSafetyState.lock === true) {
+    const lines = normalizeTextLines(lastSafetyState.text);
+    showOverlay(
+      "Power On nicht möglich",
+      lines.length ? lines : ["Safety-Lock aktiv (erst quittieren)"],
+      true
+    );
+    return;
+  }
+
+  // optional: wenn mega2 offline -> nicht senden
+  if (!lastMega2Online) {
+    showOverlay("Power On nicht möglich", ["Mega2 offline"], false);
+    return;
+  }
+
+  sendAction("powerOn");
 }
 
 function confirmAck() {
-    sendAction("safetyAck");
+  sendAction("safetyAck");
 }
 
 function sendAction(action) {
-    if (!socket || !wsConnected) return;
-    socket.send(JSON.stringify({ action }));
+  if (!socket || !wsConnected) {
+    log(`[WS] nicht verbunden – action '${action}' verworfen`);
+    return;
+  }
+  socket.send(JSON.stringify({ action }));
 }
 
 /* =========================================================
@@ -127,16 +143,29 @@ function sendAction(action) {
  * ========================================================= */
 
 function showOverlay(title, lines, ackRequired) {
-    document.getElementById("ack-title").textContent = title;
-    document.getElementById("ack-text").innerHTML =
-        lines.map(l => `<div>${l}</div>`).join("");
+  const titleEl = document.getElementById("ack-title");
+  const textEl = document.getElementById("ack-text");
+  const btnEl = document.getElementById("ack-confirm-btn");
+  const overlayEl = document.getElementById("ack-overlay");
 
-    document.getElementById("ack-confirm-btn").disabled = !ackRequired;
-    document.getElementById("ack-overlay").classList.remove("hidden");
+  if (!titleEl || !textEl || !btnEl || !overlayEl) return;
+
+  titleEl.textContent = title || "";
+  const safeLines = Array.isArray(lines) ? lines : [String(lines || "")];
+
+  textEl.innerHTML = safeLines
+    .filter((l) => l !== null && l !== undefined && String(l).trim() !== "")
+    .map((l) => `<div>${escapeHtml(String(l))}</div>`)
+    .join("");
+
+  btnEl.disabled = !ackRequired;
+  overlayEl.classList.remove("hidden");
 }
 
 function hideOverlay() {
-    document.getElementById("ack-overlay").classList.add("hidden");
+  const overlayEl = document.getElementById("ack-overlay");
+  if (!overlayEl) return;
+  overlayEl.classList.add("hidden");
 }
 
 /* =========================================================
@@ -144,49 +173,131 @@ function hideOverlay() {
  * ========================================================= */
 
 function updatePowerButton(disabled) {
-    const btn = document.getElementById("btn-power");
-    if (!btn) return;
-    btn.disabled = disabled;
-    btn.classList.toggle("disabled", disabled);
+  const btn = document.getElementById("btn-power");
+  if (!btn) return;
+  btn.disabled = !!disabled;
+  btn.classList.toggle("disabled", !!disabled);
 }
 
 /* =========================================================
- *  SAFETY → UI STATE
+ *  WS → UI STATE
+ * =========================================================
+ *
+ * Erwartete WS-Felder (minimal):
+ *  msg.mega2.online
+ *  msg.safety.lock
+ *  msg.safety.text (string/leer/array)
+ * optional (wenn vorhanden, nutzen wir es):
+ *  msg.safety.blockReason  (0 none, 1 boot, 2 emergency)
+ *  msg.safety.notaus       (0/1)
+ */
+function getUiStateFromWs(msg, safety, mega2Online) {
+  // Mega2 offline → Overlay, aber ACK deaktiviert
+  if (!mega2Online) {
+    return {
+      mega2Online: false,
+      level: "ERROR",
+      overlay: true,
+      ackRequired: false,
+      locked: true,
+      title: "Mega2 offline",
+      text: ["Keine Verbindung – I2C/Power prüfen"]
+    };
+  }
+
+  // Kein safety-object → OK
+  if (!safety) {
+    return {
+      mega2Online: true,
+      level: "OK",
+      overlay: false,
+      ackRequired: false,
+      locked: false,
+      title: "",
+      text: []
+    };
+  }
+
+  const lock = safety.lock === true;
+  const reason = typeof safety.blockReason === "number" ? safety.blockReason : null;
+  const notaus = safety.notaus === true || safety.notaus === 1;
+
+  if (lock) {
+    // Text robust normalisieren (string/leer/array)
+    const lines = normalizeTextLines(safety.text);
+
+    // Boot-Lock priorisieren, wenn blockReason vorhanden
+    if (reason === 1 /* SAFETY_BLOCK_BOOT */) {
+      return {
+        mega2Online: true,
+        level: "WARN",
+        overlay: true,
+        ackRequired: true,
+        locked: true,
+        title: "Systemstart – Quittierung erforderlich",
+        text: lines.length ? lines : ["Bitte ACK drücken, dann Power On möglich"]
+      };
+    }
+
+    // Not-Aus / Emergency
+    if (reason === 2 /* SAFETY_BLOCK_EMERGENCY */ || notaus) {
+      return {
+        mega2Online: true,
+        level: "EMERGENCY",
+        overlay: true,
+        ackRequired: true,
+        locked: true,
+        title: "NOT-AUS – Anlage gestoppt",
+        text: lines.length ? lines : ["Sicherheitsabschaltung aktiv"]
+      };
+    }
+
+    // generischer Safety-Lock (z.B. Fehler present)
+    return {
+      mega2Online: true,
+      level: "ERROR",
+      overlay: true,
+      ackRequired: true,
+      locked: true,
+      title: "Safety-Lock aktiv",
+      text: lines.length ? lines : ["Fehler vorhanden – bitte ACK drücken"]
+    };
+  }
+
+  // lock false → OK
+  return {
+    mega2Online: true,
+    level: "OK",
+    overlay: false,
+    ackRequired: false,
+    locked: false,
+    title: "",
+    text: []
+  };
+}
+
+/* =========================================================
+ *  Helpers
  * ========================================================= */
 
-function getUiStateFromSafety(safety) {
-    if (!safety) {
-        return {
-            level: "OK",
-            overlay: false,
-            ackRequired: false,
-            locked: false,
-            title: "",
-            text: []
-        };
-    }
+function normalizeTextLines(text) {
+  if (Array.isArray(text)) {
+    return text.map((x) => String(x || "").trim()).filter((s) => s.length > 0);
+  }
+  if (typeof text === "string") {
+    const t = text.trim();
+    return t ? [t] : [];
+  }
+  return [];
+}
 
-    if (safety.lock === true) {
-        return {
-            level: "EMERGENCY",
-            overlay: true,
-            ackRequired: true,
-            locked: true,
-            title: "NOT-AUS – Anlage gestoppt",
-            text: safety.text
-                ? [safety.text]
-                : ["Sicherheitsabschaltung aktiv"]
-        };
-    }
-
-    return {
-        level: "OK",
-        overlay: false,
-        ackRequired: false,
-        locked: false,
-        title: "",
-        text: []
-    };
+function escapeHtml(str) {
+  return str
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 /* =========================================================
@@ -194,9 +305,16 @@ function getUiStateFromSafety(safety) {
  * ========================================================= */
 
 function log(msg) {
-    const win = document.getElementById("log-window");
-    if (!win) return;
-    const d = document.createElement("div");
-    d.textContent = msg;
-    win.appendChild(d);
+  const win = document.getElementById("log-window");
+  if (!win) return;
+
+  const d = document.createElement("div");
+  d.textContent = msg;
+  win.appendChild(d);
+
+  // optional: Log begrenzen
+  const MAX = 200;
+  while (win.childNodes.length > MAX) {
+    win.removeChild(win.firstChild);
+  }
 }
