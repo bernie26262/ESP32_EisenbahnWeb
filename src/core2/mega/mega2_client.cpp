@@ -8,6 +8,10 @@
 
 #include "debug.h"
 
+#include <Wire.h>
+
+//#define DEBUG_I2C   // ← HIER
+
 static constexpr uint8_t MEGA2_ADDR = 0x11;
 
 // ------------------------------------------------------------
@@ -22,32 +26,55 @@ void Mega2Client::begin()
 // Polling: kompletten SystemStatus lesen
 // Gibt false zurück, wenn Mega2 nicht erreichbar ist
 // ------------------------------------------------------------
+
+
 bool Mega2Client::pollStatus()
 {
-    SystemStatus st{};
-    if (!I2CBus::read(MEGA2_ADDR, &st, sizeof(st)))
+    // 1. Adresse ansprechen (Existenz prüfen)
+    Wire.beginTransmission(MEGA2_ADDR);
+    uint8_t rc = Wire.endTransmission();
+    
+
+    #ifdef DEBUG_I2C
+    Serial.printf("[I2C][pollStatus] endTransmission rc=%u\n", rc);
+    #endif
+
+    if (rc != 0)
         return false;
 
-    if (st.version != SYSTEM_STATUS_VERSION || st.nodeId != NODE_MEGA2)
+    // 2. Status anfordern
+    SystemStatus tmpStatus;
+
+    constexpr uint8_t expected = sizeof(SystemStatus);
+    uint8_t got = Wire.requestFrom(MEGA2_ADDR, expected);
+
+    #ifdef DEBUG_I2C
+    Serial.printf(
+        "[I2C][pollStatus] requestFrom got=%u (expected %u)\n",
+        got, sizeof(SystemStatus)
+    );
+    #endif
+
+    if (got < expected)
         return false;
 
-    static uint16_t lastFlags = 0xFFFF;
+    // 3. In temporären Puffer lesen
+    Wire.readBytes(
+        reinterpret_cast<uint8_t*>(&tmpStatus),
+        expected
+    );
 
-    if (st.flags != lastFlags)
-    {
-        lastFlags = st.flags;
+    // 4. Gültigen Status ins Runtime-State übernehmen
+    SystemRuntimeState::updateMega2Status(tmpStatus);
 
-        DBG_PRINTF(
-            "[M2] flags=0x%04X NOTAUS=%d ERROR=%d\n",
-            st.flags,
-            (st.flags & SYS_NOTAUS_ACTIVE) != 0,
-            (st.flags & SYS_ERROR_PRESENT) != 0
-        );
-    }
+    #ifdef DEBUG_I2C
+    Serial.println("[I2C][pollStatus] OK");
+    #endif
 
-    SystemRuntimeState::updateMega2Status(st);
     return true;
 }
+
+
 
 // ------------------------------------------------------------
 // SAFETY: Fehler quittieren (ACK)

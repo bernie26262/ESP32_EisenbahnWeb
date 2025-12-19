@@ -1,0 +1,241 @@
+/* =====================================================
+ *  BASIS & VARIABLEN
+ * ===================================================== */
+:root {
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --border: #d0d7de;
+
+    --ok: #2da44e;
+    --warn: #d29922;
+    --err: #cf222e;
+
+    --text: #1f2328;
+    --subtext: #57606a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont,
+                 "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+h1 { margin: 0 0 0.5rem 0; font-size: 1.6rem; }
+h2 { margin: 0 0 0.5rem 0; }
+
+/* =====================================================
+ *  LAYOUT (GRID – ROBUST)
+ * ===================================================== */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1rem;
+
+    display: grid;
+    grid-template-columns: 3fr 1fr;
+    grid-template-areas: "main safety";
+    gap: 1rem;
+}
+
+@media (max-width: 900px) {
+    .container {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "safety"
+            "main";
+    }
+}
+
+main {
+    grid-area: main;
+}
+
+#safety-panel {
+    grid-area: safety;
+}
+
+/* =====================================================
+ *  PANELS
+ * ===================================================== */
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem;
+}
+
+.panel-right {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.panel-separator {
+    border-top: 1px solid #ddd;
+    margin: 0.5rem 0;
+}
+
+/* =====================================================
+ *  SAFETY PANEL – STATUSFLÄCHEN
+ * ===================================================== */
+#safety-panel.ok {
+    background: #eaf6ee;
+    border-left: 10px solid var(--ok);
+}
+
+#safety-panel.warning {
+    background: #fff8e1;
+    border-left: 10px solid var(--warn);
+}
+
+#safety-panel.emergency {
+    background: #fdecea;
+    border-left: 10px solid var(--err);
+    box-shadow: inset 0 0 0 3px rgba(207, 34, 46, 0.15);
+}
+
+#safety-panel.emergency h2,
+#safety-panel.emergency #safety-status {
+    color: #a40e26;
+    font-weight: 700;
+}
+
+#safety-panel.warning h2,
+#safety-panel.warning #safety-status {
+    color: #7a5c00;
+    font-weight: 600;
+}
+
+#safety-panel.ok h2,
+#safety-panel.ok #safety-status {
+    color: #1f6f43;
+}
+
+#safety-status {
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+/* =====================================================
+ *  NOT-AUS
+ * ===================================================== */
+.safety-nothalt {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: inherit;
+    padding: 0.75rem 0 0.5rem 0;
+}
+
+.btn-nothalt {
+    background: #d00000;
+    color: #fff;
+    border: none;
+    border-radius: 14px;
+    width: 100%;
+    min-height: 52px;
+    font-size: 1.4rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+/* =====================================================
+ *  BUTTONS
+ * ===================================================== */
+.btn-power {
+    background: var(--ok);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    font-size: 1.2rem;
+    padding: 0.8rem;
+    width: 100%;
+    cursor: pointer;
+}
+
+.btn-power.disabled {
+    background: #9bb7d4;
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* =====================================================
+ *  LOG
+ * ===================================================== */
+#log-window {
+    height: 220px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 0.85rem;
+    background: #fafbfc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem;
+}
+
+#log-window div {
+    margin-bottom: 0.2rem;
+    color: var(--subtext);
+}
+
+/* =====================================================
+ *  OVERLAY
+ * ===================================================== */
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.overlay.hidden { display: none; }
+
+.overlay-box {
+    background: #fff;
+    border-radius: 14px;
+    padding: 1.5rem;
+    max-width: 420px;
+    width: 90%;
+    text-align: center;
+}
+
+.overlay-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.btn-ack {
+    background: var(--err);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 0.8rem;
+    font-size: 1.1rem;
+}
+
+.btn-cancel {
+    background: #eaeef2;
+    border: none;
+    border-radius: 10px;
+    padding: 0.8rem;
+    font-size: 1.1rem;
+}
+
+.ack-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 1rem;
+    font-size: 0.95rem;
+    color: var(--subtext);
+}

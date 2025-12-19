@@ -4,296 +4,103 @@
     <meta charset="UTF-8">
     <title>Eisenbahn – Safety & Status</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <style>
-        /* =====================================================
-         *  BASIS
-         * ===================================================== */
-        :root {
-            --bg: #f4f6f8;
-            --panel: #ffffff;
-            --border: #d0d7de;
-
-            --ok: #2da44e;
-            --warn: #d29922;
-            --err: #cf222e;
-
-            --text: #1f2328;
-            --subtext: #57606a;
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont,
-                         "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-        }
-
-        h1 {
-            margin: 0 0 0.5rem 0;
-            font-size: 1.6rem;
-        }
-
-        /* =====================================================
-         *  LAYOUT
-         * ===================================================== */
-        .container {
-            max-width: 1024px;           /* iPad Querformat */
-            margin: 0 auto;
-            padding: 1rem;
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 1rem;
-        }
-
-        @media (min-width: 768px) {
-            .container {
-                grid-template-columns: 2fr 1fr;
-            }
-        }
-
-        .panel {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 1rem;
-        }
-
-        /* =====================================================
-         *  SAFETY PANEL
-         * ===================================================== */
-        .safety-panel.ok {
-            border-left: 8px solid var(--ok);
-        }
-
-        .safety-panel.warning {
-            border-left: 8px solid var(--warn);
-        }
-
-        .safety-panel.error {
-            border-left: 8px solid var(--err);
-        }
-
-        #safety-status {
-            font-size: 1.2rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-
-        #safety-ack-btn {
-            display: none;
-            padding: 0.8rem 1.2rem;
-            font-size: 1.1rem;
-            border: none;
-            border-radius: 10px;
-            background: var(--err);
-            color: #fff;
-            cursor: pointer;
-        }
-
-        #safety-ack-btn:active {
-            opacity: 0.85;
-        }
-
-        /* =====================================================
-         *  CONTROL BUTTONS
-         * ===================================================== */
-        .controls {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-        }
-
-        .controls button {
-            padding: 1.2rem;
-            font-size: 1.1rem;
-            border-radius: 12px;
-            border: none;
-            cursor: pointer;
-        }
-
-        .btn-nothalt {
-            background: var(--err);
-            color: #fff;
-        }
-
-        .btn-power {
-            background: var(--ok);
-            color: #fff;
-        }
-
-        .controls button:active {
-            opacity: 0.85;
-        }
-
-        /* =====================================================
-         *  LOG
-         * ===================================================== */
-        #log-window {
-            height: 220px;
-            overflow-y: auto;
-            font-family: monospace;
-            font-size: 0.85rem;
-            background: #fafbfc;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 0.5rem;
-        }
-
-        #log-window div {
-            margin-bottom: 0.2rem;
-            color: var(--subtext);
-        }
-        /* =====================================================
-         *  ACK OVERLAY (Modal)
-         * ===================================================== */
-        .overlay {
-            position: fixed;          /* 🔴 entscheidend */
-            inset: 0;                 /* top/right/bottom/left = 0 */
-            background: rgba(0, 0, 0, 0.45);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;            /* über allem */
-        }
-
-        .overlay.hidden {
-            display: none;
-        }
-
-        .overlay-box {
-            background: #ffffff;
-            border-radius: 14px;
-            padding: 1.5rem;
-            max-width: 420px;
-            width: 90%;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-            text-align: center;
-        }
-
-        .overlay-box h2 {
-            margin-top: 0;
-        }
-
-        .overlay-buttons {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-            margin-top: 1.5rem;
-        }
-
-        .btn-ack {
-            background: var(--err);
-            color: #ffffff;
-            border: none;
-            border-radius: 10px;
-            padding: 0.8rem;
-            font-size: 1.1rem;
-            cursor: pointer;
-        }
-
-        .btn-cancel {
-            background: #eaeef2;
-            border: none;
-            border-radius: 10px;
-            padding: 0.8rem;
-            font-size: 1.1rem;
-            cursor: pointer;
-        }
-
-        .btn-disabled {
-            background: #cfd7df !important;
-            color: #6e7781 !important;
-            cursor: not-allowed;
-            opacity: 0.8;
-        }
-        .ack-checkbox {
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            margin-top: 1rem;
-            font-size: 0.95rem;
-            color: var(--subtext);
-        }
-        .btn-ack:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-    </style>
+    <link rel="stylesheet" href="style.css">
+    
 </head>
 
 <body>
 <div class="container">
 
     <!-- ===================== LEFT ===================== -->
-    <div class="panel safety-panel ok" id="safety-panel">
-        <h1>Systemstatus</h1>
+    <main class="panel">
+        <h1>Betriebsübersicht</h1>
 
-        <div id="safety-status">
-            🟢 System OK
+        <p style="color: var(--subtext);">
+            Weichen, Blöcke, Bahnhöfe (folgt)
+        </p>
+
+        <div class="panel" style="margin-top: 1rem;">
+            <h1>Log</h1>
+            <div id="log-window"></div>
         </div>
+    </main>
 
-        <button id="safety-ack-btn" onclick="ackSafety()">
-            ACK bestätigen
-        </button>
-    </div>
+    <!-- ===================== RIGHT / SAFETY ===================== -->
+    <aside class="panel panel-right safety-panel ok" id="safety-panel">
 
-    <!-- ===================== RIGHT ===================== -->
-    <div class="panel">
-        <h1>Steuerung</h1>
-
-        <div class="controls">
+        <!-- NOT-AUS -->
+        <section class="safety-nothalt">
             <button class="btn-nothalt" onclick="sendNothalt()">
-                NOTHALT
+                🔴 NOT-AUS
             </button>
+        </section>
 
-            <button class="btn-power" onclick="sendPowerOn()">
-                POWER ON
+        <!-- POWER -->
+        <section>
+            <button id="btn-power" class="btn-power" onclick="sendPowerOn()">
+                ⚡ POWER ON
             </button>
-        </div>
-    </div>
+        </section>
 
-    <!-- ===================== LOG ===================== -->
-    <div class="panel" style="grid-column: 1 / -1;">
-        <h1>Log</h1>
-        <div id="log-window"></div>
-    </div>
+        <div class="panel-separator"></div>
+
+        <!-- STATUS -->
+        <section>
+            <h2>Systemstatus</h2>
+
+            <div id="safety-status" class="status-box status-ok">
+                🟢 System OK
+            </div>
+        </section>
+
+        <div class="panel-separator"></div>
+
+        <!-- MELDUNGEN -->
+        <section>
+            <h2>Meldungen</h2>
+            <div id="safety-messages-list">
+                <em>Keine Meldungen</em>
+            </div>
+        </section>
+
+        <div class="panel-separator"></div>
+
+        <!-- TRAFO -->
+        <section>
+            <h2>Trafo</h2>
+            <div>Trafo A: – V</div>
+            <div>Trafo B: – V</div>
+        </section>
+
+    </aside>
 
 </div>
 
 <!-- ===================== ACK OVERLAY ===================== -->
 <div id="ack-overlay" class="overlay hidden">
     <div class="overlay-box">
-        <h2>⚠ Sicherheitsquittierung</h2>
+        <h2 id="ack-title">⚠ Sicherheitsquittierung</h2>
 
-        <p id="ack-text">
-            Sicherheitsfehler
-        </p>
-        
+        <div id="ack-text">Sicherheitsfehler</div>
+
         <label class="ack-checkbox">
-            <input type="checkbox" id="ack-confirm-checkbox">
-            <span id="ack-confirm-text">Fehler vor Ort geprüft und behoben</span>
+            <input type="checkbox">
+            <span>Fehler vor Ort geprüft und behoben</span>
         </label>
 
         <div class="overlay-buttons">
             <button id="ack-confirm-btn" class="btn-ack" onclick="confirmAck()" disabled>
-                Bestätigen
+                Bestätigen (ACK)
             </button>
 
-            <button class="btn-cancel" onclick="hideAckOverlay()">
+            <button class="btn-cancel" onclick="hideOverlay()">
                 Abbrechen
             </button>
         </div>
     </div>
 </div>
 
-
+<script src="safety_ui_texts.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
