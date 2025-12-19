@@ -148,7 +148,9 @@ void Web::begin()
 {
     LittleFS.begin(true);
 
-    server.serveStatic("/", LittleFS, "/");
+    server.serveStatic("/", LittleFS, "/")
+      .setDefaultFile("index.htm")
+      .setCacheControl("no-cache");
     server.on("/", HTTP_GET,
         [](AsyncWebServerRequest *req){
             req->send(LittleFS, "/index.html", "text/html");
@@ -184,4 +186,5 @@ void Web::pushStateIfDirty()
 void Web::loop()
 {
     ws.cleanupClients();
+    Web::pushStateIfDirty();
 }

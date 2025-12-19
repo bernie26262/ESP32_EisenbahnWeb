@@ -2,8 +2,14 @@
  *  Eisenbahn WebUI – Safety & Status
  * ========================================================= */
 
+const DEBUG_WS = false;
+const DEBUG_UI = false;
+
+if (DEBUG_UI) console.log("script.js loaded");
+
 let socket = null;
 let wsConnected = false;
+let lastSafetyState = null;
 
 /* =========================================================
  *  INIT
@@ -36,12 +42,16 @@ function initWebSocket() {
     };
 
     socket.onmessage = (event) => {
+        if (DEBUG_WS) console.log("[WS RAW]", event.data);
+
         let msg;
         try {
             msg = JSON.parse(event.data);
-        } catch {
+        } catch (e) {
+            console.error("JSON parse error", e);
             return;
         }
+
         handleWsMessage(msg);
     };
 }
@@ -51,16 +61,17 @@ function initWebSocket() {
  * ========================================================= */
 
 function handleWsMessage(msg) {
+    if (DEBUG_WS) console.log("[WS MSG]", msg);
     if (!msg || msg.type !== "state") return;
 
-    window.lastSafetyState = msg.safety || null;
+    lastSafetyState = msg.safety || null;
 
-    const uiState = getUiStateFromSafetyState(window.lastSafetyState);
+    const uiState = getUiStateFromSafety(lastSafetyState);
     applyUiState(uiState);
 }
 
 /* =========================================================
- *  UI-STATE → UI
+ *  UI APPLY
  * ========================================================= */
 
 function applyUiState(ui) {
@@ -78,7 +89,8 @@ function applyUiState(ui) {
         hideOverlay();
     }
 
-    updatePowerButton(ui.level === "EMERGENCY");
+    // Power nur erlauben, wenn Safety NICHT locked
+    updatePowerButton(ui.locked === true);
 }
 
 /* =========================================================
@@ -90,6 +102,14 @@ function sendNothalt() {
 }
 
 function sendPowerOn() {
+    if (lastSafetyState && lastSafetyState.lock === true) {
+        showOverlay(
+            "Power On nicht möglich",
+            ["Safety-Lock aktiv"],
+            false
+        );
+        return;
+    }
     sendAction("powerOn");
 }
 
@@ -125,6 +145,7 @@ function hideOverlay() {
 
 function updatePowerButton(disabled) {
     const btn = document.getElementById("btn-power");
+    if (!btn) return;
     btn.disabled = disabled;
     btn.classList.toggle("disabled", disabled);
 }
@@ -133,50 +154,43 @@ function updatePowerButton(disabled) {
  *  SAFETY → UI STATE
  * ========================================================= */
 
-function getUiStateFromSafetyState(safetyState) {
-    if (!safetyState || !safetyState.reason) {
+function getUiStateFromSafety(safety) {
+    if (!safety) {
         return {
             level: "OK",
             overlay: false,
             ackRequired: false,
+            locked: false,
             title: "",
             text: []
         };
     }
 
-    const mapping = window.safetyUiMap[safetyState.reason];
-
-    if (!mapping) {
+    if (safety.lock === true) {
         return {
             level: "EMERGENCY",
             overlay: true,
             ackRequired: true,
+            locked: true,
             title: "NOT-AUS – Anlage gestoppt",
-            text: ["Unbekannter Sicherheitszustand."]
+            text: safety.text
+                ? [safety.text]
+                : ["Sicherheitsabschaltung aktiv"]
         };
     }
 
     return {
-        level: mapping.level,
-        overlay: mapping.overlay && safetyState.lock === true,
-        ackRequired: mapping.ackRequired && safetyState.lock === true,
-        title: mapping.title,
-        text: applyTextArgs(mapping.text, safetyState.textArgs)
+        level: "OK",
+        overlay: false,
+        ackRequired: false,
+        locked: false,
+        title: "",
+        text: []
     };
 }
 
-function applyTextArgs(lines, args = {}) {
-    return lines.map(l => {
-        let out = l;
-        for (const k in args) {
-            out = out.replaceAll(`{${k}}`, args[k]);
-        }
-        return out;
-    });
-}
-
 /* =========================================================
- *  LOG
+ *  LOG WINDOW
  * ========================================================= */
 
 function log(msg) {
