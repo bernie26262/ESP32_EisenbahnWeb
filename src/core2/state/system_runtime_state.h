@@ -35,4 +35,10 @@ namespace SystemRuntimeState
 
     extern uint8_t  errorType;
     extern uint8_t  errorIndex;
+
+    // UI: blockReason für WebUI (SAFETY_BLOCK_* Werte aus proto_common.h)
+    uint8_t safetyBlockReason();
+
+    // UI: Text wenn Lock aktiv aber kein spezifischer Fehlertext existiert
+    const char* safetyLockText();
 }

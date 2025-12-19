@@ -64,14 +64,18 @@ static String buildWsStateJson()
 // -----------------------------
 // Safety-Status (abgeleitet, ESP-Ebene)
 // -----------------------------
-s["lock"] = SystemRuntimeState::safetyLock();
-s["reason"] = static_cast<uint8_t>(
-    SystemRuntimeState::safetyReason()
-);
+const auto& m2 = SystemRuntimeState::mega2Status();
+
+// Grundzustand
+s["lock"]        = SystemRuntimeState::safetyLock();
+s["blockReason"] = SystemRuntimeState::safetyBlockReason();
+
+// Power-Status (aus Flags)
+s["powerOn"] = (m2.flags & SYS_POWER_ON) != 0;
 
 if (m2online)
 {
-    doc["mega2"]["flags"] = SystemRuntimeState::mega2Status().flags;
+    doc["mega2"]["flags"] = m2.flags;
 
     s["errorType"]  = SystemRuntimeState::errorType;
     s["errorIndex"] = SystemRuntimeState::errorIndex;
@@ -87,6 +91,7 @@ else
     s["errorIndex"] = 0;
     s["text"] = "Mega2 offline";
 }
+
 
     String out;
     serializeJson(doc, out);

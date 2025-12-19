@@ -2,7 +2,7 @@
  *  Eisenbahn WebUI – Safety & Status
  * ========================================================= */
 
-const DEBUG_WS = false;
+const DEBUG_WS = true;
 const DEBUG_UI = false;
 
 let socket = null;
