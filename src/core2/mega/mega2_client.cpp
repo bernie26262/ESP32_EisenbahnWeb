@@ -117,15 +117,25 @@ bool Mega2Client::setNotaus(bool on)
     buf[0] = M2_CMD_SET_NOTAUS;
     buf[1] = on ? 1 : 0;
 
-    bool ok = I2CBus::write(MEGA2_ADDR, buf, sizeof(buf));
+    // 1) Command senden
+    if (!I2CBus::write(MEGA2_ADDR, buf, sizeof(buf)))
+        return false;
+
+    // 2) kurze Pause
+    delayMicroseconds(1000);
+
+    // 3) 1-Byte-Response lesen (WICHTIG!)
+    uint8_t resp = 0;
+    if (!I2CBus::read(MEGA2_ADDR, &resp, sizeof(resp)))
+        return false;
 
     DBG_PRINTF(
-        ok
-            ? (on ? "[M2] NOTAUS SET\n" : "[M2] NOTAUS RELEASE\n")
+        resp
+            ? (on ? "[M2] NOTAUS SET OK\n" : "[M2] NOTAUS RELEASE OK\n")
             : "[M2] NOTAUS CMD FAIL\n"
     );
 
-    return ok;
+    return (resp == 1);
 }
 
 // ------------------------------------------------------------
@@ -135,16 +145,27 @@ bool Mega2Client::powerOn()
 {
     uint8_t cmd = M2_CMD_POWER_ON;
 
-    bool ok = I2CBus::write(MEGA2_ADDR, &cmd, sizeof(cmd));
+    // 1) Command senden
+    if (!I2CBus::write(MEGA2_ADDR, &cmd, sizeof(cmd)))
+        return false;
+
+    // 2) kurze Pause
+    delayMicroseconds(1000);
+
+    // 3) 1-Byte-Response lesen (WICHTIG!)
+    uint8_t resp = 0;
+    if (!I2CBus::read(MEGA2_ADDR, &resp, sizeof(resp)))
+        return false;
 
     DBG_PRINTF(
-        ok
-            ? "[M2] POWER ON CMD\n"
-            : "[M2] POWER ON CMD FAIL\n"
+        resp
+            ? "[M2] POWER ON OK\n"
+            : "[M2] POWER ON FAIL\n"
     );
 
-    return ok;
+    return (resp == 1);
 }
+
 
 
 namespace Mega2Client {
