@@ -16,35 +16,11 @@
 static AsyncWebServer server(80);
 static AsyncWebSocket ws("/ws");
 
-// 🔴 NEU: Dirty-Flag (Definition)
-volatile bool g_stateDirty = true;
+// IMPORTANT: Dieses Symbol wird (derzeit) auch aus anderen Modulen referenziert.
+bool g_stateDirty = true;
 
 // ---------------------------------------------------------
-// Status JSON (LEGACY / Debug)
-// ---------------------------------------------------------
-static String buildStatusJson()
-{
-    StaticJsonDocument<512> doc;
-
-    doc["eth"]["connected"] = Net::EthManager::isConnected();
-    doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
-
-    doc["mega2"]["online"] = SystemRuntimeState::mega2Online();
-    if (SystemRuntimeState::mega2Online())
-    {
-        doc["mega2"]["flags"] = SystemRuntimeState::mega2Status().flags;
-        doc["mega2"]["safety_lock"] = SystemRuntimeState::safetyLock();
-        doc["mega2"]["safety_reason"] =
-            (uint8_t)SystemRuntimeState::safetyReason();
-    }
-
-    String out;
-    serializeJson(doc, out);
-    return out;
-}
-
-// ---------------------------------------------------------
-// 🔴 NEU: WebSocket State JSON (EVENT-BASIERT)
+// WebSocket State JSON
 // ---------------------------------------------------------
 static String buildWsStateJson()
 {
@@ -56,42 +32,90 @@ static String buildWsStateJson()
     doc["eth"]["connected"] = Net::EthManager::isConnected();
     doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
 
-    bool m2online = SystemRuntimeState::mega2Online();
+    const bool m2online = SystemRuntimeState::mega2Online();
     doc["mega2"]["online"] = m2online;
+
+// ---------------------------------
+// Mega2 Details (SBHF/Blocks/Weichen)
+// ---------------------------------
+if (m2online)
+{
+    const auto& m2s = SystemRuntimeState::mega2Status();
+
+    doc["mega2"]["flags"] = m2s.flags;
+    doc["mega2"]["blockOccupiedMask"] = m2s.blockOccupiedMask;
+
+    const uint8_t allowedMask = (uint8_t)((m2s.reserved >> 8) & 0xFF);
+    const uint8_t warningMask = (uint8_t)(m2s.reserved & 0xFF);
+
+    JsonObject sbhf = doc["mega2"]["sbhf"].to<JsonObject>();
+    sbhf["state"]        = m2s.sbhfState;
+    sbhf["occupiedMask"] = m2s.sbhfOccupiedMask;
+    sbhf["currentGleis"] = m2s.sbhfCurrentGleis;
+    sbhf["allowedMask"]  = allowedMask;
+    sbhf["warningMask"]  = warningMask;
+    sbhf["restricted"]   = ((warningMask & 0x01) != 0) || (allowedMask != 0x07 && allowedMask != 0x00);
+
+    JsonObject t = doc["mega2"]["turnouts"].to<JsonObject>();
+    t["sollMask"] = m2s.turnoutSollMask;
+    t["istMask"]  = m2s.turnoutIstMask;
+
+    // Step 3.5: Entry-Matrix (FROM->TO)
+    JsonArray entry = doc["mega2"]["entryAllowed"].to<JsonArray>();
+    const uint16_t* ea = SystemRuntimeState::mega2EntryAllowed();
+    for (uint8_t i = 0; i < 9; i++)
+        entry.add(ea[i]);
+
+    JsonArray entryPrev = doc["mega2"]["entryPreview"].to<JsonArray>();
+    const uint16_t* ep = SystemRuntimeState::mega2EntryPreview();
+    for (uint8_t i = 0; i < 9; i++)
+        entryPrev.add(ep[i]);
+}
+
 
     JsonObject s = doc["safety"].to<JsonObject>();
 
-// -----------------------------
-// Safety-Status (abgeleitet, ESP-Ebene)
-// -----------------------------
-const auto& m2 = SystemRuntimeState::mega2Status();
+    const auto& m2 = SystemRuntimeState::mega2Status();
 
-// Grundzustand
-s["lock"]        = SystemRuntimeState::safetyLock();
-s["blockReason"] = SystemRuntimeState::safetyBlockReason();
+    // Grundzustand (ESP abgeleitet)
+    s["lock"]        = SystemRuntimeState::safetyLock();
+    s["blockReason"] = SystemRuntimeState::safetyBlockReason();
 
-// Power-Status (aus Flags)
-s["powerOn"] = (m2.flags & SYS_POWER_ON) != 0;
-
-if (m2online)
-{
-    doc["mega2"]["flags"] = m2.flags;
-
+    // Fehlerdetails (für UI-Textmapping)
     s["errorType"]  = SystemRuntimeState::errorType;
     s["errorIndex"] = SystemRuntimeState::errorIndex;
 
+    // Power-Status (aus Flags)
+    s["powerOn"] = (m2.flags & SYS_POWER_ON) != 0;
+
+    // Klartext (ESP-seitig)
     s["text"] = SystemRuntimeState::safetyErrorText(
         SystemRuntimeState::errorType,
         SystemRuntimeState::errorIndex
     );
-}
-else
-{
-    s["errorType"]  = 0;
-    s["errorIndex"] = 0;
-    s["text"] = "Mega2 offline";
-}
 
+    if (m2online)
+    {
+        doc["mega2"]["flags"] = m2.flags;
+
+        // -------------------------------------------------
+        // Mega2 / SBHF: Masken aus reserved (Variante A)
+        // reserved = (allowedMask<<8) | warningMask
+        // -------------------------------------------------
+        const uint8_t allowedMask = (uint8_t)((m2.reserved >> 8) & 0xFF);
+        const uint8_t warningMask = (uint8_t)(m2.reserved & 0xFF);
+
+        JsonObject sbhf = doc["mega2"]["sbhf"].to<JsonObject>();
+        sbhf["allowedMask"] = allowedMask;
+        sbhf["warningMask"] = warningMask;
+
+        // restricted: Bit0 bevorzugt, fallback über allowedMask
+        const bool restricted =
+            ((warningMask & 0x01) != 0) ||
+            (allowedMask != 0x07 && allowedMask != 0x00);
+
+        sbhf["restricted"] = restricted;
+    }
 
     String out;
     serializeJson(doc, out);
@@ -99,9 +123,9 @@ else
 }
 
 // ---------------------------------------------------------
-// WebSocket Events
+// WS Event Handler
 // ---------------------------------------------------------
-static void onWsEvent(AsyncWebSocket*,
+static void onWsEvent(AsyncWebSocket* server,
                       AsyncWebSocketClient* client,
                       AwsEventType type,
                       void* arg,
@@ -110,6 +134,7 @@ static void onWsEvent(AsyncWebSocket*,
 {
     if (type == WS_EVT_CONNECT)
     {
+        // Client bekommt sofort state
         client->text(buildWsStateJson());
         return;
     }
@@ -121,76 +146,55 @@ static void onWsEvent(AsyncWebSocket*,
     if (!info->final || info->index != 0 || info->len != len)
         return;
 
-    data[len] = 0;
-
+    // data ist nicht null-terminiert -> direkt mit len parsen
     StaticJsonDocument<256> cmd;
-    if (deserializeJson(cmd, (char*)data))
+    if (deserializeJson(cmd, data, len))
         return;
 
     const char* action = cmd["action"];
     if (!action)
         return;
 
-    // -------------------------------------------------
-    // Safety Commands
-    // -------------------------------------------------
     if (!strcmp(action, "safetyAck"))
     {
         Mega2Client::safetyAck();
+        g_stateDirty = true;
         return;
     }
 
     if (!strcmp(action, "nothalt"))
     {
         Mega2Client::setNotaus(true);
+        g_stateDirty = true;
         return;
     }
 
     if (!strcmp(action, "powerOn"))
     {
         Mega2Client::powerOn();
+        g_stateDirty = true;
         return;
     }
 }
-
 
 // ---------------------------------------------------------
 // Web::begin
 // ---------------------------------------------------------
 void Web::begin()
 {
-    LittleFS.begin(true);
-
-    server.serveStatic("/", LittleFS, "/")
-      .setDefaultFile("index.htm")
-      .setCacheControl("no-cache");
-    server.on("/", HTTP_GET,
-        [](AsyncWebServerRequest *req){
-            req->send(LittleFS, "/index.html", "text/html");
-        });
-
-    server.on("/status", HTTP_GET,
-        [](AsyncWebServerRequest* req){
-            req->send(200, "application/json", buildStatusJson());
-        });
+    if (!LittleFS.begin(true))
+    {
+        Serial.println("[WEB] LittleFS mount FAILED!");
+        return;
+    }
 
     ws.onEvent(onWsEvent);
     server.addHandler(&ws);
 
+    server.serveStatic("/", LittleFS, "/").setDefaultFile("index.htm");
+
     server.begin();
-    Serial.println("[Web] Server gestartet");
-}
-
-// ---------------------------------------------------------
-// 🔴 NEU: Push bei Änderung
-// ---------------------------------------------------------
-void Web::pushStateIfDirty()
-{
-    if (!g_stateDirty)
-        return;
-
-    ws.textAll(buildWsStateJson());
-    g_stateDirty = false;
+    Serial.println("[WEB] HTTP server started");
 }
 
 // ---------------------------------------------------------
@@ -200,4 +204,16 @@ void Web::loop()
 {
     ws.cleanupClients();
     Web::pushStateIfDirty();
+}
+
+// ---------------------------------------------------------
+// Web::pushStateIfDirty (laut webserver.h)
+// ---------------------------------------------------------
+void Web::pushStateIfDirty()
+{
+    if (!g_stateDirty)
+        return;
+
+    ws.textAll(buildWsStateJson());
+    g_stateDirty = false;
 }

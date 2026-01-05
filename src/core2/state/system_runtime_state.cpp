@@ -7,6 +7,11 @@
 // Interner Zustand
 // ----------------------------------------------------
 static SystemStatus s_m2Status{};
+
+// Step 3.5: Entry-Matrix Cache (FROM->TO)
+static uint16_t     s_m2EntryAllowed[9]  = {0};
+static uint16_t     s_m2EntryPreview[9]  = {0};
+static uint32_t     s_lastEntryRxMs = 0;
 static uint32_t     s_lastRxMs = 0;
 
 uint8_t SystemRuntimeState::errorType  = 0;
@@ -166,4 +171,40 @@ const char* SystemRuntimeState::safetyErrorText(uint8_t type, uint8_t index)
         return "NOT-AUS – Anlage gestoppt";
 
     return "Safety aktiv – bitte quittieren (ACK)";
+}
+
+
+const uint16_t* SystemRuntimeState::mega2EntryAllowed()
+{
+    return s_m2EntryAllowed;
+}
+
+const uint16_t* SystemRuntimeState::mega2EntryPreview()
+{
+    return s_m2EntryPreview;
+}
+
+void SystemRuntimeState::updateMega2EntryAllowed(const uint16_t* arr, uint8_t n)
+{
+    if (!arr) return;
+    if (n > 9) n = 9;
+
+    for (uint8_t i = 0; i < n; i++)
+        s_m2EntryAllowed[i] = arr[i];
+
+    s_lastEntryRxMs = millis();
+    g_stateDirty = true;
+}
+
+
+void SystemRuntimeState::updateMega2EntryPreview(const uint16_t* arr, uint8_t n)
+{
+    if (!arr) return;
+    if (n > 9) n = 9;
+
+    for (uint8_t i = 0; i < n; i++)
+        s_m2EntryPreview[i] = arr[i];
+
+    s_lastEntryRxMs = millis();
+    g_stateDirty = true;
 }

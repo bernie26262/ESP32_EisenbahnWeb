@@ -1,14 +1,8 @@
 #pragma once
 #include <stdint.h>
 
-// =====================================================
-// Versionierung
-// =====================================================
-static constexpr uint8_t SYSTEM_STATUS_VERSION = 2;
+static constexpr uint8_t SYSTEM_STATUS_VERSION = 3;
 
-// =====================================================
-// Controller-ID
-// =====================================================
 enum SystemNodeId : uint8_t
 {
     NODE_NONE  = 0,
@@ -16,9 +10,6 @@ enum SystemNodeId : uint8_t
     NODE_MEGA2 = 2,
 };
 
-// =====================================================
-// Statusflags
-// =====================================================
 enum SystemStatusFlags : uint16_t
 {
     SYS_OK               = 0,
@@ -26,12 +17,11 @@ enum SystemStatusFlags : uint16_t
     SYS_POWER_ON         = 1 << 1,
     SYS_ERROR_PRESENT    = 1 << 2,
     SYS_CONTROLLER_RESET = 1 << 3,
+    SYS_WARNING_PRESENT  = 1 << 4,
 };
 
-// =====================================================
-// Gemeinsames Systemstatus-Struct
-// =====================================================
-struct SystemStatus
+// v3 (kompakt, <=32 Bytes) — PACKED für stabile I2C-Übertragung
+struct __attribute__((packed)) SystemStatus
 {
     uint8_t  version;
     uint8_t  nodeId;
@@ -42,7 +32,6 @@ struct SystemStatus
 
     uint16_t flags;
 
-    // --- SAFETY ERROR DETAILS (v2) ---
     uint8_t  safetyErrorType;
     uint8_t  safetyErrorIndex;
 
@@ -51,5 +40,13 @@ struct SystemStatus
     uint8_t  sbhfState;
     uint8_t  sbhfOccupiedMask;
 
+    uint8_t  sbhfCurrentGleis;
+    uint8_t  _pad0;
+
+    uint16_t turnoutSollMask;
+    uint16_t turnoutIstMask;
+
     uint16_t reserved;
 };
+
+static_assert(sizeof(SystemStatus) == 26, "SystemStatus must be 26 bytes (packed)");

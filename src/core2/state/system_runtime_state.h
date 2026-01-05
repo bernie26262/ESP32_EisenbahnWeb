@@ -41,4 +41,17 @@ namespace SystemRuntimeState
 
     // UI: Text wenn Lock aktiv aber kein spezifischer Fehlertext existiert
     const char* safetyLockText();
+
+
+// ----------------------------------------------------
+// Step 3.5: Block-Einfahrten (FROM->TO) (Mega2)
+// Array index: from-1 (B1..B9), Bit(to-1)=1 => Einfahrt erlaubt
+// ----------------------------------------------------
+const uint16_t* mega2EntryAllowed();
+void updateMega2EntryAllowed(const uint16_t* arr, uint8_t n);
+
+// Preview: Topologie + Ziel frei (ohne Laufzeitbedingungen)
+const uint16_t* mega2EntryPreview();
+void updateMega2EntryPreview(const uint16_t* arr, uint8_t n);
+
 }

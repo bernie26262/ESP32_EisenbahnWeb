@@ -24,218 +24,195 @@ body {
     color: var(--text);
 }
 
-h1 { margin: 0 0 0.5rem 0; font-size: 1.6rem; }
-h2 { margin: 0 0 0.5rem 0; }
-
-/* =====================================================
- *  LAYOUT (GRID – ROBUST)
- * ===================================================== */
+/* Layout */
 .container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 1rem;
-
     display: grid;
-    grid-template-columns: 3fr 1fr;
-    grid-template-areas: "main safety";
+    grid-template-columns: 1fr 380px;
     gap: 1rem;
+    padding: 1rem;
 }
 
-@media (max-width: 900px) {
-    .container {
-        grid-template-columns: 1fr;
-        grid-template-areas:
-            "safety"
-            "main";
-    }
-}
-
-main {
-    grid-area: main;
-}
-
-#safety-panel {
-    grid-area: safety;
-}
-
-/* =====================================================
- *  PANELS
- * ===================================================== */
 .panel {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 1rem;
 }
 
 .panel-right {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
-.panel-separator {
-    border-top: 1px solid #ddd;
-    margin: 0.5rem 0;
-}
-
-/* =====================================================
- *  SAFETY PANEL – STATUSFLÄCHEN
- * ===================================================== */
-#safety-panel.ok {
-    background: #eaf6ee;
-    border-left: 10px solid var(--ok);
-}
-
-#safety-panel.warning {
-    background: #fff8e1;
-    border-left: 10px solid var(--warn);
-}
-
-#safety-panel.emergency {
-    background: #fdecea;
-    border-left: 10px solid var(--err);
-    box-shadow: inset 0 0 0 3px rgba(207, 34, 46, 0.15);
-}
-
-#safety-panel.emergency h2,
-#safety-panel.emergency #safety-status {
-    color: #a40e26;
-    font-weight: 700;
-}
-
-#safety-panel.warning h2,
-#safety-panel.warning #safety-status {
-    color: #7a5c00;
-    font-weight: 600;
-}
-
-#safety-panel.ok h2,
-#safety-panel.ok #safety-status {
-    color: #1f6f43;
-}
-
-#safety-status {
-    font-size: 1.2rem;
-    font-weight: 600;
-    margin-bottom: 1rem;
-}
-
-/* =====================================================
- *  NOT-AUS
- * ===================================================== */
-.safety-nothalt {
     position: sticky;
-    top: 0;
-    z-index: 100;
-    background: inherit;
-    padding: 0.75rem 0 0.5rem 0;
+    top: 1rem;
+    height: fit-content;
 }
 
+/* Headings */
+h1 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1.25rem;
+}
+
+h2 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+}
+
+/* Log */
+#log-window {
+    height: 240px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.5rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.9rem;
+    background: #fff;
+}
+
+/* Safety panel levels */
+.safety-panel.ok .status-box { border-left: 6px solid var(--ok); }
+.safety-panel.warn .status-box { border-left: 6px solid var(--warn); }
+.safety-panel.err .status-box { border-left: 6px solid var(--err); }
+
+.status-box {
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+}
+
+/* Buttons */
 .btn-nothalt {
-    background: #d00000;
-    color: #fff;
-    border: none;
-    border-radius: 14px;
     width: 100%;
-    min-height: 52px;
-    font-size: 1.4rem;
-    font-weight: 700;
-    cursor: pointer;
-}
-
-/* =====================================================
- *  BUTTONS
- * ===================================================== */
-.btn-power {
-    background: var(--ok);
-    color: #fff;
+    padding: 0.9rem;
     border: none;
     border-radius: 12px;
-    font-size: 1.2rem;
-    padding: 0.8rem;
-    width: 100%;
+    background: var(--err);
+    color: #fff;
+    font-weight: 700;
     cursor: pointer;
 }
 
-.btn-power.disabled {
-    background: #9bb7d4;
+.btn-power {
+    width: 100%;
+    padding: 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    cursor: pointer;
+}
+
+.btn-power:disabled {
     opacity: 0.6;
     cursor: not-allowed;
 }
 
-/* =====================================================
- *  LOG
- * ===================================================== */
-#log-window {
-    height: 220px;
-    overflow-y: auto;
-    font-family: monospace;
-    font-size: 0.85rem;
-    background: #fafbfc;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.5rem;
+.panel-separator {
+    height: 1px;
+    background: var(--border);
+    margin: 1rem 0;
 }
 
-#log-window div {
-    margin-bottom: 0.2rem;
-    color: var(--subtext);
-}
-
-/* =====================================================
- *  OVERLAY
- * ===================================================== */
+/* Overlay */
 .overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.45);
+    background: rgba(0,0,0,0.35);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 9999;
+    padding: 1rem;
 }
 
 .overlay.hidden { display: none; }
 
 .overlay-box {
+    width: min(560px, 95vw);
     background: #fff;
     border-radius: 14px;
-    padding: 1.5rem;
-    max-width: 420px;
-    width: 90%;
-    text-align: center;
-}
-
-.overlay-buttons {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    margin-top: 1.5rem;
-}
-
-.btn-ack {
-    background: var(--err);
-    color: #fff;
-    border: none;
-    border-radius: 10px;
-    padding: 0.8rem;
-    font-size: 1.1rem;
-}
-
-.btn-cancel {
-    background: #eaeef2;
-    border: none;
-    border-radius: 10px;
-    padding: 0.8rem;
-    font-size: 1.1rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
 }
 
 .ack-checkbox {
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    margin-top: 1rem;
-    font-size: 0.95rem;
+    gap: 0.5rem;
+    margin: 0.75rem 0;
     color: var(--subtext);
 }
+
+.overlay-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+.btn {
+    padding: 0.6rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: #fff;
+    cursor: pointer;
+}
+
+.btn-ack {
+    background: var(--ok);
+    color: #fff;
+    border-color: var(--ok);
+}
+
+/* Responsive */
+@media (max-width: 1100px) {
+    .container { grid-template-columns: 1fr; }
+    .panel-right { position: static; }
+}
+
+
+/* =====================================================
+ *  OVERVIEW GRID (LEFT)
+ * ===================================================== */
+.overview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+@media (max-width: 900px) {
+    .overview-grid { grid-template-columns: 1fr; }
+}
+
+.overview-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.75rem;
+    background: var(--panel);
+}
+
+.overview-card h2 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    color: var(--text);
+}
+
+.hint {
+    color: var(--subtext);
+    font-size: 0.95rem;
+}
+
+/* Badges (simple) */
+.badge-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    font-size: 0.85rem;
+    background: #fff;
+}
+
+.badge-green { border-color: var(--ok); }
+.badge-red   { border-color: var(--err); }

@@ -14,6 +14,7 @@
 // Konfiguration
 // ------------------------------------------------------------
 static constexpr uint32_t I2C_BOOT_DELAY_MS  = 500;
+static constexpr uint32_t MEGA2_ENTRY_POLL_MS = 500;
 static constexpr uint32_t MEGA2_POLL_MS      = 200;
 static constexpr uint32_t MEGA2_RECONNECT_MS = 5000;
 
@@ -24,6 +25,7 @@ static bool     s_i2cStarted  = false;
 static bool     s_mega2Online = false;
 static uint32_t s_bootMs      = 0;
 static uint32_t s_lastPollMs  = 0;
+static uint32_t s_lastEntryPollMs = 0;
 static uint32_t s_lastRetryMs = 0;
 static bool     s_scanned     = false;
 
@@ -109,6 +111,16 @@ void Mega2Link::update()
                 s_lastRetryMs = now;
                 Serial.println(F("[I2C] Mega2 offline"));
             }
+
+            // Entry-Matrizen separat (nicht kritisch fürs Online-Flag)
+            if (now - s_lastEntryPollMs >= MEGA2_ENTRY_POLL_MS)
+            {
+                s_lastEntryPollMs = now;
+
+                Mega2Client::pollEntryMatrix();
+                Mega2Client::pollEntryPreviewMatrix();
+            }
+
         }
     }
     else

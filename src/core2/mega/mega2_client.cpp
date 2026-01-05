@@ -23,17 +23,13 @@ void Mega2Client::begin()
 }
 
 // ------------------------------------------------------------
-// Polling: kompletten SystemStatus lesen
-// Gibt false zurück, wenn Mega2 nicht erreichbar ist
+// Polling: Status von Mega2 abholen
 // ------------------------------------------------------------
-
-
 bool Mega2Client::pollStatus()
 {
     // 1. Adresse ansprechen (Existenz prüfen)
     Wire.beginTransmission(MEGA2_ADDR);
     uint8_t rc = Wire.endTransmission();
-    
 
     #ifdef DEBUG_I2C
     Serial.printf("[I2C][pollStatus] endTransmission rc=%u\n", rc);
@@ -64,6 +60,20 @@ bool Mega2Client::pollStatus()
         expected
     );
 
+    // 3.1 Sanity / Version check (v2)
+    if (tmpStatus.version != SYSTEM_STATUS_VERSION ||
+        tmpStatus.size    != sizeof(SystemStatus)  ||
+        tmpStatus.nodeId  != NODE_MEGA2)
+    {
+        DBG_PRINTF(
+            "[M2] Status reject: ver=%u(exp %u) size=%u(exp %u) node=%u\n",
+            tmpStatus.version, SYSTEM_STATUS_VERSION,
+            tmpStatus.size, (unsigned)sizeof(SystemStatus),
+            tmpStatus.nodeId
+        );
+        return false;
+    }
+
     // 4. Gültigen Status ins Runtime-State übernehmen
     SystemRuntimeState::updateMega2Status(tmpStatus);
 
@@ -73,8 +83,6 @@ bool Mega2Client::pollStatus()
 
     return true;
 }
-
-
 
 // ------------------------------------------------------------
 // SAFETY: Fehler quittieren (ACK)
@@ -121,8 +129,7 @@ bool Mega2Client::setNotaus(bool on)
 }
 
 // ------------------------------------------------------------
-// SAFETY: explizites Wiedereinschalten der Leistung
-// Protokoll: [cmd], keine Response
+// POWER ON
 // ------------------------------------------------------------
 bool Mega2Client::powerOn()
 {
@@ -138,3 +145,39 @@ bool Mega2Client::powerOn()
 
     return ok;
 }
+
+
+namespace Mega2Client {
+bool pollEntryMatrix()
+{
+    uint8_t cmd = M2_CMD_GET_ENTRY_MATRIX;
+    if (!I2CBus::write(MEGA2_ADDR, &cmd, sizeof(cmd)))
+        return false;
+
+    delayMicroseconds(1000);
+
+    uint16_t entry[9] = {0};
+    if (!I2CBus::read(MEGA2_ADDR, entry, sizeof(entry)))
+        return false;
+
+    SystemRuntimeState::updateMega2EntryAllowed(entry, 9);
+    return true;
+}
+
+
+bool pollEntryPreviewMatrix()
+{
+    uint8_t cmd = M2_CMD_GET_ENTRY_PREVIEW_MATRIX;
+    if (!I2CBus::write(MEGA2_ADDR, &cmd, sizeof(cmd)))
+        return false;
+
+    delayMicroseconds(1000);
+
+    uint16_t entry[9] = {0};
+    if (!I2CBus::read(MEGA2_ADDR, entry, sizeof(entry)))
+        return false;
+
+    SystemRuntimeState::updateMega2EntryPreview(entry, 9);
+    return true;
+}
+} // namespace Mega2Client

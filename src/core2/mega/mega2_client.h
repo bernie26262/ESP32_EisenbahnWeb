@@ -10,6 +10,12 @@ namespace Mega2Client
     // Liefert true, wenn Mega2 erreichbar und Status gültig
     bool pollStatus();
 
+// Step 3.5: Entry-Matrix (FROM->TO)
+bool pollEntryMatrix();
+
+// Step 3.5b: Entry-Preview-Matrix (FROM->TO)
+bool pollEntryPreviewMatrix();
+
     // Safety
     bool safetyAck();          // ACK (M2_CMD_ACK_ERROR)
     bool setNotaus(bool on);   // NOTHALT / POWER ON (M2_CMD_SET_NOTAUS)

@@ -15,9 +15,39 @@
     <main class="panel">
         <h1>Betriebsübersicht</h1>
 
-        <p style="color: var(--subtext);">
-            Weichen, Blöcke, Bahnhöfe (folgt)
-        </p>
+        <div class="overview-grid">
+            <section class="overview-card">
+                <h2>SBHF (Mega2)</h2>
+                <div id="ov-sbhf">
+                    <em>keine Daten</em>
+                </div>
+            </section>
+
+            <section class="overview-card">
+                <h2>Blöcke (Mega2)</h2>
+                <div id="ov-blocks">
+                    <em>keine Daten</em>
+                </div>
+            </section>
+
+            <section class="overview-card">
+                <h2>Weichen (Mega2)</h2>
+                <div id="ov-turnouts">
+                    <em>noch nicht angebunden</em>
+                </div>
+            </section>
+
+            <section class="overview-card">
+                <h2>Bahnhöfe / Signale (Mega1)</h2>
+                <div id="ov-stations">
+                    <em>noch nicht definiert</em>
+                </div>
+            </section>
+        </div>
+
+        <div class="hint" style="margin-top: 1rem;">
+            Diagnose/Kalibrier-Seite ist geplant (folgt).
+        </div>
 
         <div class="panel" style="margin-top: 1rem;">
             <h1>Log</h1>
@@ -88,19 +118,14 @@
             <span>Fehler vor Ort geprüft und behoben</span>
         </label>
 
-        <div class="overlay-buttons">
-            <button id="ack-confirm-btn" class="btn-ack" onclick="confirmAck()" disabled>
-                Bestätigen (ACK)
-            </button>
-
-            <button class="btn-cancel" onclick="hideOverlay()">
-                Abbrechen
-            </button>
+        <div class="overlay-actions">
+            <button class="btn" onclick="closeOverlay()">Abbrechen</button>
+            <button class="btn btn-ack" onclick="confirmAck()">ACK senden</button>
         </div>
     </div>
 </div>
 
-<!-- <script src="safety_ui_texts.js"></script> -->
+<script src="safety_ui_texts.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
