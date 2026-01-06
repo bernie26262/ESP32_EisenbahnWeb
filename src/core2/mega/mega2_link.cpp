@@ -63,7 +63,16 @@ static constexpr uint32_t POLL_PREVIEW_MS  = 2000;  // Preview noch seltener
 
 namespace Mega2Link
 {
-    void begin()
+    
+void requestPollNow()
+{
+    // Sofortiges Polling (kein Warten auf Backoff/Interval)
+    s_nextPollMs = 0;
+    // wenn wir gerade im Backoff sind, wieder auf Normal-Intervall zurück
+    if (s_pollIntervalMs == 0) s_pollIntervalMs = POLL_STATUS_MS;
+}
+
+void begin()
     {
         Mega2Client::begin();
         s_lastPollMs    = 0;

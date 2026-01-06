@@ -8,7 +8,7 @@ const DEBUG_UI = false;
 // Wenn du nach einem Firmware-Flash "alte" Buttons siehst:
 // -> unbedingt auch "Upload File System Image" (UploadFS) ausführen.
 // Diese Version hilft beim Verifizieren, dass Browser + LittleFS wirklich neu sind.
-const UI_VERSION = "2026-01-06-p7";
+const UI_VERSION = "2026-01-06-p20-ackpending";
 
 let socket = null;
 let wsConnected = false;
@@ -17,6 +17,13 @@ let wsConnected = false;
 let lastSafetyState = null;
 // letzter empfangener mega2-state (online/flags)
 let lastMega2Online = false;
+
+// letzter kompletter WS-State (für Button/Disable-Regeln)
+let lastStateMsg = null;
+
+// ACK wurde gesendet, aber Safety-Lock ist (noch) aktiv.
+// Wird zurückgesetzt, sobald safety.lock wieder false ist.
+let ackPending = false;
 
 /* =========================================================
  *  INIT
@@ -39,11 +46,19 @@ function connectWebSocket() {
   socket.onopen = () => {
     wsConnected = true;
     logLine("WS connected");
+    if (lastStateMsg) {
+      const uiState = getUiStateFromWs(lastStateMsg, lastSafetyState, lastMega2Online);
+      applyUiState(uiState, lastStateMsg);
+    }
   };
 
   socket.onclose = () => {
     wsConnected = false;
     logLine("WS closed - retry...");
+    if (lastStateMsg) {
+      const uiState = getUiStateFromWs(lastStateMsg, lastSafetyState, lastMega2Online);
+      applyUiState(uiState, lastStateMsg);
+    }
     setTimeout(connectWebSocket, 1000);
   };
 
@@ -82,6 +97,12 @@ function wsSend(obj) {
   }
 }
 
+function sendPollNow() {
+  wsSend({ action: "pollNow" });
+  logLine("↻ Prüfen gesendet");
+}
+
+
 function wsSendAction(action, okMsg) {
   const ok = wsSend({ action: action });
   if (ok && okMsg) logLine(okMsg);
@@ -96,10 +117,15 @@ function handleWsMessage(msg) {
   if (!msg || msg.type !== "state") return;
 
   lastSafetyState = msg.safety || null;
+	// Sobald Safety-Lock wieder weg ist, ist ein evtl. laufender Quittierungs-/Test-Flow beendet.
+	if (lastSafetyState && lastSafetyState.lock === false) {
+	  ackPending = false;
+	}
   lastMega2Online = !!(msg.mega2 && msg.mega2.online);
+  lastStateMsg = msg;
 
   const uiState = getUiStateFromWs(msg, lastSafetyState, lastMega2Online);
-  applyUiState(uiState);
+  applyUiState(uiState, msg);
 
   // Schritt 2: rechts "Meldungen" befüllen (Safety + SBHF Masken)
   renderPowerWarningsEmergencies(msg);
@@ -112,6 +138,25 @@ function handleWsMessage(msg) {
  *  UI STATE FROM WS
  * ========================================================= */
 
+function getSafetyOverlayTexts(safety) {
+  try {
+    // Prefer numeric codes (errType/errIndex) -> text mapping from safety_ui_texts.js
+    if (window.SAFETY_UI_TEXTS && typeof window.SAFETY_UI_TEXTS.fromCodes === 'function') {
+      const t = window.SAFETY_UI_TEXTS.fromCodes(safety?.errType, safety?.errIndex);
+      if (t && (t.title || (t.lines && t.lines.length))) {
+        return { title: t.title || '⚠ Sicherheitsquittierung', lines: t.lines || [] };
+      }
+    }
+  } catch (e) {
+    console.warn('SAFETY_UI_TEXTS error', e);
+  }
+  // Fallback: backend-provided text
+  if (safety && safety.text) {
+    return { title: '⚠ Sicherheitsquittierung', lines: [String(safety.text)] };
+  }
+  return { title: '⚠ Sicherheitsquittierung', lines: ['🔴 Safety aktiv – Bedienung gesperrt'] };
+}
+
 function getUiStateFromWs(msg, safety, mega2online) {
   // Default OK
   let level = "OK";
@@ -119,33 +164,49 @@ function getUiStateFromWs(msg, safety, mega2online) {
   let title = "";
   let overlay = false;
   let ackRequired = false;
+  let hasWarn = false;
 
   if (!mega2online) {
     level = "WARN";
     text = ["🟡 Mega2 offline"];
-    return { level, text, title, overlay, ackRequired };
+    return { level, text, title, overlay, ackRequired, hasWarn };
   }
-
+  // Safety lock dominates everything
   if (safety && safety.lock === true) {
-    level = "ERR";
-    text = ["🔴 Safety aktiv – Bedienung gesperrt"];
-    title = "⚠ Sicherheitsquittierung";
+    level = 'ERR';
     overlay = true;
     ackRequired = true;
 
-    if (safety.text) {
-      text = [String(safety.text)];
+    const t = getSafetyOverlayTexts(safety);
+    title = t.title || '⚠ Sicherheitsquittierung';
+    text = (t.lines && t.lines.length) ? t.lines : ['🔴 Safety aktiv – Bedienung gesperrt'];
+
+    return { level, text, title, overlay, ackRequired, hasWarn };
+  }
+
+  // Warnings (z.B. Weichenfehler / Restricted Mode) -> Systemstatus = WARNING
+  const sb = msg && msg.mega2 && msg.mega2.sbhf;
+  if (sb) {
+    const allowed = (sb.allowedMask ?? 0) & 0xff;
+    const warn    = (sb.warningMask ?? 0) & 0xff;
+
+    const restricted = (allowed !== 0x07 && allowed !== 0x00);
+    hasWarn = (warn !== 0) || restricted;
+
+    if (hasWarn) {
+      level = "WARN";
+      text = ["🟡 Warning aktiv"];
     }
   }
 
-  return { level, text, title, overlay, ackRequired };
+  return { level, text, title, overlay, ackRequired, hasWarn };
 }
 
 /* =========================================================
  *  UI APPLY
  * ========================================================= */
 
-function applyUiState(ui) {
+function applyUiState(ui, msg) {
   const panel = document.getElementById("safety-panel");
   const status = document.getElementById("safety-status");
 
@@ -160,25 +221,66 @@ function applyUiState(ui) {
     hideOverlay();
   }
 
-  // Power nur erlauben, wenn nicht locked
+  // --------------------------------------------------
+  // Disable rules + states
+  // --------------------------------------------------
+
+  const mega2online = !!(msg && msg.mega2 && msg.mega2.online);
+  const wsOk = (wsConnected === true);
+  const lock = !!(lastSafetyState && lastSafetyState.lock === true);
+  const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
+  const powerOn = !!(lastSafetyState && lastSafetyState.powerOn === true);
+
+// --------------------------------------------------
+// Status-Badges (oben rechts)
+// --------------------------------------------------
+const bWs = document.getElementById("badge-ws");
+const bM2 = document.getElementById("badge-mega2");
+const bPw = document.getElementById("badge-power");
+const bNo = document.getElementById("badge-notaus");
+
+if (bWs) {
+  bWs.className = "badge " + (wsOk ? "badge-ok" : "badge-err");
+  bWs.textContent = "WS: " + (wsOk ? "verbunden" : "getrennt");
+}
+if (bM2) {
+  bM2.className = "badge " + (mega2online ? "badge-ok" : "badge-err");
+  bM2.textContent = "Mega2: " + (mega2online ? "online" : "offline");
+}
+if (bPw) {
+  bPw.className = "badge " + (powerOn ? "badge-ok" : "badge-warn");
+  bPw.textContent = "Power: " + (powerOn ? "AN" : "aus");
+}
+if (bNo) {
+  bNo.className = "badge " + (notausActive ? "badge-err" : "badge-ok");
+  bNo.textContent = "HW-NOT AUS: " + (notausActive ? "AKTIV" : "nein");
+}
+
+
+  // STOP (UI) – immer erlaubt (wenn WS verbunden), auch bei Safety lock.
+// (STOP ist UI-Command "PowerOff". HW-NOT-AUS ist rein Anzeige.)
+
+// POWER – wenn Mega2 offline, alles außer STOP sperren.
+
+  // POWER – wenn Mega2 offline, alles außer STOP sperren.
   const btnPower = document.getElementById("btn-power");
   if (btnPower) {
-    const powerOn = !!(lastSafetyState && lastSafetyState.powerOn === true);
-
-    // UI: Button-Text/State
-    btnPower.textContent = powerOn ? "⏻ POWER OFF" : "⚡ POWER ON";
+    btnPower.textContent = powerOn ? "⏻ STOP / POWER OFF" : "⚡ POWER ON";
     btnPower.classList.toggle("is-on", powerOn);
+    btnPower.classList.toggle("is-off", !powerOn);
+    btnPower.classList.toggle("is-offline", !mega2online);
 
-    // Sperre: Power ON blocken wenn Safety lock aktiv; POWER OFF immer erlauben
-    btnPower.disabled = !!(!powerOn && lastSafetyState && lastSafetyState.lock === true);
-  }
-
-  // STOP/NOTAUS Anzeige
-  const btnStop = document.getElementById("btn-stop");
-  if (btnStop) {
-    const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
-    btnStop.classList.toggle("is-active", notausActive);
-    btnStop.textContent = notausActive ? "🔴 NOTAUS AKTIV (HW)" : "⏹ STOP (Power OFF)";
+    // Regeln:
+    // - Wenn WS down oder Mega2 offline: disable
+    // - Wenn Power bereits an: POWER OFF erlauben
+    // - Wenn Power aus: POWER ON nur erlauben, wenn nicht gelockt und HW-NOT-AUS nicht aktiv
+    if (!wsOk || !mega2online) {
+      btnPower.disabled = true;
+    } else if (powerOn) {
+      btnPower.disabled = false;
+    } else {
+      btnPower.disabled = (lock || notausActive);
+    }
   }
 }
 
@@ -190,31 +292,44 @@ function sendNothalt() {
   wsSendAction("nothalt", "NOTAUS gesendet");
 }
 
-// UI-STOP: PowerOff (bewusst getrennt von HW-NOT-AUS)
-function sendStop() {
-  wsSendAction("powerOff", "STOP (Power OFF) gesendet");
-}
 
 function sendPowerOn() {
   const powerOn = !!(lastSafetyState && lastSafetyState.powerOn === true);
 
-  // Toggle: wenn schon an -> POWER OFF immer erlauben
-  if (powerOn) {
-    wsSendAction("powerOff", "POWER OFF gesendet");
+  // Verbindung prüfen (damit der Klick nicht "ins Leere" läuft)
+  if (!wsConnected || !socket || socket.readyState !== 1) {
+    logLine("WS nicht verbunden – Aktion nicht gesendet");
     return;
   }
 
-  // Safety aktiv? -> Power ON blocken
-  if (lastSafetyState && lastSafetyState.lock === true) {
-    showOverlay(
-      "⚠ Sicherheitsquittierung",
-      lastSafetyState.text || "Power On nicht möglich – Safety aktiv",
-      true
+  // Mega2-Online prüfen (optional: STOP bleibt trotzdem erlaubt, aber PowerToggle nicht)
+  if (!lastMega2Online) {
+    logLine("Mega2 offline – Aktion nicht gesendet");
+    return;
+  }
+
+  const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
+  const safetyLock   = !!(lastSafetyState && lastSafetyState.lock === true);
+
+  // Toggle-Logik:
+  // - wenn Power bereits AN -> UI-STOP = PowerOff
+  // - wenn Power AUS -> nur PowerOn, wenn kein Safety-Lock und kein HW-NOT-AUS
+  if (powerOn) {
+    wsSendAction("powerOff", "STOP / POWER OFF gesendet");
+    return;
+  }
+
+  if (safetyLock || notausActive) {
+    showAckOverlay(
+      (lastSafetyState && lastSafetyState.text) ||
+        "Power On nicht möglich – Safety aktiv oder HW-NOT-AUS"
     );
     return;
   }
+
   wsSendAction("powerOn", "POWER ON gesendet");
 }
+
 
 /* =========================================================
  *  ACK OVERLAY
@@ -225,6 +340,7 @@ function showOverlay(title, lines, requireChecked) {
   const titleEl = document.getElementById("ack-title");
   const textEl = document.getElementById("ack-text");
   const checkbox = overlay?.querySelector("input[type=checkbox]");
+  const ackBtn = overlay?.querySelector(".btn-ack");
 
   if (!overlay || !titleEl || !textEl) return;
 
@@ -240,12 +356,38 @@ function showOverlay(title, lines, requireChecked) {
 
   textEl.innerHTML = safeLines.join("<br>");
 
+  // Wenn bereits ACK gesendet wurde, aber der Safety-Lock noch aktiv ist,
+  // dann läuft (z.B. im SBHF) typischerweise ein automatischer Selbsttest.
+  // In dieser Phase darf die Checkbox/ACK nicht weiter bedient werden.
+  if (ackPending) {
+    titleEl.textContent = "🔄 SBHF Weichentest läuft";
+    textEl.innerHTML = [
+      "Bitte warten …",
+      "Der Selbsttest läuft im Hintergrund und wird automatisch abgeschlossen.",
+    ].map((l) => escapeHtml(String(l))).join("<br>");
+    if (checkbox) {
+      checkbox.disabled = true;
+    }
+    if (ackBtn) {
+      ackBtn.disabled = true;
+      ackBtn.textContent = "Bitte warten …";
+    }
+    return;
+  }
+
+  // ACK senden ist nur sinnvoll, wenn WS ok und Mega2 online.
+  const canAckSend = (wsConnected === true) && (lastMega2Online === true);
+  if (ackBtn) {
+    ackBtn.disabled = !canAckSend;
+    ackBtn.textContent = "ACK";
+  }
+
   if (checkbox) {
     // Wichtig: Checkbox ist User-Interaktion. Nicht bei jedem WS-State-Update zurücksetzen.
     if (wasHidden) {
       checkbox.checked = false;
     }
-    checkbox.disabled = !requireChecked;;
+    checkbox.disabled = !requireChecked;
   }
 }
 
@@ -267,8 +409,13 @@ function confirmAck() {
     return;
   }
 
-  wsSendAction("safetyAck", "ACK gesendet");
-  hideOverlay();
+  const ok = wsSend({ action: "safetyAck" });
+  if (ok) {
+    logLine("ACK gesendet – Selbsttest läuft …");
+    ackPending = true;
+    // Overlay absichtlich offen lassen, aber UI sperren + "läuft" anzeigen.
+    showOverlay("🔄 SBHF Weichentest läuft", ["Bitte warten …"], false);
+  }
 }
 
 /* =========================================================
@@ -354,9 +501,27 @@ function renderPowerWarningsEmergencies(msg) {
     if (warn & WARN_SBH_SERVICE_REQUIRED) items.push("🛠 Service erforderlich");
   }
 
-  el.innerHTML = items.length
-    ? items.map(t => `<div>${t}</div>`).join("")
-    : "<em>Keine Meldungen</em>";
+  
+
+// 3) "↻ Prüfen" (PollNow), wenn Warnings/Restricted aktiv sind
+let warningActive = false;
+if (m2 && m2.sbhf) {
+  const warn = Number(m2.sbhf.warningMask || 0);
+  const allowed = Number(m2.sbhf.allowedMask || 0);
+	  const restrictedFlag = !!m2.sbhf.restricted;
+	  const restricted =
+	    restrictedFlag ||
+	    (warn !== 0) ||
+	    (allowed !== 0x07 && allowed !== 0x00);
+	  warningActive = restricted;
+}
+
+const canPollNow = wsConnected && !!(msg && msg.mega2 && msg.mega2.online);
+const pollBtnHtml = warningActive
+  ? `<div class="msg-actions"><button class="btn-mini" ${canPollNow ? "" : "disabled"} onclick="sendPollNow()">↻ Prüfen</button></div>`
+  : "";
+
+  el.innerHTML = (items.length ? items.map(t => `<div>${t}</div>`).join("") : "<em>Keine Meldungen</em>") + pollBtnHtml;
 }
 
 /* =========================================================

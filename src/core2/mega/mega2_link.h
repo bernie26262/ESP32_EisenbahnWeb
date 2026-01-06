@@ -9,6 +9,9 @@ namespace Mega2Link
     // Zyklisch in loop() aufrufen
     void update();
 
+    // Sofortigen Status-Poll anstoßen (z.B. nach Fix von Warnings)
+    void requestPollNow();
+
     // Aktionen (von WebUI/Serial)
     bool safetyAck();
     bool nothalt();     // setzt NOTAUS (true)

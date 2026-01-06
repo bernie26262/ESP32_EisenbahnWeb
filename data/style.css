@@ -92,6 +92,15 @@ h2 {
     cursor: pointer;
 }
 
+.btn-nothalt:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-nothalt.is-offline {
+    opacity: 0.75;
+}
+
 /* STOP/NOTAUS-Statusanzeige */
 .btn-nothalt.is-active {
     box-shadow: 0 0 0 3px rgba(207, 34, 46, 0.25);
@@ -117,6 +126,10 @@ h2 {
 .btn-power:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+}
+
+.btn-power.is-offline {
+    opacity: 0.75;
 }
 
 .panel-separator {
@@ -227,5 +240,143 @@ h2 {
     background: #fff;
 }
 
-.badge-green { border-color: var(--ok); }
-.badge-red   { border-color: var(--err); }
+.badge-green { border: 2px solid var(--ok) !important; background: rgba(45, 164, 78, 0.10) !important; }
+.badge-red   { border: 2px solid var(--err) !important; background: rgba(207, 34, 46, 0.10) !important; }
+
+
+/* =========================================================
+   Status Badges (oben rechts)
+   ========================================================= */
+.status-badges{
+    position: fixed;
+    bottom: 12px;
+    right: 12px;
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.92);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+    z-index: 50;
+    min-width: 220px;
+}
+
+.badge-row{ display:flex; gap:8px; flex-wrap:wrap; }
+
+.badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    color: var(--text);
+    background: #fff;
+}
+
+.badge-ok{ border-color: rgba(45,164,78,0.35); }
+.badge-warn{ border-color: rgba(210,153,34,0.35); }
+.badge-err{ border-color: rgba(207,34,46,0.35); }
+
+.badge-ok::before{ content:"🟢"; }
+.badge-warn::before{ content:"🟡"; }
+.badge-err::before{ content:"🔴"; }
+
+/* =========================================================
+   Buttons: POWER (grün an/aus), STOP neutral
+   ========================================================= */
+.btn-power{
+    width: 100%;
+    padding: 14px 14px;
+    border-radius: 14px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    border: 1px solid rgba(45,164,78,0.35);
+    background: rgba(45,164,78,0.10); /* subtle green */
+    color: #0f3d1c;
+    transition: transform .06s ease, box-shadow .12s ease, opacity .12s ease;
+}
+
+.btn-power.is-on{
+    background: #2da44e;           /* leuchtend grün */
+    color: white;
+    border-color: rgba(45,164,78,0.9);
+    box-shadow: 0 0 0 4px rgba(45,164,78,0.22), 0 12px 26px rgba(45,164,78,0.35);
+}
+
+.btn-power:disabled{
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.btn-stop{
+    width: 100%;
+    padding: 14px 14px;
+    border-radius: 14px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    transition: transform .06s ease, box-shadow .12s ease, opacity .12s ease;
+}
+
+.btn-stop:hover{ box-shadow: 0 8px 18px rgba(0,0,0,0.08); }
+.btn-stop:disabled{ opacity: 0.45; cursor: not-allowed; box-shadow:none; }
+.btn-stop.is-offline{ opacity: 0.75; }
+
+/* Old class kept: make btn-nothalt neutral if still used somewhere */
+.btn-nothalt{ background:#fff; color:var(--text); border:1px solid var(--border); }
+
+
+/* =====================================================
+ *  POWER TOGGLE (Single main button)
+ * ===================================================== */
+.btn-power {
+    width: 100%;
+    font-size: 1.15rem;
+    font-weight: 700;
+    padding: 1.1rem 1rem;
+    border-radius: 16px;
+    border: 2px solid rgba(0,0,0,.15);
+}
+
+/* OFF: "POWER ON" (rot, aber nicht grell) */
+.btn-power.is-off {
+    background: rgba(200, 45, 45, 0.85);
+    color: white;
+    border-color: rgba(0,0,0,.15);
+    box-shadow: none;
+}
+
+/* ON: "STOP / POWER OFF" (deutlich, nicht NOTAUS-rot) */
+.btn-power.is-on {
+    background: rgba(40, 170, 80, 0.92);
+    color: white;
+    border-color: rgba(0,0,0,.15);
+    box-shadow: 0 0 0.9rem rgba(40, 170, 80, 0.55);
+}
+
+/* Disabled: klar sichtbar */
+.btn-power:disabled,
+.btn-power.is-offline {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none !important;
+}
+
+
+/* Mini button (z.B. Prüfen/Refresh bei Warnings) */
+.btn-mini {
+  padding: 0.25rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.btn-mini:hover { filter: brightness(0.98); }

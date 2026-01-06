@@ -4,12 +4,25 @@
     <meta charset="UTF-8">
     <title>Eisenbahn – Safety & Status</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260106p17">
     
 </head>
 
 <body>
 <div class="container">
+
+    <!-- STATUS BADGES (oben rechts) -->
+    <div id="status-badges" class="status-badges">
+        <div class="badge-row">
+            <span id="badge-ws" class="badge badge-warn">WS: ?</span>
+            <span id="badge-mega2" class="badge badge-warn">Mega2: ?</span>
+        </div>
+        <div class="badge-row">
+            <span id="badge-power" class="badge badge-warn">Power: ?</span>
+            <span id="badge-notaus" class="badge badge-ok">HW-NOT AUS: nein</span>
+        </div>
+    </div>
+
 
     <!-- ===================== LEFT ===================== -->
     <main class="panel">
@@ -60,23 +73,15 @@
 
     <!-- ===================== RIGHT / SAFETY ===================== -->
     <aside class="panel panel-right safety-panel ok" id="safety-panel">
-
-        <!-- STOP (UI) -->
-        <section class="safety-nothalt">
-            <button id="btn-stop" class="btn-nothalt" onclick="sendStop()">
-                ⏹ STOP (Power OFF)
-            </button>
-            <div class="hint" style="margin-top:.5rem;">
-                HW-NOT-AUS ist separat verdrahtet (fail-safe).
-            </div>
-        </section>
-
-        <!-- POWER -->
-        <section>
-            <button id="btn-power" class="btn-power" onclick="sendPowerOn()">
-                ⚡ POWER ON
-            </button>
-        </section>
+<!-- POWER (Toggle) -->
+<section class="power-toggle">
+    <button id="btn-power" class="btn-power" onclick="sendPowerOn()">
+        ⚡ POWER ON
+    </button>
+    <div class="hint" style="margin-top:.5rem;">
+        HW-NOT-AUS ist separat verdrahtet (fail-safe).
+    </div>
+</section>
 
         <div class="panel-separator"></div>
 
@@ -131,7 +136,7 @@
     </div>
 </div>
 
-<script src="safety_ui_texts.js"></script>
-<script src="script.js"></script>
+<script src="safety_ui_texts.js?v=20260106p17"></script>
+<script src="script.js?v=20260106p17"></script>
 </body>
 </html>

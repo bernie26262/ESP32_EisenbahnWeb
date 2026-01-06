@@ -173,6 +173,14 @@ static void onWsEvent(AsyncWebSocket* server,
         g_stateDirty = true;
         return;
     }
+
+    if (!strcmp(action, "pollNow"))
+    {
+        Serial.println("[WS] -> Mega2Link::requestPollNow()");
+        Mega2Link::requestPollNow();
+        g_stateDirty = true;
+        return;
+    }
 }
 
 // ---------------------------------------------------------
@@ -219,3 +227,5 @@ void Web::pushStateIfDirty()
     ws.textAll(buildWsStateJson());
     g_stateDirty = false;
 }
+
+
