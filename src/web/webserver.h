@@ -1,14 +1,14 @@
 #pragma once
 #include <Arduino.h>
 
-// Globales Dirty-Flag (wird von SystemRuntimeState gesetzt)
-extern bool g_stateDirty;
+namespace Web
+{
+    void begin();
+    void loop();
 
-class Web {
-public:
-    static void begin();
-    static void loop();
+    // Push per WS, wenn sich State geändert hat
+    void pushStateIfDirty();
+}
 
-    // 🔴 NEU: Event-basierter Push
-    static void pushStateIfDirty();
-};
+// IMPORTANT: Dieses Symbol wird (derzeit) auch aus anderen Modulen referenziert.
+extern volatile bool g_stateDirty;

@@ -1,12 +1,15 @@
 #include <Arduino.h>
 #include "system_runtime_state.h"
 #include "debug.h"
-#include "proto_common.h"   // <-- für SAFETY_BLOCK_*
+#include "proto_common.h"   // <-- für SAFETY_BLOCK_* + Mega2SafetyStatus
 
 // ----------------------------------------------------
 // Interner Zustand
 // ----------------------------------------------------
 static SystemStatus s_m2Status{};
+
+// NEU: Mega2SafetyStatus Cache (separat gepollt)
+static Mega2SafetyStatus s_m2Safety{};
 
 // Step 3.5: Entry-Matrix Cache (FROM->TO)
 static uint16_t     s_m2EntryAllowed[9]  = {0};
@@ -20,10 +23,10 @@ uint8_t SystemRuntimeState::errorIndex = 0;
 static bool         s_safetyLock   = false;
 static SafetyReason s_safetyReason = SafetyReason::NONE;
 
-// 🔴 NEU: UI-Block-Grund (BOOT / NOTAUS / NONE)
+// UI-Block-Grund (BOOT / NOTAUS / NONE)
 static uint8_t      s_blockReasonUi = SAFETY_BLOCK_NONE;
 
-// 🔴 NEU: Dirty-Flag (extern definiert, z. B. in main.cpp)
+// Dirty-Flag (extern definiert)
 extern volatile bool g_stateDirty;
 
 // ----------------------------------------------------
@@ -51,11 +54,9 @@ static SafetyReason deriveSafetyReason(const SystemStatus& st)
 // ----------------------------------------------------
 static uint8_t deriveUiBlockReason(const SystemStatus& st)
 {
-    // NOT-AUS hat Vorrang
     if (st.flags & SYS_NOTAUS_ACTIVE)
         return SAFETY_BLOCK_EMERGENCY;
 
-    // Error ohne Not-Aus = Systemstart / Quittierung
     if (st.flags & SYS_ERROR_PRESENT)
         return SAFETY_BLOCK_BOOT;
 
@@ -63,7 +64,7 @@ static uint8_t deriveUiBlockReason(const SystemStatus& st)
 }
 
 // ----------------------------------------------------
-// Update vom Mega2
+// Update vom Mega2 (SystemStatus)
 // ----------------------------------------------------
 void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
 {
@@ -101,6 +102,20 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
 }
 
 // ----------------------------------------------------
+// NEU: Update Mega2SafetyStatus (CMD 0x20)
+// ----------------------------------------------------
+void SystemRuntimeState::updateMega2SafetyStatus(const Mega2SafetyStatus& st)
+{
+    s_m2Safety = st;
+    g_stateDirty = true;
+}
+
+const Mega2SafetyStatus& SystemRuntimeState::mega2SafetyStatus()
+{
+    return s_m2Safety;
+}
+
+// ----------------------------------------------------
 // Getter
 // ----------------------------------------------------
 bool SystemRuntimeState::mega2Online()
@@ -123,7 +138,6 @@ SafetyReason SystemRuntimeState::safetyReason()
     return s_safetyReason;
 }
 
-// 🔴 NEU: für WebUI
 uint8_t SystemRuntimeState::safetyBlockReason()
 {
     return s_blockReasonUi;
@@ -134,7 +148,6 @@ uint8_t SystemRuntimeState::safetyBlockReason()
 // ----------------------------------------------------
 const char* SystemRuntimeState::safetyErrorText(uint8_t type, uint8_t index)
 {
-    // 1️⃣ Konkrete Fehler aus Mega2
     if (type != 0)
     {
         switch (type)
@@ -160,7 +173,6 @@ const char* SystemRuntimeState::safetyErrorText(uint8_t type, uint8_t index)
         }
     }
 
-    // 2️⃣ Kein errorType → UI-Block-Grund entscheidet
     if (!s_safetyLock)
         return "";
 
@@ -173,7 +185,9 @@ const char* SystemRuntimeState::safetyErrorText(uint8_t type, uint8_t index)
     return "Safety aktiv – bitte quittieren (ACK)";
 }
 
-
+// ----------------------------------------------------
+// Entry-Matrix Getter/Setter
+// ----------------------------------------------------
 const uint16_t* SystemRuntimeState::mega2EntryAllowed()
 {
     return s_m2EntryAllowed;
@@ -195,7 +209,6 @@ void SystemRuntimeState::updateMega2EntryAllowed(const uint16_t* arr, uint8_t n)
     s_lastEntryRxMs = millis();
     g_stateDirty = true;
 }
-
 
 void SystemRuntimeState::updateMega2EntryPreview(const uint16_t* arr, uint8_t n)
 {

@@ -7,17 +7,23 @@ namespace Mega2Client
 {
     void begin();
 
-    // Liefert true, wenn Mega2 erreichbar und Status gültig
     bool pollStatus();
 
-// Step 3.5: Entry-Matrix (FROM->TO)
-bool pollEntryMatrix();
+    // NEU: SafetyStatus (CMD 0x20)
+    bool pollSafetyStatus();
 
-// Step 3.5b: Entry-Preview-Matrix (FROM->TO)
-bool pollEntryPreviewMatrix();
+    // Step 3.5
+    bool pollEntryMatrix();
+    bool pollEntryPreviewMatrix();
 
-    // Safety
-    bool safetyAck();          // ACK (M2_CMD_ACK_ERROR)
-    bool setNotaus(bool on);   // NOTHALT / POWER ON (M2_CMD_SET_NOTAUS)
+    // Safety / Power
+    bool safetyAck();          // ACK
+    bool setNotaus(bool on);   // bleibt für Test/Sim
     bool powerOn();            // M2_CMD_POWER_ON
+
+    // NEU: STOP/PowerOff = SSR_MAIN_ENABLE aus
+    bool powerOff();
+
+    // NEU: generisch SSR setzen (für PowerOff/PowerOn-Alternativen)
+    bool setSsr(uint8_t idx, bool on);
 }

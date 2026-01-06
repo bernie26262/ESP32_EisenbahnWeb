@@ -92,6 +92,11 @@ h2 {
     cursor: pointer;
 }
 
+/* STOP/NOTAUS-Statusanzeige */
+.btn-nothalt.is-active {
+    box-shadow: 0 0 0 3px rgba(207, 34, 46, 0.25);
+}
+
 .btn-power {
     width: 100%;
     padding: 0.85rem;
@@ -99,6 +104,14 @@ h2 {
     border-radius: 12px;
     background: #fff;
     cursor: pointer;
+}
+
+/* Power ist an -> Button wird zu POWER OFF */
+.btn-power.is-on {
+    background: var(--warn);
+    color: #fff;
+    border: none;
+    font-weight: 700;
 }
 
 .btn-power:disabled {

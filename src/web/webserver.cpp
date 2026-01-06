@@ -6,7 +6,7 @@
 
 #include "network/eth_manager.h"
 #include "core2/state/system_runtime_state.h"
-#include "core2/mega/mega2_client.h"
+#include "core2/mega/mega2_link.h"
 
 #include <LittleFS.h>
 
@@ -17,14 +17,14 @@ static AsyncWebServer server(80);
 static AsyncWebSocket ws("/ws");
 
 // IMPORTANT: Dieses Symbol wird (derzeit) auch aus anderen Modulen referenziert.
-bool g_stateDirty = true;
+volatile bool g_stateDirty = true;
 
 // ---------------------------------------------------------
 // WebSocket State JSON
 // ---------------------------------------------------------
 static String buildWsStateJson()
 {
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<768> doc;
 
     doc["type"] = "state";
     doc["ts"]   = (uint32_t)millis();
@@ -35,49 +35,13 @@ static String buildWsStateJson()
     const bool m2online = SystemRuntimeState::mega2Online();
     doc["mega2"]["online"] = m2online;
 
-// ---------------------------------
-// Mega2 Details (SBHF/Blocks/Weichen)
-// ---------------------------------
-if (m2online)
-{
-    const auto& m2s = SystemRuntimeState::mega2Status();
-
-    doc["mega2"]["flags"] = m2s.flags;
-    doc["mega2"]["blockOccupiedMask"] = m2s.blockOccupiedMask;
-
-    const uint8_t allowedMask = (uint8_t)((m2s.reserved >> 8) & 0xFF);
-    const uint8_t warningMask = (uint8_t)(m2s.reserved & 0xFF);
-
-    JsonObject sbhf = doc["mega2"]["sbhf"].to<JsonObject>();
-    sbhf["state"]        = m2s.sbhfState;
-    sbhf["occupiedMask"] = m2s.sbhfOccupiedMask;
-    sbhf["currentGleis"] = m2s.sbhfCurrentGleis;
-    sbhf["allowedMask"]  = allowedMask;
-    sbhf["warningMask"]  = warningMask;
-    sbhf["restricted"]   = ((warningMask & 0x01) != 0) || (allowedMask != 0x07 && allowedMask != 0x00);
-
-    JsonObject t = doc["mega2"]["turnouts"].to<JsonObject>();
-    t["sollMask"] = m2s.turnoutSollMask;
-    t["istMask"]  = m2s.turnoutIstMask;
-
-    // Step 3.5: Entry-Matrix (FROM->TO)
-    JsonArray entry = doc["mega2"]["entryAllowed"].to<JsonArray>();
-    const uint16_t* ea = SystemRuntimeState::mega2EntryAllowed();
-    for (uint8_t i = 0; i < 9; i++)
-        entry.add(ea[i]);
-
-    JsonArray entryPrev = doc["mega2"]["entryPreview"].to<JsonArray>();
-    const uint16_t* ep = SystemRuntimeState::mega2EntryPreview();
-    for (uint8_t i = 0; i < 9; i++)
-        entryPrev.add(ep[i]);
-}
-
-
+    // -----------------------------
+    // Safety (ESP abgeleitet)
+    // -----------------------------
     JsonObject s = doc["safety"].to<JsonObject>();
 
     const auto& m2 = SystemRuntimeState::mega2Status();
 
-    // Grundzustand (ESP abgeleitet)
     s["lock"]        = SystemRuntimeState::safetyLock();
     s["blockReason"] = SystemRuntimeState::safetyBlockReason();
 
@@ -88,33 +52,56 @@ if (m2online)
     // Power-Status (aus Flags)
     s["powerOn"] = (m2.flags & SYS_POWER_ON) != 0;
 
+    // NOTAUS-Status (aus Flags)
+    s["notausActive"] = (m2.flags & SYS_NOTAUS_ACTIVE) != 0;
+
     // Klartext (ESP-seitig)
     s["text"] = SystemRuntimeState::safetyErrorText(
         SystemRuntimeState::errorType,
         SystemRuntimeState::errorIndex
     );
 
+    // -----------------------------
+    // Mega2 Details (nur wenn online)
+    // -----------------------------
     if (m2online)
     {
-        doc["mega2"]["flags"] = m2.flags;
+        const auto& m2s = SystemRuntimeState::mega2Status();
 
-        // -------------------------------------------------
-        // Mega2 / SBHF: Masken aus reserved (Variante A)
+        doc["mega2"]["flags"]             = m2s.flags;
+        doc["mega2"]["blockOccupiedMask"] = m2s.blockOccupiedMask;
+
         // reserved = (allowedMask<<8) | warningMask
-        // -------------------------------------------------
-        const uint8_t allowedMask = (uint8_t)((m2.reserved >> 8) & 0xFF);
-        const uint8_t warningMask = (uint8_t)(m2.reserved & 0xFF);
+        const uint8_t allowedMask = (uint8_t)((m2s.reserved >> 8) & 0xFF);
+        const uint8_t warningMask = (uint8_t)(m2s.reserved & 0xFF);
 
         JsonObject sbhf = doc["mega2"]["sbhf"].to<JsonObject>();
-        sbhf["allowedMask"] = allowedMask;
-        sbhf["warningMask"] = warningMask;
+        sbhf["state"]        = m2s.sbhfState;
+        sbhf["occupiedMask"] = m2s.sbhfOccupiedMask;
+        sbhf["currentGleis"] = m2s.sbhfCurrentGleis;
+        sbhf["allowedMask"]  = allowedMask;
+        sbhf["warningMask"]  = warningMask;
 
-        // restricted: Bit0 bevorzugt, fallback über allowedMask
         const bool restricted =
             ((warningMask & 0x01) != 0) ||
             (allowedMask != 0x07 && allowedMask != 0x00);
 
         sbhf["restricted"] = restricted;
+
+        JsonObject t = doc["mega2"]["turnouts"].to<JsonObject>();
+        t["sollMask"] = m2s.turnoutSollMask;
+        t["istMask"]  = m2s.turnoutIstMask;
+
+        // Step 3.5: Entry-Matrix (FROM->TO)
+        JsonArray entry = doc["mega2"]["entryAllowed"].to<JsonArray>();
+        const uint16_t* ea = SystemRuntimeState::mega2EntryAllowed();
+        for (uint8_t i = 0; i < 9; i++)
+            entry.add(ea[i]);
+
+        JsonArray entryPrev = doc["mega2"]["entryPreview"].to<JsonArray>();
+        const uint16_t* ep = SystemRuntimeState::mega2EntryPreview();
+        for (uint8_t i = 0; i < 9; i++)
+            entryPrev.add(ep[i]);
     }
 
     String out;
@@ -134,6 +121,7 @@ static void onWsEvent(AsyncWebSocket* server,
 {
     if (type == WS_EVT_CONNECT)
     {
+        Serial.printf("[WS] client connected id=%u\n", client ? client->id() : 0);
         // Client bekommt sofort state
         client->text(buildWsStateJson());
         return;
@@ -155,23 +143,33 @@ static void onWsEvent(AsyncWebSocket* server,
     if (!action)
         return;
 
+    Serial.printf("[WS] action rx: %s\n", action);
+
     if (!strcmp(action, "safetyAck"))
     {
-        Mega2Client::safetyAck();
+        Mega2Link::safetyAck();
         g_stateDirty = true;
         return;
     }
 
     if (!strcmp(action, "nothalt"))
     {
-        Mega2Client::setNotaus(true);
+        Mega2Link::nothalt();
         g_stateDirty = true;
         return;
     }
 
     if (!strcmp(action, "powerOn"))
     {
-        Mega2Client::powerOn();
+        Mega2Link::powerOn();
+        g_stateDirty = true;
+        return;
+    }
+
+    // UI-STOP (PowerOff) – bewusst getrennt von HW-NOTAUS
+    if (!strcmp(action, "powerOff"))
+    {
+        Mega2Link::powerOff();
         g_stateDirty = true;
         return;
     }
@@ -191,7 +189,11 @@ void Web::begin()
     ws.onEvent(onWsEvent);
     server.addHandler(&ws);
 
-    server.serveStatic("/", LittleFS, "/").setDefaultFile("index.htm");
+    // Statische Dateien (WebUI) – Cache abschalten, damit nach "UploadFS"
+    // neue script.js/style.css sofort übernommen werden (Browser-Caching).
+    server.serveStatic("/", LittleFS, "/")
+        .setDefaultFile("index.htm")
+        .setCacheControl("no-store, no-cache, must-revalidate, max-age=0");
 
     server.begin();
     Serial.println("[WEB] HTTP server started");

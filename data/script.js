@@ -1,9 +1,14 @@
 /* =========================================================
- *  Eisenbahn WebUI – Safety & Status
+ *  Eisenbahn WebUI – Safety & Status (WebSocket-only)
  * ========================================================= */
 
 const DEBUG_WS = true;
 const DEBUG_UI = false;
+
+// Wenn du nach einem Firmware-Flash "alte" Buttons siehst:
+// -> unbedingt auch "Upload File System Image" (UploadFS) ausführen.
+// Diese Version hilft beim Verifizieren, dass Browser + LittleFS wirklich neu sind.
+const UI_VERSION = "2026-01-06-p7";
 
 let socket = null;
 let wsConnected = false;
@@ -18,6 +23,9 @@ let lastMega2Online = false;
  * ========================================================= */
 
 window.addEventListener("load", () => {
+  const v = document.getElementById("ui-version");
+  if (v) v.textContent = UI_VERSION;
+  console.log("[UI] version", UI_VERSION);
   connectWebSocket();
 });
 
@@ -39,6 +47,12 @@ function connectWebSocket() {
     setTimeout(connectWebSocket, 1000);
   };
 
+  socket.onerror = () => {
+    // onclose kommt meist danach sowieso, aber fürs Log ok
+    wsConnected = false;
+    logLine("WS error");
+  };
+
   socket.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
@@ -47,6 +61,30 @@ function connectWebSocket() {
       console.warn("WS parse error", e);
     }
   };
+}
+
+/* =========================================================
+ *  WS SEND (Actions)
+ * ========================================================= */
+
+function wsSend(obj) {
+  if (!socket || wsConnected !== true) {
+    logLine("WS nicht verbunden – Aktion nicht möglich");
+    return false;
+  }
+  try {
+    socket.send(JSON.stringify(obj));
+    return true;
+  } catch (e) {
+    console.warn("WS send error", e);
+    logLine("WS send error");
+    return false;
+  }
+}
+
+function wsSendAction(action, okMsg) {
+  const ok = wsSend({ action: action });
+  if (ok && okMsg) logLine(okMsg);
 }
 
 /* =========================================================
@@ -125,35 +163,57 @@ function applyUiState(ui) {
   // Power nur erlauben, wenn nicht locked
   const btnPower = document.getElementById("btn-power");
   if (btnPower) {
-    btnPower.disabled = !!(lastSafetyState && lastSafetyState.lock === true);
+    const powerOn = !!(lastSafetyState && lastSafetyState.powerOn === true);
+
+    // UI: Button-Text/State
+    btnPower.textContent = powerOn ? "⏻ POWER OFF" : "⚡ POWER ON";
+    btnPower.classList.toggle("is-on", powerOn);
+
+    // Sperre: Power ON blocken wenn Safety lock aktiv; POWER OFF immer erlauben
+    btnPower.disabled = !!(!powerOn && lastSafetyState && lastSafetyState.lock === true);
+  }
+
+  // STOP/NOTAUS Anzeige
+  const btnStop = document.getElementById("btn-stop");
+  if (btnStop) {
+    const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
+    btnStop.classList.toggle("is-active", notausActive);
+    btnStop.textContent = notausActive ? "🔴 NOTAUS AKTIV (HW)" : "⏹ STOP (Power OFF)";
   }
 }
 
 /* =========================================================
- *  ACTIONS (HTTP)
+ *  ACTIONS (WebSocket-only)
  * ========================================================= */
 
-function sendAction(action, okMsg) {
-  fetch(`/action?action=${encodeURIComponent(action)}`)
-    .then((r) => r.text())
-    .then(() => logLine(okMsg))
-    .catch(() => logLine("Action error"));
+function sendNothalt() {
+  wsSendAction("nothalt", "NOTAUS gesendet");
 }
 
-function sendNothalt() {
-  sendAction("nothalt", "NOTAUS gesendet");
+// UI-STOP: PowerOff (bewusst getrennt von HW-NOT-AUS)
+function sendStop() {
+  wsSendAction("powerOff", "STOP (Power OFF) gesendet");
 }
 
 function sendPowerOn() {
-  // Safety aktiv?
-  if (window.lastSafetyState && window.lastSafetyState.lock === true) {
-    showAckOverlay(
-      window.lastSafetyState.text ||
-      "Power On nicht möglich – Safety aktiv"
+  const powerOn = !!(lastSafetyState && lastSafetyState.powerOn === true);
+
+  // Toggle: wenn schon an -> POWER OFF immer erlauben
+  if (powerOn) {
+    wsSendAction("powerOff", "POWER OFF gesendet");
+    return;
+  }
+
+  // Safety aktiv? -> Power ON blocken
+  if (lastSafetyState && lastSafetyState.lock === true) {
+    showOverlay(
+      "⚠ Sicherheitsquittierung",
+      lastSafetyState.text || "Power On nicht möglich – Safety aktiv",
+      true
     );
     return;
   }
-  sendAction("powerOn", "POWER ON gesendet");
+  wsSendAction("powerOn", "POWER ON gesendet");
 }
 
 /* =========================================================
@@ -168,6 +228,8 @@ function showOverlay(title, lines, requireChecked) {
 
   if (!overlay || !titleEl || !textEl) return;
 
+  const wasHidden = overlay.classList.contains("hidden");
+
   overlay.classList.remove("hidden");
 
   titleEl.textContent = title || "⚠ Sicherheitsquittierung";
@@ -179,8 +241,11 @@ function showOverlay(title, lines, requireChecked) {
   textEl.innerHTML = safeLines.join("<br>");
 
   if (checkbox) {
-    checkbox.checked = false;
-    checkbox.disabled = !requireChecked;
+    // Wichtig: Checkbox ist User-Interaktion. Nicht bei jedem WS-State-Update zurücksetzen.
+    if (wasHidden) {
+      checkbox.checked = false;
+    }
+    checkbox.disabled = !requireChecked;;
   }
 }
 
@@ -201,7 +266,8 @@ function confirmAck() {
     logLine("Bitte vor Ort prüfen und Checkbox bestätigen.");
     return;
   }
-  sendAction("ack", "ACK gesendet");
+
+  wsSendAction("safetyAck", "ACK gesendet");
   hideOverlay();
 }
 
@@ -292,7 +358,6 @@ function renderPowerWarningsEmergencies(msg) {
     ? items.map(t => `<div>${t}</div>`).join("")
     : "<em>Keine Meldungen</em>";
 }
-
 
 /* =========================================================
  *  Schritt 3.5: Links – Betriebsübersicht + Block-Signale
@@ -414,7 +479,6 @@ function renderBlocksLeft(msg) {
       const prevOk = (maskPrev & (1 << (to-1))) !== 0;
       const nowOk  = (maskNow  & (1 << (to-1))) !== 0;
 
-      // Zwei Ebenen: Preview (prinzipiell) + Now (jetzt)
       html += `<span class="badge ${prevOk ? "badge-green" : "badge-red"}" style="line-height:1.15; padding-top:6px; padding-bottom:6px;">
         <div style="font-size:0.85em; opacity:0.85;">P: B${from}→B${to}</div>
         <div style="font-weight:700;">N: ${nowOk ? "OK" : "STOP"}</div>

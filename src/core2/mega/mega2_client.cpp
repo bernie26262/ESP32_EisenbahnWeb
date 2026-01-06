@@ -8,7 +8,6 @@
 
 #include "debug.h"
 
-#include <Wire.h>
 
 //#define DEBUG_I2C   // ← HIER
 
@@ -27,40 +26,14 @@ void Mega2Client::begin()
 // ------------------------------------------------------------
 bool Mega2Client::pollStatus()
 {
-    // 1. Adresse ansprechen (Existenz prüfen)
-    Wire.beginTransmission(MEGA2_ADDR);
-    uint8_t rc = Wire.endTransmission();
+    SystemStatus tmpStatus{};
+    constexpr uint16_t expected = sizeof(SystemStatus);
 
-    #ifdef DEBUG_I2C
-    Serial.printf("[I2C][pollStatus] endTransmission rc=%u\n", rc);
-    #endif
-
-    if (rc != 0)
+    // Mega2 liefert SystemStatus direkt auf requestFrom (ohne vorheriges CMD)
+    if (!I2CBus::read(MEGA2_ADDR, &tmpStatus, expected))
         return false;
 
-    // 2. Status anfordern
-    SystemStatus tmpStatus;
-
-    constexpr uint8_t expected = sizeof(SystemStatus);
-    uint8_t got = Wire.requestFrom(MEGA2_ADDR, expected);
-
-    #ifdef DEBUG_I2C
-    Serial.printf(
-        "[I2C][pollStatus] requestFrom got=%u (expected %u)\n",
-        got, sizeof(SystemStatus)
-    );
-    #endif
-
-    if (got < expected)
-        return false;
-
-    // 3. In temporären Puffer lesen
-    Wire.readBytes(
-        reinterpret_cast<uint8_t*>(&tmpStatus),
-        expected
-    );
-
-    // 3.1 Sanity / Version check (v2)
+    // Sanity / Version check (v2)
     if (tmpStatus.version != SYSTEM_STATUS_VERSION ||
         tmpStatus.size    != sizeof(SystemStatus)  ||
         tmpStatus.nodeId  != NODE_MEGA2)
@@ -74,34 +47,20 @@ bool Mega2Client::pollStatus()
         return false;
     }
 
-    // 4. Gültigen Status ins Runtime-State übernehmen
     SystemRuntimeState::updateMega2Status(tmpStatus);
-
-    #ifdef DEBUG_I2C
-    Serial.println("[I2C][pollStatus] OK");
-    #endif
-
     return true;
 }
 
 // ------------------------------------------------------------
 // SAFETY: Fehler quittieren (ACK)
 // Protokoll: 1 Byte Command, 1 Byte Response
-// ------------------------------------------------------------
+// ------------------------------------------------------------ 
 bool Mega2Client::safetyAck()
 {
     uint8_t cmd = M2_CMD_ACK_ERROR;
 
-    // 1) Command senden
-    if (!I2CBus::write(MEGA2_ADDR, &cmd, sizeof(cmd)))
-        return false;
-
-    // 2) kurze Pause
-    delayMicroseconds(1000);
-
-    // 3) 1-Byte-Response lesen
     uint8_t resp = 0;
-    if (!I2CBus::read(MEGA2_ADDR, &resp, sizeof(resp)))
+    if (!I2CBus::writeRead(MEGA2_ADDR, &cmd, sizeof(cmd), &resp, sizeof(resp), 1000))
         return false;
 
     return (resp == 1);
@@ -164,6 +123,44 @@ bool Mega2Client::powerOn()
     );
 
     return (resp == 1);
+}
+
+// ------------------------------------------------------------
+// Generisch: SSR schalten (Mega2 SafetySSR)
+// Protokoll: [cmd, ssrIndex, 0/1] + 1-Byte-Response
+// ------------------------------------------------------------
+bool Mega2Client::setSsr(uint8_t idx, bool on)
+{
+    uint8_t buf[3];
+    buf[0] = M2_CMD_SET_SSR;
+    buf[1] = idx;
+    buf[2] = on ? 1 : 0;
+
+    if (!I2CBus::write(MEGA2_ADDR, buf, sizeof(buf)))
+        return false;
+
+    delayMicroseconds(1000);
+
+    uint8_t resp = 0;
+    if (!I2CBus::read(MEGA2_ADDR, &resp, sizeof(resp)))
+        return false;
+
+    DBG_PRINTF(
+        resp
+            ? (on ? "[M2] SSR %u ON OK\n" : "[M2] SSR %u OFF OK\n")
+            : "[M2] SSR %u CMD FAIL\n",
+        (unsigned)idx
+    );
+
+    return (resp == 1);
+}
+
+// ------------------------------------------------------------
+// STOP/PowerOff: MAIN_ENABLE aus
+// ------------------------------------------------------------
+bool Mega2Client::powerOff()
+{
+    return setSsr(SSR_MAIN_ENABLE, false);
 }
 
 

@@ -1,16 +1,20 @@
 #pragma once
 
+#include <stdint.h>
+
 namespace Mega2Link
 {
-    // Initialisierung (aus setup())
     void begin();
 
-    // Zyklisches Update (aus loop())
+    // Zyklisch in loop() aufrufen
     void update();
 
-    // Status
-    bool isOnline();
-
-    // Commands
+    // Aktionen (von WebUI/Serial)
     bool safetyAck();
+    bool nothalt();     // setzt NOTAUS (true)
+    bool powerOn();
+    bool powerOff();    // UI-STOP / SSR_MAIN_ENABLE aus
+
+    // optional: falls du später “lösen” willst
+    bool releaseNotaus();
 }

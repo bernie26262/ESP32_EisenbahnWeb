@@ -52,17 +52,23 @@
         <div class="panel" style="margin-top: 1rem;">
             <h1>Log</h1>
             <div id="log-window"></div>
+            <div class="hint" style="margin-top:.75rem;">
+                UI-Version: <span id="ui-version">?</span>
+            </div>
         </div>
     </main>
 
     <!-- ===================== RIGHT / SAFETY ===================== -->
     <aside class="panel panel-right safety-panel ok" id="safety-panel">
 
-        <!-- NOT-AUS -->
+        <!-- STOP (UI) -->
         <section class="safety-nothalt">
-            <button class="btn-nothalt" onclick="sendNothalt()">
-                🔴 NOT-AUS
+            <button id="btn-stop" class="btn-nothalt" onclick="sendStop()">
+                ⏹ STOP (Power OFF)
             </button>
+            <div class="hint" style="margin-top:.5rem;">
+                HW-NOT-AUS ist separat verdrahtet (fail-safe).
+            </div>
         </section>
 
         <!-- POWER -->

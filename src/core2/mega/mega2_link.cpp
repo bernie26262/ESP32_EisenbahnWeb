@@ -1,159 +1,200 @@
 #include "mega2_link.h"
 
 #include <Arduino.h>
-#include <Wire.h>
 
-#include "config/pins.h"
-
-#include "core2/bus/i2c_bus.h"
 #include "core2/mega/mega2_client.h"
-#include "network/eth_manager.h"
+#include "debug.h"
 
-
-// ------------------------------------------------------------
-// Konfiguration
-// ------------------------------------------------------------
-static constexpr uint32_t I2C_BOOT_DELAY_MS  = 500;
-static constexpr uint32_t MEGA2_ENTRY_POLL_MS = 500;
-static constexpr uint32_t MEGA2_POLL_MS      = 200;
-static constexpr uint32_t MEGA2_RECONNECT_MS = 5000;
-
-// ------------------------------------------------------------
-// Zustand
-// ------------------------------------------------------------
-static bool     s_i2cStarted  = false;
-static bool     s_mega2Online = false;
-static uint32_t s_bootMs      = 0;
-static uint32_t s_lastPollMs  = 0;
-static uint32_t s_lastEntryPollMs = 0;
-static uint32_t s_lastRetryMs = 0;
-static bool     s_scanned     = false;
-
-// ------------------------------------------------------------
-// I2C-Scanner (Debug, bewusst drin)
-// ------------------------------------------------------------
-#if DEBUG_ENABLED
-static void i2cScanOnce()
-{
-    Serial.println(F("[I2C] Scan start"));
-
-    for (uint8_t addr = 1; addr < 127; addr++)
-    {
-        Wire.beginTransmission(addr);
-        if (Wire.endTransmission() == 0)
-        {
-            Serial.printf("[I2C] Device @ 0x%02X\n", addr);
-        }
-    }
-
-    Serial.println(F("[I2C] Scan done"));
-}
-#else
-static void i2cScanOnce() {}
+#if defined(ESP32)
+  #include "freertos/FreeRTOS.h"
+  #include "freertos/portmacro.h"
+  static portMUX_TYPE s_actionMux = portMUX_INITIALIZER_UNLOCKED;
 #endif
 
+// Pending Actions (werden in update() im loop-Kontext ausgeführt)
+static volatile uint8_t s_pendingActions = 0;
+static constexpr uint8_t ACT_ACK     = 0x01;
+static constexpr uint8_t ACT_NOTHALT = 0x02;
+static constexpr uint8_t ACT_PON     = 0x04;
+static constexpr uint8_t ACT_REL     = 0x08;
+static constexpr uint8_t ACT_POFF    = 0x10;
 
-// ------------------------------------------------------------
-// Public API
-// ------------------------------------------------------------
-void Mega2Link::begin()
+static inline void queueAction(uint8_t mask)
 {
-    s_bootMs = millis();
+#if defined(ESP32)
+    portENTER_CRITICAL(&s_actionMux);
+    s_pendingActions |= mask;
+    portEXIT_CRITICAL(&s_actionMux);
+#else
+    s_pendingActions |= mask;
+#endif
 }
 
-void Mega2Link::update()
+static inline uint8_t takeActions()
 {
-    // ------------------------------
-    // WICHTIG: Erst starten, wenn Ethernet läuft
-    // ------------------------------
-    if (!Net::EthManager::isConnected())
-        return;
-
-    uint32_t now = millis();
-
-    // --------------------------------------------------
-    // Verzögerter I2C-Start (Boot-sicher)
-    // --------------------------------------------------
-    if (!s_i2cStarted)
-    {
-        if (now - s_bootMs >= I2C_BOOT_DELAY_MS)
-        {
-            I2CBus::begin(PIN_I2C_SDA, PIN_I2C_SCL);
-            Mega2Client::begin();
-            s_i2cStarted = true;
-
-            Serial.println(F("[I2C] Bus aktiviert"));
-        }
-        return;
-    }
-
-    // --------------------------------------------------
-    // Einmaliger Scan nach Bus-Start
-    // --------------------------------------------------
-    if (!s_scanned)
-    {
-        i2cScanOnce();
-        s_scanned = true;
-    }
-
-    // --------------------------------------------------
-    // Reconnect / Polling
-    // --------------------------------------------------
-    if (s_mega2Online)
-    {
-        if (now - s_lastPollMs >= MEGA2_POLL_MS)
-        {
-            s_lastPollMs = now;
-
-            if (!Mega2Client::pollStatus())
-            {
-                s_mega2Online = false;
-                s_lastRetryMs = now;
-                Serial.println(F("[I2C] Mega2 offline"));
-            }
-
-            // Entry-Matrizen separat (nicht kritisch fürs Online-Flag)
-            if (now - s_lastEntryPollMs >= MEGA2_ENTRY_POLL_MS)
-            {
-                s_lastEntryPollMs = now;
-
-                Mega2Client::pollEntryMatrix();
-                Mega2Client::pollEntryPreviewMatrix();
-            }
-
-        }
-    }
-    else
-    {
-        if (now - s_lastRetryMs >= MEGA2_RECONNECT_MS)
-        {
-            s_lastRetryMs = now;
-            Serial.println(F("[I2C] Reconnect Mega2..."));
-
-            if (Mega2Client::pollStatus())
-            {
-                s_mega2Online = true;
-                s_lastPollMs  = now;
-                Serial.println(F("[I2C] Mega2 wieder online"));
-            }
-        }
-    }
+#if defined(ESP32)
+    portENTER_CRITICAL(&s_actionMux);
+    uint8_t v = s_pendingActions;
+    s_pendingActions = 0;
+    portEXIT_CRITICAL(&s_actionMux);
+    return v;
+#else
+    uint8_t v = s_pendingActions;
+    s_pendingActions = 0;
+    return v;
+#endif
 }
 
-bool Mega2Link::isOnline()
-{
-    return s_mega2Online;
-}
+// Polling-Intervall(e)
+static uint32_t s_lastPollMs      = 0;
+static uint32_t s_lastMatrixMs    = 0;
+static uint32_t s_lastPreviewMs   = 0;
 
-bool Mega2Link::safetyAck()
+// Backoff/Rate-Limit bei I2C Fehlern (z.B. Mega2 bootet noch / Bus kurz offline)
+static uint32_t s_nextPollMs      = 0;
+static uint32_t s_pollIntervalMs  = 0;
+static uint8_t  s_pollFailCount   = 0;
+static bool     s_lastStatusOk    = false;
+
+
+static constexpr uint32_t POLL_STATUS_MS   = 200;   // Status öfter
+static constexpr uint32_t POLL_MATRIX_MS   = 800;   // Entry-Matrix seltener
+static constexpr uint32_t POLL_PREVIEW_MS  = 2000;  // Preview noch seltener
+
+namespace Mega2Link
 {
-    if (!s_mega2Online)
+    void begin()
     {
-        Serial.println(F("Safety ACK ignored (Mega2 offline)"));
-        return false;
+        Mega2Client::begin();
+        s_lastPollMs    = 0;
+        s_lastMatrixMs  = 0;
+        s_lastPreviewMs = 0;
+        s_nextPollMs = 0;
+        s_pollIntervalMs = 0;
+        s_pollFailCount = 0;
+        s_lastStatusOk = false;
+
+        DBG_PRINTLN("[M2LINK] begin()");
     }
 
-    bool ok = Mega2Client::safetyAck();
-    Serial.println(ok ? F("Safety ACK OK") : F("Safety ACK FAIL"));
-    return ok;
+    void update()
+    {
+        const uint32_t now = millis();
+
+        // Lebenszeichen (Debug): zeigt, dass update() läuft
+        static uint32_t s_lastAlive = 0;
+        if (now - s_lastAlive > 10000)
+        {
+            s_lastAlive = now;
+            DBG_PRINTLN("[M2LINK] update alive");
+        }
+
+        // 0) Pending Actions ausführen (nur hier -> keine I2C Calls aus WS/ISR Kontext)
+        const uint8_t act = takeActions();
+        if (act)
+        {
+            if (act & ACT_ACK)
+            {
+                DBG_PRINTLN("[M2LINK] sending cmd: SAFETY_ACK");
+                (void)Mega2Client::safetyAck();
+            }
+            if (act & ACT_NOTHALT)
+            {
+                DBG_PRINTLN("[M2LINK] sending cmd: NOTHALT=ON");
+                (void)Mega2Client::setNotaus(true);
+            }
+            if (act & ACT_REL)
+            {
+                DBG_PRINTLN("[M2LINK] sending cmd: NOTHALT=OFF");
+                (void)Mega2Client::setNotaus(false);
+            }
+            if (act & ACT_PON)
+            {
+                DBG_PRINTLN("[M2LINK] sending cmd: POWER_ON");
+                (void)Mega2Client::powerOn();
+            }
+            if (act & ACT_POFF)
+            {
+                DBG_PRINTLN("[M2LINK] sending cmd: POWER_OFF");
+                (void)Mega2Client::powerOff();
+            }
+        }
+
+        // 1) Status pollen (mit Backoff bei Fehlern)
+        if (s_pollIntervalMs == 0) s_pollIntervalMs = POLL_STATUS_MS;
+        if (now >= s_nextPollMs)
+        {
+            const bool ok = Mega2Client::pollStatus();
+            s_lastStatusOk = ok;
+
+            if (ok)
+            {
+                s_pollFailCount  = 0;
+                s_pollIntervalMs = POLL_STATUS_MS;
+            }
+            else
+            {
+                // Exponentieller Backoff, gedeckelt
+                if (s_pollFailCount < 6) s_pollFailCount++;
+                const uint32_t backoff = POLL_STATUS_MS << s_pollFailCount; // 200,400,800,...
+                s_pollIntervalMs = (backoff > 5000) ? 5000 : backoff;       // max 5s
+
+                // Debug nur beim Wechsel des Backoff-Levels (kein Spam)
+                static uint8_t s_lastLoggedFail = 0xFF;
+                if (s_lastLoggedFail != s_pollFailCount)
+                {
+                    s_lastLoggedFail = s_pollFailCount;
+                    DBG_PRINTF("[M2LINK] pollStatus failed -> backoff %ums (level %u)\n",
+                                (unsigned)s_pollIntervalMs,
+                                (unsigned)s_pollFailCount);
+                }
+            }
+
+            s_nextPollMs = now + s_pollIntervalMs;
+            s_lastPollMs = now; // bleibt für evtl. Diagnose erhalten
+        }
+// 2) Entry-Matrix pollen (nur wenn Mega2 erreichbar)
+        if (s_lastStatusOk && (now - s_lastMatrixMs >= POLL_MATRIX_MS))
+        {
+            s_lastMatrixMs = now;
+            (void)Mega2Client::pollEntryMatrix();
+        }
+
+        // 3) Entry-Preview pollen (nur wenn Mega2 erreichbar)
+        if (s_lastStatusOk && (now - s_lastPreviewMs >= POLL_PREVIEW_MS))
+        {
+            s_lastPreviewMs = now;
+            (void)Mega2Client::pollEntryPreviewMatrix();
+        }
+    }
+
+    bool safetyAck()
+    {
+        queueAction(ACT_ACK);
+        return true;
+    }
+
+    bool nothalt()
+    {
+        queueAction(ACT_NOTHALT);
+        return true;
+    }
+
+    bool releaseNotaus()
+    {
+        queueAction(ACT_REL);
+        return true;
+    }
+
+    bool powerOff()
+    {
+        queueAction(ACT_POFF);
+        return true;
+    }
+
+    bool powerOn()
+    {
+        queueAction(ACT_PON);
+        return true;
+    }
 }

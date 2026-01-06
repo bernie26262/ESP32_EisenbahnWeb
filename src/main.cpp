@@ -7,6 +7,7 @@
 #include "web/webserver.h"
 
 #include "core2/mega/mega2_link.h"
+#include "core2/bus/i2c_bus.h"
 
 // ============================================================================
 // SETUP
@@ -22,6 +23,9 @@ void setup()
     Net::EthManager::begin();
     Web::begin();
 
+    // I2C Master initialisieren (WICHTIG: sonst Wire-NULL-TX / lock-errors)
+    I2CBus::begin(PIN_I2C_SDA, PIN_I2C_SCL, 100000);
+
     Mega2Link::begin();
 
     Serial.println(F("[ESP] Setup abgeschlossen"));
@@ -32,7 +36,6 @@ void setup()
 // ============================================================================
 void loop()
 {
-    Web::pushStateIfDirty();
     Web::loop();
     Mega2Link::update();
 
@@ -44,5 +47,4 @@ void loop()
             Mega2Link::safetyAck();
         }
     }
-    
 }
