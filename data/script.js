@@ -226,6 +226,7 @@ function applyUiState(ui, msg) {
   // --------------------------------------------------
 
   const mega2online = !!(msg && msg.mega2 && msg.mega2.online);
+const mega1online = !!(msg.mega1 && msg.mega1.online);
   const wsOk = (wsConnected === true);
   const lock = !!(lastSafetyState && lastSafetyState.lock === true);
   const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
@@ -236,6 +237,7 @@ function applyUiState(ui, msg) {
 // --------------------------------------------------
 const bWs = document.getElementById("badge-ws");
 const bM2 = document.getElementById("badge-mega2");
+const bM1 = document.getElementById("badge-mega1");
 const bPw = document.getElementById("badge-power");
 const bNo = document.getElementById("badge-notaus");
 
@@ -246,6 +248,10 @@ if (bWs) {
 if (bM2) {
   bM2.className = "badge " + (mega2online ? "badge-ok" : "badge-err");
   bM2.textContent = "Mega2: " + (mega2online ? "online" : "offline");
+}
+if (bM1) {
+  bM1.className = "badge " + (mega1online ? "badge-ok" : "badge-err");
+  bM1.textContent = "Mega1: " + (mega1online ? "online" : "offline");
 }
 if (bPw) {
   bPw.className = "badge " + (powerOn ? "badge-ok" : "badge-warn");

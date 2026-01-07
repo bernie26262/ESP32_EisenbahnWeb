@@ -7,6 +7,7 @@
 #include "web/webserver.h"
 
 #include "core2/mega/mega2_link.h"
+#include "core2/mega/mega1_link.h"
 #include "core2/bus/i2c_bus.h"
 
 // ============================================================================
@@ -28,6 +29,7 @@ void setup()
 
     Mega2Link::begin();
 
+    Mega1Link::begin();
     Serial.println(F("[ESP] Setup abgeschlossen"));
 }
 
@@ -39,6 +41,7 @@ void loop()
     Web::loop();
     Mega2Link::update();
 
+    Mega1Link::update();
     if (Serial.available())
     {
         char c = Serial.read();

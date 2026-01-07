@@ -31,6 +31,13 @@ namespace SystemRuntimeState
     // Rohstatus (Payload)
     const SystemStatus& mega2Status();
 
+
+    // ----------------------------------------------------
+    // Mega1 (minimal)
+    // ----------------------------------------------------
+    void updateMega1Status(const SystemStatus& st);
+    bool mega1Online();
+    const SystemStatus& mega1Status();
     // Abgeleitete Safety-Informationen
     bool safetyLock();
     SafetyReason safetyReason();

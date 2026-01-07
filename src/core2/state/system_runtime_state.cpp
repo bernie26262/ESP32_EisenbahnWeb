@@ -8,6 +8,7 @@
 // ----------------------------------------------------
 static SystemStatus s_m2Status{};
 
+static SystemStatus s_m1Status{};
 // NEU: Mega2SafetyStatus Cache (separat gepollt)
 static Mega2SafetyStatus s_m2Safety{};
 
@@ -17,6 +18,7 @@ static uint16_t     s_m2EntryPreview[9]  = {0};
 static uint32_t     s_lastEntryRxMs = 0;
 static uint32_t     s_lastRxMs = 0;
 
+static uint32_t     s_lastRxMsM1 = 0;
 uint8_t SystemRuntimeState::errorType  = 0;
 uint8_t SystemRuntimeState::errorIndex = 0;
 
@@ -97,8 +99,25 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
             errorIndex
         );
     }
-
     g_stateDirty = true;
+}
+
+void SystemRuntimeState::updateMega1Status(const SystemStatus& st)
+{
+    s_m1Status   = st;
+    s_lastRxMsM1 = millis();
+    g_stateDirty = true;
+}
+
+
+bool SystemRuntimeState::mega1Online()
+{
+    return (millis() - s_lastRxMsM1) < 1000;
+}
+
+const SystemStatus& SystemRuntimeState::mega1Status()
+{
+    return s_m1Status;
 }
 
 // ----------------------------------------------------

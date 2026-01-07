@@ -35,6 +35,9 @@ static String buildWsStateJson()
     const bool m2online = SystemRuntimeState::mega2Online();
     doc["mega2"]["online"] = m2online;
 
+    bool m1online = SystemRuntimeState::mega1Online();
+    doc["mega1"]["online"] = m1online;
+
     // -----------------------------
     // Safety (ESP abgeleitet)
     // -----------------------------

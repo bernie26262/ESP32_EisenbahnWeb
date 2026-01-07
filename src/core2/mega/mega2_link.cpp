@@ -3,6 +3,7 @@
 #include <Arduino.h>
 
 #include "core2/mega/mega2_client.h"
+#include "core2/bus/i2c_bus.h"
 #include "debug.h"
 
 #if defined(ESP32)
@@ -11,7 +12,6 @@
   static portMUX_TYPE s_actionMux = portMUX_INITIALIZER_UNLOCKED;
 #endif
 
-// Pending Actions (werden in update() im loop-Kontext ausgeführt)
 static volatile uint8_t s_pendingActions = 0;
 static constexpr uint8_t ACT_ACK     = 0x01;
 static constexpr uint8_t ACT_NOTHALT = 0x02;
@@ -45,165 +45,156 @@ static inline uint8_t takeActions()
 #endif
 }
 
-// Polling-Intervall(e)
-static uint32_t s_lastPollMs      = 0;
+static uint32_t s_lastSafetyMs    = 0;
 static uint32_t s_lastMatrixMs    = 0;
 static uint32_t s_lastPreviewMs   = 0;
 
-// Backoff/Rate-Limit bei I2C Fehlern (z.B. Mega2 bootet noch / Bus kurz offline)
 static uint32_t s_nextPollMs      = 0;
 static uint32_t s_pollIntervalMs  = 0;
 static uint8_t  s_pollFailCount   = 0;
 static bool     s_lastStatusOk    = false;
 
+static constexpr uint32_t POLL_STATUS_MS   = 200;
+static constexpr uint32_t POLL_SAFETY_MS   = 400;   // Safety halb so oft wie Status
+static constexpr uint32_t POLL_MATRIX_MS   = 800;
+static constexpr uint32_t POLL_PREVIEW_MS  = 2000;
 
-static constexpr uint32_t POLL_STATUS_MS   = 200;   // Status öfter
-static constexpr uint32_t POLL_MATRIX_MS   = 800;   // Entry-Matrix seltener
-static constexpr uint32_t POLL_PREVIEW_MS  = 2000;  // Preview noch seltener
+static constexpr uint32_t BUSY_RETRY_MS    = 30;
 
 namespace Mega2Link
 {
-    
 void requestPollNow()
 {
-    // Sofortiges Polling (kein Warten auf Backoff/Interval)
     s_nextPollMs = 0;
-    // wenn wir gerade im Backoff sind, wieder auf Normal-Intervall zurück
     if (s_pollIntervalMs == 0) s_pollIntervalMs = POLL_STATUS_MS;
 }
 
 void begin()
+{
+    Mega2Client::begin();
+    s_lastSafetyMs  = 0;
+    s_lastMatrixMs  = 0;
+    s_lastPreviewMs = 0;
+
+    s_nextPollMs     = millis() + 10;
+    s_pollIntervalMs = POLL_STATUS_MS;
+    s_pollFailCount  = 0;
+    s_lastStatusOk   = false;
+
+    DBG_PRINTLN("[M2LINK] begin()");
+}
+
+void update()
+{
+    const uint32_t now = millis();
+
+    // 0) Pending Actions (nur hier -> keine I2C Calls aus WS/ISR Kontext)
+    const uint8_t act = takeActions();
+    if (act)
     {
-        Mega2Client::begin();
-        s_lastPollMs    = 0;
-        s_lastMatrixMs  = 0;
-        s_lastPreviewMs = 0;
-        s_nextPollMs = 0;
-        s_pollIntervalMs = 0;
-        s_pollFailCount = 0;
-        s_lastStatusOk = false;
-
-        DBG_PRINTLN("[M2LINK] begin()");
-    }
-
-    void update()
-    {
-        const uint32_t now = millis();
-
-        // Lebenszeichen (Debug): zeigt, dass update() läuft
-        static uint32_t s_lastAlive = 0;
-        if (now - s_lastAlive > 10000)
+        if (act & ACT_ACK)
         {
-            s_lastAlive = now;
-            DBG_PRINTLN("[M2LINK] update alive");
+            DBG_PRINTLN("[M2LINK] sending cmd: SAFETY_ACK");
+            (void)Mega2Client::safetyAck();
+            requestPollNow();
         }
-
-        // 0) Pending Actions ausführen (nur hier -> keine I2C Calls aus WS/ISR Kontext)
-        const uint8_t act = takeActions();
-        if (act)
+        if (act & ACT_NOTHALT)
         {
-            if (act & ACT_ACK)
-            {
-                DBG_PRINTLN("[M2LINK] sending cmd: SAFETY_ACK");
-                (void)Mega2Client::safetyAck();
-            }
-            if (act & ACT_NOTHALT)
-            {
-                DBG_PRINTLN("[M2LINK] sending cmd: NOTHALT=ON");
-                (void)Mega2Client::setNotaus(true);
-            }
-            if (act & ACT_REL)
-            {
-                DBG_PRINTLN("[M2LINK] sending cmd: NOTHALT=OFF");
-                (void)Mega2Client::setNotaus(false);
-            }
-            if (act & ACT_PON)
-            {
-                DBG_PRINTLN("[M2LINK] sending cmd: POWER_ON");
-                (void)Mega2Client::powerOn();
-            }
-            if (act & ACT_POFF)
-            {
-                DBG_PRINTLN("[M2LINK] sending cmd: POWER_OFF");
-                (void)Mega2Client::powerOff();
-            }
+            DBG_PRINTLN("[M2LINK] sending cmd: NOTHALT=ON");
+            (void)Mega2Client::setNotaus(true);
+            requestPollNow();
         }
-
-        // 1) Status pollen (mit Backoff bei Fehlern)
-        if (s_pollIntervalMs == 0) s_pollIntervalMs = POLL_STATUS_MS;
-        if (now >= s_nextPollMs)
+        if (act & ACT_REL)
         {
-            const bool ok = Mega2Client::pollStatus();
-            s_lastStatusOk = ok;
-
-            if (ok)
-            {
-                s_pollFailCount  = 0;
-                s_pollIntervalMs = POLL_STATUS_MS;
-            }
-            else
-            {
-                // Exponentieller Backoff, gedeckelt
-                if (s_pollFailCount < 6) s_pollFailCount++;
-                const uint32_t backoff = POLL_STATUS_MS << s_pollFailCount; // 200,400,800,...
-                s_pollIntervalMs = (backoff > 5000) ? 5000 : backoff;       // max 5s
-
-                // Debug nur beim Wechsel des Backoff-Levels (kein Spam)
-                static uint8_t s_lastLoggedFail = 0xFF;
-                if (s_lastLoggedFail != s_pollFailCount)
-                {
-                    s_lastLoggedFail = s_pollFailCount;
-                    DBG_PRINTF("[M2LINK] pollStatus failed -> backoff %ums (level %u)\n",
-                                (unsigned)s_pollIntervalMs,
-                                (unsigned)s_pollFailCount);
-                }
-            }
-
-            s_nextPollMs = now + s_pollIntervalMs;
-            s_lastPollMs = now; // bleibt für evtl. Diagnose erhalten
+            DBG_PRINTLN("[M2LINK] sending cmd: NOTHALT=OFF");
+            (void)Mega2Client::setNotaus(false);
+            requestPollNow();
         }
-// 2) Entry-Matrix pollen (nur wenn Mega2 erreichbar)
-        if (s_lastStatusOk && (now - s_lastMatrixMs >= POLL_MATRIX_MS))
+        if (act & ACT_PON)
         {
-            s_lastMatrixMs = now;
-            (void)Mega2Client::pollEntryMatrix();
+            DBG_PRINTLN("[M2LINK] sending cmd: POWER_ON");
+            (void)Mega2Client::powerOn();
+            requestPollNow();
         }
-
-        // 3) Entry-Preview pollen (nur wenn Mega2 erreichbar)
-        if (s_lastStatusOk && (now - s_lastPreviewMs >= POLL_PREVIEW_MS))
+        if (act & ACT_POFF)
         {
-            s_lastPreviewMs = now;
-            (void)Mega2Client::pollEntryPreviewMatrix();
+            DBG_PRINTLN("[M2LINK] sending cmd: POWER_OFF");
+            (void)Mega2Client::powerOff();
+            requestPollNow();
         }
     }
 
-    bool safetyAck()
+    // 1) Status poll (BUSY getrennt von ERROR)
+    if (s_pollIntervalMs == 0) s_pollIntervalMs = POLL_STATUS_MS;
+
+    if (now >= s_nextPollMs)
     {
-        queueAction(ACT_ACK);
-        return true;
+        const I2CBus::Result r = Mega2Client::pollStatus();
+
+        if (r == I2CBus::Result::OK)
+        {
+            s_lastStatusOk   = true;
+            s_pollFailCount  = 0;
+            s_pollIntervalMs = POLL_STATUS_MS;
+        }
+        else if (r == I2CBus::Result::BUSY)
+        {
+            s_lastStatusOk   = false;
+            s_pollIntervalMs = BUSY_RETRY_MS;
+
+            static uint32_t s_lastBusyLog = 0;
+            if (now - s_lastBusyLog > 5000)
+            {
+                s_lastBusyLog = now;
+                DBG_PRINTLN("[M2LINK] bus busy");
+            }
+        }
+        else // ERROR
+        {
+            s_lastStatusOk = false;
+
+            if (s_pollFailCount < 6) s_pollFailCount++;
+            const uint32_t backoff = POLL_STATUS_MS << s_pollFailCount; // 200,400,800,...
+            s_pollIntervalMs = (backoff > 5000) ? 5000 : backoff;
+
+            static uint8_t s_lastLoggedFail = 0xFF;
+            if (s_lastLoggedFail != s_pollFailCount)
+            {
+                s_lastLoggedFail = s_pollFailCount;
+                DBG_PRINTF("[M2LINK] poll ERROR -> backoff %ums (level %u)\n",
+                           (unsigned)s_pollIntervalMs,
+                           (unsigned)s_pollFailCount);
+            }
+        }
+
+        s_nextPollMs = now + s_pollIntervalMs;
     }
 
-    bool nothalt()
+    // 1b) SafetyStatus poll (nur wenn Status OK)
+    if (s_lastStatusOk && (now - s_lastSafetyMs >= POLL_SAFETY_MS))
     {
-        queueAction(ACT_NOTHALT);
-        return true;
+        s_lastSafetyMs = now;
+        (void)Mega2Client::pollSafetyStatus();
     }
 
-    bool releaseNotaus()
+    // 2) Matrices
+    if (s_lastStatusOk && (now - s_lastMatrixMs >= POLL_MATRIX_MS))
     {
-        queueAction(ACT_REL);
-        return true;
+        s_lastMatrixMs = now;
+        (void)Mega2Client::pollEntryMatrix();
     }
 
-    bool powerOff()
+    if (s_lastStatusOk && (now - s_lastPreviewMs >= POLL_PREVIEW_MS))
     {
-        queueAction(ACT_POFF);
-        return true;
-    }
-
-    bool powerOn()
-    {
-        queueAction(ACT_PON);
-        return true;
+        s_lastPreviewMs = now;
+        (void)Mega2Client::pollEntryPreviewMatrix();
     }
 }
+
+bool safetyAck()     { queueAction(ACT_ACK);     return true; }
+bool nothalt()       { queueAction(ACT_NOTHALT); return true; }
+bool releaseNotaus() { queueAction(ACT_REL);     return true; }
+bool powerOff()      { queueAction(ACT_POFF);    return true; }
+bool powerOn()       { queueAction(ACT_PON);     return true; }
+
+} // namespace Mega2Link
