@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "system_runtime_state.h"
+#include "system/mega1_diag_payload.h"
 #include "debug.h"
 #include "proto_common.h"   // <-- für SAFETY_BLOCK_* + Mega2SafetyStatus
 
@@ -9,6 +10,7 @@
 static SystemStatus s_m2Status{};
 
 static SystemStatus s_m1Status{};
+static Mega1DiagV1 s_m1Diag{};
 // NEU: Mega2SafetyStatus Cache (separat gepollt)
 static Mega2SafetyStatus s_m2Safety{};
 
@@ -120,6 +122,18 @@ const SystemStatus& SystemRuntimeState::mega1Status()
     return s_m1Status;
 }
 
+
+
+void SystemRuntimeState::updateMega1Diag(const Mega1DiagV1& d)
+{
+    s_m1Diag     = d;
+    g_stateDirty = true;
+}
+
+const Mega1DiagV1& SystemRuntimeState::mega1Diag()
+{
+    return s_m1Diag;
+}
 // ----------------------------------------------------
 // NEU: Update Mega2SafetyStatus (CMD 0x20)
 // ----------------------------------------------------

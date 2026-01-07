@@ -7,6 +7,7 @@
 #include "network/eth_manager.h"
 #include "core2/state/system_runtime_state.h"
 #include "core2/mega/mega2_link.h"
+#include "core2/mega/mega1_link.h"
 
 #include <LittleFS.h>
 
@@ -37,6 +38,18 @@ static String buildWsStateJson()
 
     bool m1online = SystemRuntimeState::mega1Online();
     doc["mega1"]["online"] = m1online;
+
+// Mega1 Diagnose (kompakt)
+const auto& m1d = SystemRuntimeState::mega1Diag();
+JsonObject m1diag = doc["mega1"]["diag"].to<JsonObject>();
+m1diag["ver"] = m1d.version;
+m1diag["seq"] = m1d.seq;
+m1diag["mode"] = m1d.mode;
+m1diag["warnings"] = m1d.warnings;
+m1diag["weicheIstBits"] = m1d.weicheIstGeradeBits;
+m1diag["weicheSlowBits"] = m1d.weicheSlowActiveBits;
+m1diag["weicheSollBits"] = m1d.weicheSollGeradeBits;
+m1diag["powerMask"] = m1d.powerMask;
 
     // -----------------------------
     // Safety (ESP abgeleitet)

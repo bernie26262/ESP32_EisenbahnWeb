@@ -1,143 +1,111 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <title>Eisenbahn – Safety & Status</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css?v=20260106p17">
-    
+  <meta charset="UTF-8" />
+  <title>Eisenbahn – Safety & Status</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="style.css?v=20260107p5">
 </head>
 
 <body>
 <div class="container">
 
-    <!-- STATUS BADGES (oben rechts) -->
-    <div id="status-badges" class="status-badges">
-        <div class="badge-row">
-            <span id="badge-ws" class="badge badge-warn">WS: ?</span>
-            <span id="badge-mega2" class="badge badge-warn">Mega2: ?</span>
-            <span id="badge-mega1" class="badge badge-warn">Mega1: ?</span>
-        </div>
-        <div class="badge-row">
-            <span id="badge-power" class="badge badge-warn">Power: ?</span>
-            <span id="badge-notaus" class="badge badge-ok">HW-NOT AUS: nein</span>
-        </div>
+  <!-- LEFT -->
+  <main class="main-left">
+    <h1>Betriebsübersicht</h1>
+
+    <div class="overview-grid">
+
+      <section class="overview-card">
+        <h2>SBHF (Mega2)</h2>
+        <div id="ov-sbhf"><em>keine Daten</em></div>
+
+        <div class="ov-subtitle">Weichen (Mega2)</div>
+        <div id="ov-turnouts"><em>keine Daten</em></div>
+      </section>
+
+      <section class="overview-card">
+        <h2>Blöcke (Mega2)</h2>
+        <div id="ov-blocks"><em>keine Daten</em></div>
+      </section>
+
+      <section class="overview-card">
+        <h2>Bahnhöfe / Signale (Mega1)</h2>
+        <div id="ov-stations"><em>keine Daten</em></div>
+      </section>
+
+      <section class="overview-card">
+        <h2>Weichen (Mega1)</h2>
+        <div id="ov-m1weichen"><em>keine Daten</em></div>
+      </section>
+
     </div>
 
+    <div class="hint" style="margin-top: 1rem;">
+      Diagnose/Kalibrier-Seite ist geplant (folgt).
+    </div>
 
-    <!-- ===================== LEFT ===================== -->
-    <main class="panel">
-        <h1>Betriebsübersicht</h1>
+    <div class="panel" style="margin-top: 1rem;">
+      <h1>Log</h1>
+      <div id="log-window" class="log-window"></div>
+      <div class="hint" style="margin-top:.75rem;">
+        UI-Version: <span id="ui-version">?</span>
+      </div>
+    </div>
+  </main>
 
-        <div class="overview-grid">
-            <section class="overview-card">
-                <h2>SBHF (Mega2)</h2>
-                <div id="ov-sbhf">
-                    <em>keine Daten</em>
-                </div>
-            </section>
-
-            <section class="overview-card">
-                <h2>Blöcke (Mega2)</h2>
-                <div id="ov-blocks">
-                    <em>keine Daten</em>
-                </div>
-            </section>
-
-            <section class="overview-card">
-                <h2>Weichen (Mega2)</h2>
-                <div id="ov-turnouts">
-                    <em>noch nicht angebunden</em>
-                </div>
-            </section>
-
-            <section class="overview-card">
-                <h2>Bahnhöfe / Signale (Mega1)</h2>
-                <div id="ov-stations">
-                    <em>noch nicht definiert</em>
-                </div>
-            </section>
-        </div>
-
-        <div class="hint" style="margin-top: 1rem;">
-            Diagnose/Kalibrier-Seite ist geplant (folgt).
-        </div>
-
-        <div class="panel" style="margin-top: 1rem;">
-            <h1>Log</h1>
-            <div id="log-window"></div>
-            <div class="hint" style="margin-top:.75rem;">
-                UI-Version: <span id="ui-version">?</span>
-            </div>
-        </div>
-    </main>
-
-    <!-- ===================== RIGHT / SAFETY ===================== -->
-    <aside class="panel panel-right safety-panel ok" id="safety-panel">
-<!-- POWER (Toggle) -->
-<section class="power-toggle">
-    <button id="btn-power" class="btn-power" onclick="sendPowerOn()">
-        ⚡ POWER ON
+  <!-- RIGHT -->
+  <aside class="main-right">
+    <button id="btn-power" class="power-btn power-off" type="button">
+      ⏻ POWER ?
     </button>
-    <div class="hint" style="margin-top:.5rem;">
-        HW-NOT-AUS ist separat verdrahtet (fail-safe).
+
+    <button id="btn-m1-mode" class="btn btn-mode" type="button">
+      AUTO / MANUELL
+    </button>
+
+    <div class="hint" style="margin-top: .75rem;">
+      HW-NOT-AUS ist separat verdrahtet (fail-safe).
     </div>
-</section>
 
-        <div class="panel-separator"></div>
+    <hr>
 
-        <!-- STATUS -->
-        <section>
-            <h2>Systemstatus</h2>
+    <h2>Systemstatus</h2>
+    <div id="system-status" class="system-status ok">
+      <span class="dot"></span>
+      <span id="system-status-text">System OK</span>
+    </div>
 
-            <div id="safety-status" class="status-box status-ok">
-                🟢 System OK
-            </div>
-        </section>
+    <hr>
 
-        <div class="panel-separator"></div>
+    <h2>Meldungen</h2>
+    <div id="alerts" class="alerts"></div>
 
-        <!-- MELDUNGEN -->
-        <section>
-            <h2>Meldungen</h2>
-            <div id="safety-messages-list">
-                <em>Keine Meldungen</em>
-            </div>
-        </section>
+    <hr>
 
-        <div class="panel-separator"></div>
+    <h2>Trafo</h2>
+    <div class="trafo-box">
+      <div>Trafo A: <span id="trafo-a">– V</span></div>
+      <div>Trafo B: <span id="trafo-b">– V</span></div>
+    </div>
+  </aside>
 
-        <!-- TRAFO -->
-        <section>
-            <h2>Trafo</h2>
-            <div>Trafo A: – V</div>
-            <div>Trafo B: – V</div>
-        </section>
-
-    </aside>
+  <!-- OVERLAY unten rechts -->
+  <div id="status-badges" class="status-badges">
+    <div class="badge-row">
+      <span id="badge-ws" class="badge badge-warn">WS: ?</span>
+      <span id="badge-m2" class="badge badge-warn">Mega2: ?</span>
+      <span id="badge-m1" class="badge badge-warn">Mega1: ?</span>
+      <span id="badge-m1mode" class="badge badge-warn">Mega1 Modus: ?</span>
+    </div>
+    <div class="badge-row" style="margin-top:6px;">
+      <span id="badge-power" class="badge badge-warn">Power: ?</span>
+      <span id="badge-notaus" class="badge badge-ok">HW-NOT AUS: nein</span>
+    </div>
+  </div>
 
 </div>
 
-<!-- ===================== ACK OVERLAY ===================== -->
-<div id="ack-overlay" class="overlay hidden">
-    <div class="overlay-box">
-        <h2 id="ack-title">⚠ Sicherheitsquittierung</h2>
-
-        <div id="ack-text">Sicherheitsfehler</div>
-
-        <label class="ack-checkbox">
-            <input type="checkbox">
-            <span>Fehler vor Ort geprüft und behoben</span>
-        </label>
-
-        <div class="overlay-actions">
-            <button class="btn" onclick="closeOverlay()">Abbrechen</button>
-            <button class="btn btn-ack" onclick="confirmAck()">ACK senden</button>
-        </div>
-    </div>
-</div>
-
-<script src="safety_ui_texts.js?v=20260106p17"></script>
-<script src="script.js?v=20260106p17"></script>
+<script src="script.js?v=20260107p5"></script>
 </body>
 </html>

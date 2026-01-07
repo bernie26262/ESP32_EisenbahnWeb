@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <stdint.h>
 #include "system/system_status_payload.h"
+#include "system/mega1_diag_payload.h"
 #include "proto_common.h"   // Mega2SafetyStatus
 
 // =====================================================
@@ -38,6 +39,10 @@ namespace SystemRuntimeState
     void updateMega1Status(const SystemStatus& st);
     bool mega1Online();
     const SystemStatus& mega1Status();
+
+    // Mega1 Diagnose (read-only)
+    void updateMega1Diag(const Mega1DiagV1& d);
+    const Mega1DiagV1& mega1Diag();
     // Abgeleitete Safety-Informationen
     bool safetyLock();
     SafetyReason safetyReason();
