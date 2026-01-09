@@ -1,128 +1,143 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <title>Eisenbahn – Safety & Status</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="style.css?v=20260109p06" />
+    <meta charset="UTF-8">
+    <title>Eisenbahn – Safety & Status</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css?v=20260106p17">
+    
 </head>
+
 <body>
 <div class="container">
 
-    <div class="badge-row">
-      <span id="badge-power" class="badge badge-warn">Power: ?</span>
-      <span id="badge-notaus" class="badge badge-ok">HW-NOT AUS: nein</span>
-      <span id="pill-m1-mode" class="badge badge-warn">Mode: ?</span>
-    </div>
-  </div>
-
-  <!-- LEFT: Betriebsübersicht -->
-  <main class="panel">
-    <h1>Betriebsübersicht</h1>
-
-    <div class="overview-grid">
-      <!-- Links oben: Mega2 Weichen + darunter SBHF -->
-      <section class="overview-card" id="card-m2-lefttop">
-        <h2>Mega2 – Weichen</h2>
-        <div id="ov-turnouts"><em>keine Daten</em></div>
-        <div class="sub-sep"></div>
-        <h2>Mega2 – SBHF</h2>
-        <div id="ov-sbhf"><em>keine Daten</em></div>
-      </section>
-
-      <!-- Rechts oben: Mega2 Blöcke -->
-      <section class="overview-card" id="card-m2-blocks">
-        <h2>Mega2 – Blöcke</h2>
-        <div id="ov-blocks"><em>keine Daten</em></div>
-      </section>
-
-      <!-- Links unten: Mega1 Bahnhöfe -->
-      <section class="overview-card" id="card-m1-stations">
-        <h2>Mega1 – Bahnhöfe / Signale</h2>
-        <div id="ov-stations"><em>keine Daten</em></div>
-      </section>
-
-      <!-- Rechts unten: Mega1 Weichen -->
-      <section class="overview-card" id="card-m1-turnouts">
-        <h2>Mega1 – Weichen</h2>
-        <div id="ov-m1weichen"><em>keine Daten</em></div>
-      </section>
-    </div>
-
-    <div class="hint" style="margin-top: 1rem;">Diagnose/Kalibrier-Seite ist geplant (folgt).</div>
-
-    <div class="panel" style="margin-top: 1rem;">
-      <h1>Log</h1>
-      <div id="log-window"></div>
-      <div class="hint" style="margin-top: .75rem;">UI-Version: <span id="ui-version">?</span></div>
-    </div>
-  </main>
-
-  <!-- RIGHT: Safety / Controls -->
-  <aside class="panel panel-right safety-panel ok" id="safety-panel">
-
-    <section class="power-toggle">
-      <button id="btn-power" class="btn-power" type="button">⚡ POWER ON</button>
-      <button id="btn-m1-mode" class="btn-stop" type="button" style="margin-top:.6rem;" disabled>Auto / Manuell</button>
-      <div class="hint" style="margin-top:.5rem;">HW-NOT-AUS ist separat verdrahtet (fail-safe).</div>
-    </section>
-
-    <div class="panel-separator"></div>
-
-    <section>
-      <h2>Systemstatus</h2>
-      <div id="status-pills" class="status-pills" aria-label="Quick Status">
+    <!-- STATUS BADGES (oben rechts) -->
+    <div id="status-badges" class="status-badges">
         <div class="badge-row">
-          <span id="badge-ws" class="badge badge-warn">WS: ?</span>
-          <span id="badge-mega2" class="badge badge-warn">Mega2: ?</span>
-          <span id="badge-mega1" class="badge badge-warn">Mega1: ?</span>
+            <span id="badge-ws" class="badge badge-warn">WS: ?</span>
+            <span id="badge-mega2" class="badge badge-warn">Mega2: ?</span>
+            <span id="badge-mega1" class="badge badge-warn">Mega1: ?</span>
         </div>
-        <div class="badge-row" style="margin-top:.4rem;">
-          <span id="badge-power" class="badge badge-warn">Power: ?</span>
-          <span id="badge-notaus" class="badge badge-ok">HW-NOT AUS: ?</span>
-          <span id="pill-m1-mode" class="badge badge-warn">Mode: ?</span>
+        <div class="badge-row">
+            <span id="badge-power" class="badge badge-warn">Power: ?</span>
+            <span id="badge-notaus" class="badge badge-ok">HW-NOT AUS: nein</span>
         </div>
-      </div>
-      <div id="safety-status" class="status-box status-ok">🟢 System OK</div>
-    </section>
-
-    <div class="panel-separator"></div>
-
-    <section>
-      <h2>Meldungen</h2>
-      <div id="safety-messages-list"><em>Keine Meldungen</em></div>
-    </section>
-
-    <div class="panel-separator"></div>
-
-    <section>
-      <h2>Trafo</h2>
-      <div>Trafo A: – V</div>
-      <div>Trafo B: – V</div>
-    </section>
-
-  </aside>
-
-  <!-- ACK / Safety Overlay -->
-  <div id="ack-overlay" class="overlay hidden" role="dialog" aria-modal="true">
-    <div class="overlay-card">
-      <h2 id="overlay-title">⚠ Sicherheitsquittierung</h2>
-      <div id="overlay-text" class="overlay-text"></div>
-
-      <label class="overlay-check">
-        <input type="checkbox" id="overlay-check" />
-        Vor Ort geprüft / verstanden
-      </label>
-
-      <div class="overlay-actions">
-        <button class="btn" type="button" id="overlay-close">Schließen</button>
-        <button class="btn btn-primary" type="button" id="overlay-ack">ACK</button>
-      </div>
     </div>
-  </div>
+
+
+    <!-- ===================== LEFT ===================== -->
+    <main class="panel">
+        <h1>Betriebsübersicht</h1>
+
+        <div class="overview-grid">
+            <section class="overview-card">
+                <h2>SBHF (Mega2)</h2>
+                <div id="ov-sbhf">
+                    <em>keine Daten</em>
+                </div>
+            </section>
+
+            <section class="overview-card">
+                <h2>Blöcke (Mega2)</h2>
+                <div id="ov-blocks">
+                    <em>keine Daten</em>
+                </div>
+            </section>
+
+            <section class="overview-card">
+                <h2>Weichen (Mega2)</h2>
+                <div id="ov-turnouts">
+                    <em>noch nicht angebunden</em>
+                </div>
+            </section>
+
+            <section class="overview-card">
+                <h2>Bahnhöfe / Signale (Mega1)</h2>
+                <div id="ov-stations">
+                    <em>noch nicht definiert</em>
+                </div>
+            </section>
+        </div>
+
+        <div class="hint" style="margin-top: 1rem;">
+            Diagnose/Kalibrier-Seite ist geplant (folgt).
+        </div>
+
+        <div class="panel" style="margin-top: 1rem;">
+            <h1>Log</h1>
+            <div id="log-window"></div>
+            <div class="hint" style="margin-top:.75rem;">
+                UI-Version: <span id="ui-version">?</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- ===================== RIGHT / SAFETY ===================== -->
+    <aside class="panel panel-right safety-panel ok" id="safety-panel">
+<!-- POWER (Toggle) -->
+<section class="power-toggle">
+    <button id="btn-power" class="btn-power" onclick="sendPowerOn()">
+        ⚡ POWER ON
+    </button>
+    <div class="hint" style="margin-top:.5rem;">
+        HW-NOT-AUS ist separat verdrahtet (fail-safe).
+    </div>
+</section>
+
+        <div class="panel-separator"></div>
+
+        <!-- STATUS -->
+        <section>
+            <h2>Systemstatus</h2>
+
+            <div id="safety-status" class="status-box status-ok">
+                🟢 System OK
+            </div>
+        </section>
+
+        <div class="panel-separator"></div>
+
+        <!-- MELDUNGEN -->
+        <section>
+            <h2>Meldungen</h2>
+            <div id="safety-messages-list">
+                <em>Keine Meldungen</em>
+            </div>
+        </section>
+
+        <div class="panel-separator"></div>
+
+        <!-- TRAFO -->
+        <section>
+            <h2>Trafo</h2>
+            <div>Trafo A: – V</div>
+            <div>Trafo B: – V</div>
+        </section>
+
+    </aside>
 
 </div>
 
-<script src="script.js?v=20260109p06"></script>
+<!-- ===================== ACK OVERLAY ===================== -->
+<div id="ack-overlay" class="overlay hidden">
+    <div class="overlay-box">
+        <h2 id="ack-title">⚠ Sicherheitsquittierung</h2>
+
+        <div id="ack-text">Sicherheitsfehler</div>
+
+        <label class="ack-checkbox">
+            <input type="checkbox">
+            <span>Fehler vor Ort geprüft und behoben</span>
+        </label>
+
+        <div class="overlay-actions">
+            <button class="btn" onclick="closeOverlay()">Abbrechen</button>
+            <button class="btn btn-ack" onclick="confirmAck()">ACK senden</button>
+        </div>
+    </div>
+</div>
+
+<script src="safety_ui_texts.js?v=20260106p17"></script>
+<script src="script.js?v=20260106p17"></script>
 </body>
 </html>

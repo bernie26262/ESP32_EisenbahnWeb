@@ -8,7 +8,7 @@ const DEBUG_UI = false;
 // Wenn du nach einem Firmware-Flash "alte" Buttons siehst:
 // -> unbedingt auch "Upload File System Image" (UploadFS) ausführen.
 // Diese Version hilft beim Verifizieren, dass Browser + LittleFS wirklich neu sind.
-const UI_VERSION = "2026-01-09-p06-layout-status-in-panel";
+const UI_VERSION = "2026-01-06-p20-ackpending";
 
 let socket = null;
 let wsConnected = false;
@@ -34,26 +34,6 @@ window.addEventListener("load", () => {
   if (v) v.textContent = UI_VERSION;
   console.log("[UI] version", UI_VERSION);
   connectWebSocket();
-
-  // Robust pointer handlers (Desktop+Mobile)
-  bindPointer(document.getElementById("btn-power"), () => sendPowerOn());
-  bindPointer(document.getElementById("btn-m1-mode"), () => sendMega1ModeToggle());
-
-  // Delegation: Mega1 Bahnhöfe + Weichen
-  bindPointer(document.getElementById("ov-stations"), (ev) => {
-    const btn = ev.target?.closest?.("button[data-bhf]");
-    if (!btn) return;
-    const idx = Number(btn.getAttribute("data-bhf"));
-    const on = btn.getAttribute("data-on") === "1";
-    if (Number.isFinite(idx)) sendMega1BhfSet(idx, !on);
-  });
-  bindPointer(document.getElementById("ov-m1weichen"), (ev) => {
-    const btn = ev.target?.closest?.("button[data-weiche]");
-    if (!btn) return;
-    const idx = Number(btn.getAttribute("data-weiche"));
-    const g = btn.getAttribute("data-gerade") === "1";
-    if (Number.isFinite(idx)) sendMega1WeicheSet(idx, !g);
-  });
 });
 
 /* =========================================================
@@ -122,62 +102,15 @@ function sendPollNow() {
   logLine("↻ Prüfen gesendet");
 }
 
-function sendSbhfRetry() {
-  const ok = wsSend({ action: "sbhfSelftestRetry" });
-  if (ok) logLine("🔄 Retry Selftest gesendet");
-}
-
 
 function wsSendAction(action, okMsg) {
   const ok = wsSend({ action: action });
   if (ok && okMsg) logLine(okMsg);
 }
 
-
-/* =========================================================
- *  Pointer (Desktop+Mobile) – robust statt click
- * ========================================================= */
-function bindPointer(el, fn) {
-  if (!el) return;
-  el.addEventListener("pointerup", (ev) => {
-    // Wichtig: verhindert doppeltes Auslösen (click + pointerup) und stoppt Bubbling.
-    ev.preventDefault();
-    ev.stopPropagation();
-
-    // Simple debounce pro Element (verhindert Queue-Flooding bei wackeligen Klicks)
-    const now = Date.now();
-    const last = Number(el.dataset._lastPtrUp || 0);
-    if (now - last < 200) return;
-    el.dataset._lastPtrUp = String(now);
-
-    fn(ev);
-  }, { passive: false });
-}
-
 /* =========================================================
  *  WS MESSAGE HANDLER
  * ========================================================= */
-
-
-
-/* =========================================================
- *  Mega1 Actions (WS)
- * ========================================================= */
-function sendMega1BhfSet(bhf1based, on) {
-  wsSend({ action: "m1PowerSet", bhf: bhf1based, on: !!on });
-}
-
-function sendMega1WeicheSet(idx0based, gerade) {
-  wsSend({ action: "m1TurnoutSet", idx: idx0based, gerade: !!gerade });
-}
-
-function sendMega1ModeToggle() {
-  // Best-effort: wenn wir den aktuellen Mode kennen, togglen wir.
-  const diag = lastStateMsg?.mega1?.diag;
-  const cur = getMega1Mode(diag);
-  const next = cur === null ? 0 : (cur ? 0 : 1); // null -> Auto als Default
-  wsSend({ action: "m1SetMode", mode: next });
-}
 
 function handleWsMessage(msg) {
   if (DEBUG_WS) console.log("[WS MSG]", msg);
@@ -199,7 +132,6 @@ function handleWsMessage(msg) {
 
   // Schritt 3.5: links Betriebsübersicht (SBHF/Blöcke/Weichen) + FROM→TO Signale
   renderOverviewLeft(msg);
-  updateMega1ModePill(msg);
 }
 
 /* =========================================================
@@ -293,10 +225,8 @@ function applyUiState(ui, msg) {
   // Disable rules + states
   // --------------------------------------------------
 
-  const mega2onlineVal = (msg && msg.mega2 && typeof msg.mega2.online === 'boolean') ? msg.mega2.online : null;
-  const mega2online = (mega2onlineVal === true);
-  const mega1onlineVal = (msg && msg.mega1 && typeof msg.mega1.online === 'boolean') ? msg.mega1.online : null;
-  const mega1online = (mega1onlineVal === true);
+  const mega2online = !!(msg && msg.mega2 && msg.mega2.online);
+const mega1online = !!(msg.mega1 && msg.mega1.online);
   const wsOk = (wsConnected === true);
   const lock = !!(lastSafetyState && lastSafetyState.lock === true);
   const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
@@ -316,22 +246,12 @@ if (bWs) {
   bWs.textContent = "WS: " + (wsOk ? "verbunden" : "getrennt");
 }
 if (bM2) {
-  if (mega2onlineVal === null) {
-    bM2.className = "badge badge-warn";
-    bM2.textContent = "Mega2: ?";
-  } else {
-    bM2.className = "badge " + (mega2online ? "badge-ok" : "badge-err");
-    bM2.textContent = "Mega2: " + (mega2online ? "online" : "offline");
-  }
+  bM2.className = "badge " + (mega2online ? "badge-ok" : "badge-err");
+  bM2.textContent = "Mega2: " + (mega2online ? "online" : "offline");
 }
 if (bM1) {
-  if (mega1onlineVal === null) {
-    bM1.className = "badge badge-warn";
-    bM1.textContent = "Mega1: ?";
-  } else {
-    bM1.className = "badge " + (mega1online ? "badge-ok" : "badge-err");
-    bM1.textContent = "Mega1: " + (mega1online ? "online" : "offline");
-  }
+  bM1.className = "badge " + (mega1online ? "badge-ok" : "badge-err");
+  bM1.textContent = "Mega1: " + (mega1online ? "online" : "offline");
 }
 if (bPw) {
   bPw.className = "badge " + (powerOn ? "badge-ok" : "badge-warn");
@@ -589,26 +509,25 @@ function renderPowerWarningsEmergencies(msg) {
 
   
 
-// 3) Aktionen bei Warnings/Restricted
+// 3) "↻ Prüfen" (PollNow), wenn Warnings/Restricted aktiv sind
 let warningActive = false;
 if (m2 && m2.sbhf) {
   const warn = Number(m2.sbhf.warningMask || 0);
   const allowed = Number(m2.sbhf.allowedMask || 0);
-  const restrictedFlag = !!m2.sbhf.restricted;
-  const restricted = restrictedFlag || (warn !== 0) || (allowed !== 0x07 && allowed !== 0x00);
-  warningActive = restricted;
+	  const restrictedFlag = !!m2.sbhf.restricted;
+	  const restricted =
+	    restrictedFlag ||
+	    (warn !== 0) ||
+	    (allowed !== 0x07 && allowed !== 0x00);
+	  warningActive = restricted;
 }
 
 const canPollNow = wsConnected && !!(msg && msg.mega2 && msg.mega2.online);
-const selftestRunning = !!(msg && msg.mega2 && msg.mega2.sbhf && msg.mega2.sbhf.selftestRunning);
-const canRetry = canPollNow && !selftestRunning;
+const pollBtnHtml = warningActive
+  ? `<div class="msg-actions"><button class="btn-mini" ${canPollNow ? "" : "disabled"} onclick="sendPollNow()">↻ Prüfen</button></div>`
+  : "";
 
-const actionsHtml = warningActive ? `
-  <div class="msg-actions"><button class="btn-mini" ${canRetry ? "" : "disabled"} type="button" onpointerup="sendSbhfRetry()">🔄 Retry Selftest</button>
-  </div>
-` : "";
-
-el.innerHTML = (items.length ? items.map(t => `<div>${t}</div>`).join("") : "<em>Keine Meldungen</em>") + actionsHtml;
+  el.innerHTML = (items.length ? items.map(t => `<div>${t}</div>`).join("") : "<em>Keine Meldungen</em>") + pollBtnHtml;
 }
 
 /* =========================================================
@@ -623,8 +542,7 @@ function renderOverviewLeft(msg) {
   renderSbhfLeft(msg);
   renderTurnoutsLeft(msg);
   renderBlocksLeft(msg);
-  renderMega1Stations(msg);
-  renderMega1Turnouts(msg);
+  // Mega1 Stations folgt später
 }
 
 function renderSbhfLeft(msg) {
@@ -665,7 +583,7 @@ function renderSbhfLeft(msg) {
 }
 
 function renderTurnoutsLeft(msg) {
-  const el = document.getElementById("ov-m2-turnouts");
+  const el = document.getElementById("ov-turnouts");
   if (!el) return;
 
   const online = !!msg?.mega2?.online;
@@ -745,104 +663,3 @@ function renderBlocksLeft(msg) {
 
   el.innerHTML = html;
 }
-
-
-/* =========================================================
- *  Mega1 – Mapping (diag)
- * ========================================================= */
-
-function getMega1Diag(msg) {
-  return msg && msg.mega1 && msg.mega1.diag ? msg.mega1.diag : null;
-}
-
-function renderMega1Stations(msg) {
-  const el = document.getElementById("ov-stations");
-  if (!el) return;
-
-  const online = !!msg?.mega1?.online;
-  const diag = getMega1Diag(msg);
-
-  if (!online) {
-    el.innerHTML = "<em>Mega1 offline</em>";
-    return;
-  }
-  if (!diag) {
-    el.innerHTML = "<em>keine Daten</em>";
-    return;
-  }
-
-  const mask = Number(diag.powerMask ?? diag.bhfPowerMask ?? 0) & 0xFF;
-  const btns = [];
-  for (let i = 0; i < 4; i++) { // BHF1..BHF4
-    const on = ((mask >>> i) & 1) !== 0;
-    btns.push(
-      `<button class="btn pill-btn" type="button" data-bhf="${i+1}" aria-pressed="${on ? 'true' : 'false'}" data-on="${on ? "1" : "0"}">`+
-        `BHF${i+1}: ${on ? 'AN' : 'aus'}`+
-      `</button>`
-    );
-  }
-  el.innerHTML = `<div class="badge-wrap">${btns.join('')}</div>`;
-}
-
-function renderMega1Turnouts(msg) {
-  const el = document.getElementById("ov-m1weichen");
-  if (!el) return;
-
-  const online = !!msg?.mega1?.online;
-  const diag = getMega1Diag(msg);
-
-  if (!online) {
-    el.innerHTML = "<em>Mega1 offline</em>";
-    return;
-  }
-  if (!diag) {
-    el.innerHTML = "<em>keine Daten</em>";
-    return;
-  }
-
-  const soll = Number(diag.weicheSollBits ?? 0) >>> 0;
-  const ist  = Number(diag.weicheIstBits ?? 0) >>> 0;
-  const slow = Number(diag.weicheSlowBits ?? 0) >>> 0;
-
-  const items = [];
-  for (let i = 0; i < 12; i++) { // W0..W11
-    const s = ((soll >>> i) & 1) !== 0;
-    const a = ((ist  >>> i) & 1) !== 0;
-    const sl = ((slow >>> i) & 1) !== 0;
-    const ok = (s === a);
-    const cls = ok ? 'badge-ok' : 'badge-err';
-    const label = `W${i}: ${a ? 'G' : 'A'}${sl ? ' (slow)' : ''}`;
-    items.push(
-      `<button class="badge ${cls} is-clickable" type="button" data-weiche="${i}" title="Soll ${s ? 'G' : 'A'} / Ist ${a ? 'G' : 'A'}" data-gerade="${a ? "1" : "0"}" data-soll="${s ? "1" : "0"}">${label}</button>`
-    );
-  }
-  el.innerHTML = `<div class="badge-wrap">${items.join('')}</div>`;
-}
-
-function updateMega1ModePill(msg) {
-  const el = document.getElementById('pill-m1-mode');
-  if (!el) return;
-
-  const diag = getMega1Diag(msg);
-  // Wir akzeptieren mehrere mögliche Feldnamen.
-  let mode = null; // 0=Auto, 1=Manuell
-  if (diag) {
-    if (diag.mode !== undefined && diag.mode !== null) mode = Number(diag.mode);
-    else if (diag.auto !== undefined && diag.auto !== null) mode = Number(!diag.auto);
-    else if (diag.isAuto !== undefined && diag.isAuto !== null) mode = Number(!diag.isAuto);
-    else if (diag.manual !== undefined && diag.manual !== null) mode = Number(!!diag.manual);
-  }
-
-  if (mode === 0) {
-    el.className = 'badge badge-ok';
-    el.textContent = 'Mode: Auto';
-  } else if (mode === 1) {
-    el.className = 'badge badge-info';
-    el.textContent = 'Mode: Manuell';
-  } else {
-    el.className = 'badge badge-warn';
-    el.textContent = 'Mode: ?';
-  }
-}
-
-
