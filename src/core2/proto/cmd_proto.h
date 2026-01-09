@@ -1,6 +1,6 @@
 #pragma once
 #include <stdint.h>
-#include "system/status_system.h"
+
 
 // =====================================================
 // Command Protocol (ESP <-> Mega)

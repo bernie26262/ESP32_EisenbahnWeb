@@ -13,11 +13,12 @@
 #endif
 
 static volatile uint8_t s_pendingActions = 0;
-static constexpr uint8_t ACT_ACK     = 0x01;
-static constexpr uint8_t ACT_NOTHALT = 0x02;
-static constexpr uint8_t ACT_PON     = 0x04;
-static constexpr uint8_t ACT_REL     = 0x08;
-static constexpr uint8_t ACT_POFF    = 0x10;
+static constexpr uint8_t ACT_ACK      = 0x01;
+static constexpr uint8_t ACT_NOTHALT  = 0x02;
+static constexpr uint8_t ACT_PON      = 0x04;
+static constexpr uint8_t ACT_REL      = 0x08;
+static constexpr uint8_t ACT_POFF     = 0x10;
+static constexpr uint8_t ACT_STRETRY  = 0x20;
 
 static inline void queueAction(uint8_t mask)
 {
@@ -54,6 +55,14 @@ static uint32_t s_pollIntervalMs  = 0;
 static uint8_t  s_pollFailCount   = 0;
 static bool     s_lastStatusOk    = false;
 
+// Kommunikationszustand (ESP-Sicht). Wichtig: Poll-Fehler sind *keine* Safety-Fehler.
+// Deshalb wird bei Poll-Fail nur mega2Online=false gesetzt; der letzte gültige Status
+// (der zuvor erfolgreich gelesen wurde) bleibt bestehen und es wird *keine* neue ERR/ACK-
+// Pflicht abgeleitet.
+static bool     s_mega2Online     = false;
+static uint32_t s_lastOkMsLink    = 0;
+static uint32_t s_lastFailMsLink  = 0;
+
 static constexpr uint32_t POLL_STATUS_MS   = 200;
 static constexpr uint32_t POLL_SAFETY_MS   = 400;   // Safety halb so oft wie Status
 static constexpr uint32_t POLL_MATRIX_MS   = 800;
@@ -81,8 +90,15 @@ void begin()
     s_pollFailCount  = 0;
     s_lastStatusOk   = false;
 
+    s_mega2Online    = false;
+    s_lastOkMsLink   = 0;
+    s_lastFailMsLink = 0;
+
     DBG_PRINTLN("[M2LINK] begin()");
 }
+
+bool mega2Online() { return s_mega2Online; }
+uint32_t lastOkMs() { return s_lastOkMsLink; }
 
 void update()
 {
@@ -96,6 +112,12 @@ void update()
         {
             DBG_PRINTLN("[M2LINK] sending cmd: SAFETY_ACK");
             (void)Mega2Client::safetyAck();
+            requestPollNow();
+        }
+        if (act & ACT_STRETRY)
+        {
+            DBG_PRINTLN("[M2LINK] sending cmd: SBHF_SELFTEST_RETRY");
+            (void)Mega2Client::sbhfSelftestRetry();
             requestPollNow();
         }
         if (act & ACT_NOTHALT)
@@ -136,11 +158,17 @@ void update()
             s_lastStatusOk   = true;
             s_pollFailCount  = 0;
             s_pollIntervalMs = POLL_STATUS_MS;
+
+            // Link-Online: wir hatten gerade eine erfolgreiche I2C-Transaktion.
+            s_mega2Online   = true;
+            s_lastOkMsLink  = now;
         }
         else if (r == I2CBus::Result::BUSY)
         {
             s_lastStatusOk   = false;
             s_pollIntervalMs = BUSY_RETRY_MS;
+
+            // BUSY ist kein Offline-Indikator. Online-Flag unverändert lassen.
 
             static uint32_t s_lastBusyLog = 0;
             if (now - s_lastBusyLog > 5000)
@@ -152,6 +180,11 @@ void update()
         else // ERROR
         {
             s_lastStatusOk = false;
+
+            // Poll-Fail = Kommunikationsproblem. NICHT als Safety-Fehler interpretieren!
+            // -> Nur Mega2 online=false setzen; den zuletzt gültigen Mega2-Status unangetastet lassen.
+            s_mega2Online    = false;
+            s_lastFailMsLink = now;
 
             if (s_pollFailCount < 6) s_pollFailCount++;
             const uint32_t backoff = POLL_STATUS_MS << s_pollFailCount; // 200,400,800,...
@@ -192,6 +225,7 @@ void update()
 }
 
 bool safetyAck()     { queueAction(ACT_ACK);     return true; }
+bool sbhfSelftestRetry() { queueAction(ACT_STRETRY); return true; }
 bool nothalt()       { queueAction(ACT_NOTHALT); return true; }
 bool releaseNotaus() { queueAction(ACT_REL);     return true; }
 bool powerOff()      { queueAction(ACT_POFF);    return true; }

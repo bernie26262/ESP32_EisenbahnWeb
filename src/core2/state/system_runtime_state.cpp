@@ -114,7 +114,9 @@ void SystemRuntimeState::updateMega1Status(const SystemStatus& st)
 
 bool SystemRuntimeState::mega1Online()
 {
-    return (millis() - s_lastRxMsM1) < 1000;
+    // I2C polls can temporarily fail (e.g. bus contention). Treat Mega1 as online
+    // for a longer grace period to avoid UI flapping.
+    return (millis() - s_lastRxMsM1) < 3000;
 }
 
 const SystemStatus& SystemRuntimeState::mega1Status()
@@ -153,7 +155,7 @@ const Mega2SafetyStatus& SystemRuntimeState::mega2SafetyStatus()
 // ----------------------------------------------------
 bool SystemRuntimeState::mega2Online()
 {
-    return (millis() - s_lastRxMs) < 1000;
+    return (millis() - s_lastRxMs) < 3000;
 }
 
 const SystemStatus& SystemRuntimeState::mega2Status()

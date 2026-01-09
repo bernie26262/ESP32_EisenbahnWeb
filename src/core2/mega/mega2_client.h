@@ -17,6 +17,7 @@ namespace Mega2Client
     bool pollEntryPreviewMatrix();
 
     bool safetyAck();
+    bool sbhfSelftestRetry();
     bool setNotaus(bool on);
     bool powerOn();
 

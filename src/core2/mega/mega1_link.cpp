@@ -176,7 +176,7 @@ void Mega1Link::update()
         }
 
         // Zusätzlich: Diagnosepaket (read-only, <=32B)
-        if (now >= s_nextDiagPollMs)
+        if (SystemRuntimeState::mega1Online() && now >= s_nextDiagPollMs)
         {
             s_nextDiagPollMs = now + POLL_DIAG_MS;
             (void)Mega1Client::pollDiag();

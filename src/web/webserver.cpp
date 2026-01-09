@@ -25,7 +25,7 @@ volatile bool g_stateDirty = true;
 // ---------------------------------------------------------
 static String buildWsStateJson()
 {
-    StaticJsonDocument<768> doc;
+    StaticJsonDocument<1024> doc;
 
     doc["type"] = "state";
     doc["ts"]   = (uint32_t)millis();
@@ -34,22 +34,23 @@ static String buildWsStateJson()
     doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
 
     const bool m2online = SystemRuntimeState::mega2Online();
-    doc["mega2"]["online"] = m2online;
+    const bool m1online = SystemRuntimeState::mega1Online();
 
-    bool m1online = SystemRuntimeState::mega1Online();
+    doc["mega2"]["online"] = m2online;
     doc["mega1"]["online"] = m1online;
 
-// Mega1 Diagnose (kompakt)
-const auto& m1d = SystemRuntimeState::mega1Diag();
-JsonObject m1diag = doc["mega1"]["diag"].to<JsonObject>();
-m1diag["ver"] = m1d.version;
-m1diag["seq"] = m1d.seq;
-m1diag["mode"] = m1d.mode;
-m1diag["warnings"] = m1d.warnings;
-m1diag["weicheIstBits"] = m1d.weicheIstGeradeBits;
-m1diag["weicheSlowBits"] = m1d.weicheSlowActiveBits;
-m1diag["weicheSollBits"] = m1d.weicheSollGeradeBits;
-m1diag["powerMask"] = m1d.powerMask;
+    // --- Compatibility + Debug (damit WebUI sicher etwas findet) ---
+    doc["mega1Online"] = m1online;  // Legacy: falls script.js das so erwartet
+
+    const auto& m1s = SystemRuntimeState::mega1Status();
+    JsonObject m1st = doc["mega1"]["status"].to<JsonObject>();
+    m1st["ver"]   = m1s.version;
+    m1st["size"]  = m1s.size;
+    m1st["node"]  = m1s.nodeId;
+    m1st["flags"] = m1s.flags;
+
+    // Optional: rxAge als Debug (wenn du s_lastRxMsM1 nicht exposen willst, dann erstmal weglassen)
+    // m1st["rxAgeMs"] = SystemRuntimeState::mega1RxAgeMs();
 
     // -----------------------------
     // Safety (ESP abgeleitet)
@@ -77,6 +78,9 @@ m1diag["powerMask"] = m1d.powerMask;
         SystemRuntimeState::errorIndex
     );
 
+    // Optional: UI kann das direkt nutzen, statt lock/reason zu heuristiken
+    s["ackRequired"] = (SystemRuntimeState::safetyLock() && (s["notausActive"] || (SystemRuntimeState::safetyBlockReason() != 0)));
+
     // -----------------------------
     // Mega2 Details (nur wenn online)
     // -----------------------------
@@ -91,10 +95,30 @@ m1diag["powerMask"] = m1d.powerMask;
         const uint8_t allowedMask = (uint8_t)((m2s.reserved >> 8) & 0xFF);
         const uint8_t warningMask = (uint8_t)(m2s.reserved & 0xFF);
 
+        // expose masks explicitly for WebUI (warnings + Einschränkungen)
+        doc["mega2"]["allowedMask"] = allowedMask;
+        doc["mega2"]["warningMask"] = warningMask;
+
         JsonObject sbhf = doc["mega2"]["sbhf"].to<JsonObject>();
-        sbhf["state"]        = m2s.sbhfState;
-        sbhf["occupiedMask"] = m2s.sbhfOccupiedMask;
+        sbhf["state"] = m2s.sbhfState;
+
+        // sbhfOccupiedMask carries occupancy in bits 0..2 (G1..G3).
+        // We additionally encode runtime META flags in higher bits to avoid
+        // a SystemStatus protocol bump.
+        // Bit7 (0x80): SBHF selftest running.
+        const uint16_t occRaw = m2s.sbhfOccupiedMask;
+        const bool selftestRunning = (occRaw & 0x80u) != 0;
+        const uint8_t occ = (uint8_t)(occRaw & 0x07u);
+
+        sbhf["occupiedMask"]    = occ;
+        sbhf["occupiedMaskRaw"] = occRaw; // debug/diagnostics
+        sbhf["selftestRunning"] = selftestRunning;
+
+        // UI compatibility: provide both naming variants.
         sbhf["currentGleis"] = m2s.sbhfCurrentGleis;
+        sbhf["currentTrack"] = m2s.sbhfCurrentGleis;
+
+        // Masks (source: reserved field in SystemStatus)
         sbhf["allowedMask"]  = allowedMask;
         sbhf["warningMask"]  = warningMask;
 
@@ -104,9 +128,14 @@ m1diag["powerMask"] = m1d.powerMask;
 
         sbhf["restricted"] = restricted;
 
+
         JsonObject t = doc["mega2"]["turnouts"].to<JsonObject>();
         t["sollMask"] = m2s.turnoutSollMask;
         t["istMask"]  = m2s.turnoutIstMask;
+
+        // Blocks (UI expects an object)
+        JsonObject b = doc["mega2"]["blocks"].to<JsonObject>();
+        b["occupiedMask"] = m2s.blockOccupiedMask;
 
         // Step 3.5: Entry-Matrix (FROM->TO)
         JsonArray entry = doc["mega2"]["entryAllowed"].to<JsonArray>();
@@ -119,6 +148,28 @@ m1diag["powerMask"] = m1d.powerMask;
         for (uint8_t i = 0; i < 9; i++)
             entryPrev.add(ep[i]);
     }
+
+    // -----------------------------
+    // Mega1 Details (nur wenn online)
+    // -----------------------------
+    doc["mega1"]["hasDiag"] = false;
+
+    if (m1online)
+    {
+        const auto& m1d = SystemRuntimeState::mega1Diag();
+
+        JsonObject d  = doc["mega1"]["diag"].to<JsonObject>();
+d["mode"]      = m1d.mode;
+        d["powerMask"] = m1d.powerMask;
+
+        // NOTE: Mega1DiagV1 field names
+        d["weicheIstBits"]  = m1d.weicheIstGeradeBits;
+        d["weicheSollBits"] = m1d.weicheSollGeradeBits;
+        d["weicheSlowBits"] = m1d.weicheSlowActiveBits;
+
+        doc["mega1"]["hasDiag"] = true;
+    }
+
 
     String out;
     serializeJson(doc, out);
@@ -138,7 +189,6 @@ static void onWsEvent(AsyncWebSocket* server,
     if (type == WS_EVT_CONNECT)
     {
         Serial.printf("[WS] client connected id=%u\n", client ? client->id() : 0);
-        // Client bekommt sofort state
         client->text(buildWsStateJson());
         return;
     }
@@ -150,8 +200,7 @@ static void onWsEvent(AsyncWebSocket* server,
     if (!info->final || info->index != 0 || info->len != len)
         return;
 
-    // data ist nicht null-terminiert -> direkt mit len parsen
-    StaticJsonDocument<256> cmd;
+    JsonDocument cmd;
     if (deserializeJson(cmd, data, len))
         return;
 
@@ -182,10 +231,52 @@ static void onWsEvent(AsyncWebSocket* server,
         return;
     }
 
-    // UI-STOP (PowerOff) – bewusst getrennt von HW-NOTAUS
     if (!strcmp(action, "powerOff"))
     {
         Mega2Link::powerOff();
+        g_stateDirty = true;
+        return;
+    }
+
+    if (!strcmp(action, "powerToggle"))
+    {
+        if (((SystemRuntimeState::mega2Status().flags & SYS_POWER_ON) != 0))
+            Mega2Link::powerOff();
+        else
+            Mega2Link::powerOn();
+
+        g_stateDirty = true;
+        return;
+    }
+
+    // -------------------------------------------------
+    // Mega1 Commands
+    // -------------------------------------------------
+    if (!strcmp(action, "m1SetMode"))
+    {
+        const uint8_t mode = (uint8_t)(cmd["mode"] | 0);
+        const bool ok = Mega1Link::queueSetMode(mode);
+        if (!ok) Serial.println("[WS] m1SetMode rejected (args/queue full)");
+        g_stateDirty = true;
+        return;
+    }
+
+    if (!strcmp(action, "m1TurnoutSet"))
+    {
+        const uint8_t idxW = (uint8_t)(cmd["idx"] | 0);
+        const bool gerade = (bool)(cmd["gerade"] | 0);
+        const bool ok = Mega1Link::queueTurnoutSet(idxW, gerade);
+        if (!ok) Serial.println("[WS] m1TurnoutSet rejected (args/queue full)");
+        g_stateDirty = true;
+        return;
+    }
+
+    if (!strcmp(action, "m1PowerSet"))
+    {
+        const uint8_t bhf = (uint8_t)(cmd["bhf"] | 0);
+        const bool on = (bool)(cmd["on"] | 0);
+        const bool ok = Mega1Link::queueBhfPowerSet(bhf, on);
+        if (!ok) Serial.println("[WS] m1PowerSet rejected (args/queue full)");
         g_stateDirty = true;
         return;
     }
@@ -194,6 +285,15 @@ static void onWsEvent(AsyncWebSocket* server,
     {
         Serial.println("[WS] -> Mega2Link::requestPollNow()");
         Mega2Link::requestPollNow();
+        g_stateDirty = true;
+        return;
+    }
+
+    // SBHF selftest retry (explicit command, NOT mapped to safetyAck)
+    if (!strcmp(action, "sbhfSelftestRetry"))
+    {
+        Serial.println("[WS] -> SBHF Selftest Retry");
+        Mega2Link::sbhfSelftestRetry();
         g_stateDirty = true;
         return;
     }
@@ -213,8 +313,6 @@ void Web::begin()
     ws.onEvent(onWsEvent);
     server.addHandler(&ws);
 
-    // Statische Dateien (WebUI) – Cache abschalten, damit nach "UploadFS"
-    // neue script.js/style.css sofort übernommen werden (Browser-Caching).
     server.serveStatic("/", LittleFS, "/")
         .setDefaultFile("index.htm")
         .setCacheControl("no-store, no-cache, must-revalidate, max-age=0");
@@ -243,5 +341,3 @@ void Web::pushStateIfDirty()
     ws.textAll(buildWsStateJson());
     g_stateDirty = false;
 }
-
-

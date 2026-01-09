@@ -10,7 +10,7 @@
 static constexpr uint8_t MEGA1_ADDR = 0x10;
 
 // Mega1 I2CProtocol.h (Mirror)
-static constexpr uint8_t CMD_GET_DIAG     = 0x01;
+static constexpr uint8_t CMD_GET_DIAG     = 0xD1; // CMD_GET_DIAG (see Mega1/include/I2CProtocol.h)
 static constexpr uint8_t CMD_SET_MODE     = 0x02;
 static constexpr uint8_t CMD_SET_WEICHE   = 0x03;
 static constexpr uint8_t CMD_SET_BHF_PWR  = 0x06; // neu in Mega1 (Power/Signal)

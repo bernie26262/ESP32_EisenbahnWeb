@@ -1,6 +1,15 @@
 #pragma once
+
 #include <stdint.h>
 
+// ============================================================
+//  SystemStatus wire-format (I2C Mega2 -> ESP)
+//  Must match Mega2's system/status_system.h
+// ============================================================
+
+// Wire-format version.
+// IMPORTANT: Mega1 and Mega2 must share the same version/size.
+// SBHF selftest runtime info is encoded in sbhfOccupiedMask META bits.
 static constexpr uint8_t SYSTEM_STATUS_VERSION = 3;
 
 enum SystemNodeId : uint8_t
@@ -20,7 +29,7 @@ enum SystemStatusFlags : uint16_t
     SYS_WARNING_PRESENT  = 1 << 4,
 };
 
-// v3 (kompakt, <=32 Bytes) — PACKED für stabile I2C-Übertragung
+// v3 (kompakt) — PACKED für stabile I2C-Übertragung
 struct __attribute__((packed)) SystemStatus
 {
     uint8_t  version;
@@ -40,13 +49,13 @@ struct __attribute__((packed)) SystemStatus
     uint8_t  sbhfState;
     uint8_t  sbhfOccupiedMask;
 
-    uint8_t  sbhfCurrentGleis;
+    uint8_t  sbhfCurrentGleis; // 0=none, 1..3
     uint8_t  _pad0;
 
-    uint16_t turnoutSollMask;
+    uint16_t turnoutSollMask;  // Bit0=W12..Bit3=W15
     uint16_t turnoutIstMask;
 
-    uint16_t reserved;
+    uint16_t reserved;         // Variant A: allowedMask<<8 | warningMask
 };
 
 static_assert(sizeof(SystemStatus) == 26, "SystemStatus must be 26 bytes (packed)");
