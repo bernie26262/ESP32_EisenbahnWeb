@@ -229,7 +229,7 @@ function applyUiState(ui, msg) {
   // --------------------------------------------------
 
   const mega2online = !!(msg && msg.mega2 && msg.mega2.online);
-const mega1online = !!(msg.mega1 && msg.mega1.online);
+  const mega1online = !!(msg.mega1 && msg.mega1.online);
   const wsOk = (wsConnected === true);
   const lock = !!(lastSafetyState && lastSafetyState.lock === true);
   const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
