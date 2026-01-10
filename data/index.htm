@@ -4,26 +4,11 @@
     <meta charset="UTF-8">
     <title>Eisenbahn – Safety & Status</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css?v=20260106p17">
-    
+    <link rel="stylesheet" href="style.css?v=20260110p01">
 </head>
 
 <body>
 <div class="container">
-
-    <!-- STATUS BADGES (oben rechts) -->
-    <div id="status-badges" class="status-badges">
-        <div class="badge-row">
-            <span id="badge-ws" class="badge badge-warn">WS: ?</span>
-            <span id="badge-mega2" class="badge badge-warn">Mega2: ?</span>
-            <span id="badge-mega1" class="badge badge-warn">Mega1: ?</span>
-        </div>
-        <div class="badge-row">
-            <span id="badge-power" class="badge badge-warn">Power: ?</span>
-            <span id="badge-notaus" class="badge badge-ok">HW-NOT AUS: nein</span>
-        </div>
-    </div>
-
 
     <!-- ===================== LEFT ===================== -->
     <main class="panel">
@@ -74,15 +59,15 @@
 
     <!-- ===================== RIGHT / SAFETY ===================== -->
     <aside class="panel panel-right safety-panel ok" id="safety-panel">
-<!-- POWER (Toggle) -->
-<section class="power-toggle">
-    <button id="btn-power" class="btn-power" data-action="powerToggle" type="button">
-        ⚡ POWER ON
-    </button>
-    <div class="hint" style="margin-top:.5rem;">
-        HW-NOT-AUS ist separat verdrahtet (fail-safe).
-    </div>
-</section>
+        <!-- POWER (Toggle) -->
+        <section class="power-toggle">
+            <button id="btn-power" class="btn-power" onclick="sendPowerOn()">
+                ⚡ POWER ON
+            </button>
+            <div class="hint" style="margin-top:.5rem;">
+                HW-NOT-AUS ist separat verdrahtet (fail-safe).
+            </div>
+        </section>
 
         <div class="panel-separator"></div>
 
@@ -92,6 +77,19 @@
 
             <div id="safety-status" class="status-box status-ok">
                 🟢 System OK
+            </div>
+
+            <!-- Status (WS / Mega / Power / HW-NOT-AUS) -->
+            <div id="status-badges" class="status-badges-inline">
+                <div class="badge-row">
+                    <span id="badge-ws" class="badge badge-warn">WS: ?</span>
+                    <span id="badge-mega2" class="badge badge-warn">Mega2: ?</span>
+                    <span id="badge-mega1" class="badge badge-warn">Mega1: ?</span>
+                </div>
+                <div class="badge-row">
+                    <span id="badge-power" class="badge badge-warn">Power: ?</span>
+                    <span id="badge-notaus" class="badge badge-warn">HW-NOT AUS: ?</span>
+                </div>
             </div>
         </section>
 
@@ -113,7 +111,6 @@
             <div>Trafo A: – V</div>
             <div>Trafo B: – V</div>
         </section>
-
     </aside>
 
 </div>
@@ -131,13 +128,13 @@
         </label>
 
         <div class="overlay-actions">
-            <button class="btn" type="button" data-action="closeOverlay">Abbrechen</button>
-            <button class="btn btn-ack" type="button" data-action="confirmAck">ACK senden</button>
+            <button class="btn" onclick="closeOverlay()">Abbrechen</button>
+            <button class="btn btn-ack" onclick="confirmAck()">ACK senden</button>
         </div>
     </div>
 </div>
 
 <script src="safety_ui_texts.js?v=20260106p17"></script>
-<script src="script.js?v=20260109p01"></script>
+<script src="script.js?v=20260110p01"></script>
 </body>
 </html>

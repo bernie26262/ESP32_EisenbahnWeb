@@ -27,9 +27,13 @@ body {
 /* Layout */
 .container {
     display: grid;
+
+    /* Desktop: stabil 2-spaltig – unabhängig von Zoom */
     grid-template-columns: minmax(980px, 1fr) 380px;
+
     gap: 1rem;
     padding: 1rem;
+
     max-width: 1400px;
     margin: 0 auto;
     align-items: start;
@@ -266,6 +270,7 @@ h2 {
 }
 
 .badge-row { grid-column: 1 / -1; }
+/* Explizite Platzierung: main links, aside rechts */
 .container > main { grid-column: 1; }
 .container > aside { grid-column: 2; }
 
