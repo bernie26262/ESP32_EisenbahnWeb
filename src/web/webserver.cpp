@@ -11,7 +11,7 @@
 
 #include <LittleFS.h>
 
-#include "core2/ui/oled_status.h"
+
 
 // ---------------------------------------------------------
 // Globale Objekte
@@ -321,7 +321,7 @@ void Web::begin()
         .setCacheControl("no-store, no-cache, must-revalidate, max-age=0");
 
     server.begin();
-    Ui::OledStatus::begin(0x3C); // 0x78 (8-bit) => 0x3C (7-bit)
+
     Serial.println("[WEB] HTTP server started");
 }
 
@@ -332,7 +332,7 @@ void Web::loop()
 {
     ws.cleanupClients();
     Web::pushStateIfDirty();
-    Ui::OledStatus::tick();
+    
 }
 
 // ---------------------------------------------------------

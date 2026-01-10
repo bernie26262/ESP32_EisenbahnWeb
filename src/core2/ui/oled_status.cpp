@@ -4,7 +4,7 @@
 
 // Adafruit libs
 #include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include <Adafruit_SH110X.h>
 
 #include "network/eth_manager.h"
 #include "core2/state/system_runtime_state.h"
@@ -33,17 +33,16 @@ namespace Ui
   static bool   s_lastM2 = false;
 
   // Reset pin = -1 (none) for I2C modules
-  static Adafruit_SSD1306 s_disp(OLED_W, OLED_H, &Wire, -1);
+  static Adafruit_SH1106G s_disp(OLED_W, OLED_H, &Wire, -1);
 
   void OledStatus::begin(uint8_t i2cAddr7)
   {
     s_addr7 = i2cAddr7;
 
-    // Safe even if Wire was already initialized by your I2C bus module.
-    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-    Wire.setClock(400000);
+    // I2C bus is initialized by core2/bus/i2c_bus (shared bus with Mega1/Mega2).
+    // Do not change Wire clock here.
 
-    s_ok = s_disp.begin(SSD1306_SWITCHCAPVCC, s_addr7);
+    s_ok = s_disp.begin(s_addr7, true);
     if (!s_ok)
     {
       // If this fails, your address might be 0x3D.
@@ -53,7 +52,7 @@ namespace Ui
 
     s_disp.clearDisplay();
     s_disp.setTextSize(1);
-    s_disp.setTextColor(SSD1306_WHITE);
+    s_disp.setTextColor(SH110X_WHITE); // <-- Fix
     s_disp.setCursor(0, 0);
     s_disp.println(F("ESP32 Eisenbahn"));
     s_disp.println(F("OLED ready"));

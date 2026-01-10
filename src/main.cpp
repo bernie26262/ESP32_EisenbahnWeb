@@ -9,6 +9,7 @@
 #include "core2/mega/mega2_link.h"
 #include "core2/mega/mega1_link.h"
 #include "core2/bus/i2c_bus.h"
+#include "core2/ui/oled_status.h"
 
 // ============================================================================
 // SETUP
@@ -26,6 +27,7 @@ void setup()
 
     // I2C Master initialisieren (WICHTIG: sonst Wire-NULL-TX / lock-errors)
     I2CBus::begin(PIN_I2C_SDA, PIN_I2C_SCL, 100000);
+    Ui::OledStatus::begin(0x3C); // 0x78 (8-bit) => 0x3C (7-bit)
 
     Mega2Link::begin();
 
@@ -50,4 +52,5 @@ void loop()
             Mega2Link::safetyAck();
         }
     }
+    Ui::OledStatus::tick();
 }
