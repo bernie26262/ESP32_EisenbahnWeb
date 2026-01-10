@@ -27,9 +27,12 @@ body {
 /* Layout */
 .container {
     display: grid;
-    grid-template-columns: 1fr 380px;
+    grid-template-columns: minmax(980px, 1fr) 380px;
     gap: 1rem;
     padding: 1rem;
+    max-width: 1400px;
+    margin: 0 auto;
+    align-items: start;
 }
 
 .panel {
@@ -262,7 +265,9 @@ h2 {
     min-width: 220px;
 }
 
-.badge-row{ display:flex; gap:8px; flex-wrap:wrap; }
+.badge-row { grid-column: 1 / -1; }
+.container > main { grid-column: 1; }
+.container > aside { grid-column: 2; }
 
 .badge{
     display:inline-flex;
