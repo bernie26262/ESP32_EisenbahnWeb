@@ -309,6 +309,28 @@ if (bNo) {
       btnPower.disabled = (lock || notausActive);
     }
   }
+
+// MODE (Auto/Manuell) – nur wenn WS + Mega1 online, und nicht gelockt / HW-NOT-AUS
+const btnMode = document.getElementById("btn-mode");
+if (btnMode) {
+  const modeRaw = msg?.mega1?.diag?.mode;
+  const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
+
+  const isAuto = (mode === 1);
+  const canUse = wsOk && mega2online && mega1online && !lock && !notausActive && (mode >= 0) && !Number.isNaN(mode);
+
+  btnMode.disabled = !canUse;
+
+  btnMode.classList.toggle("is-auto", isAuto && canUse);
+  btnMode.classList.toggle("is-manual", (!isAuto) && canUse);
+
+  // optional: visuell wenn offline
+  btnMode.classList.toggle("is-offline", !mega1online);
+
+  btnMode.textContent =
+    (mode < 0 || Number.isNaN(mode)) ? "Mode: ?" : (isAuto ? "🟢 AUTO" : "🔵 MANUELL");
+}
+
 }
 
 /* =========================================================
@@ -355,6 +377,39 @@ function sendPowerOn() {
   }
 
   wsSendAction("powerOn", "POWER ON gesendet");
+}
+
+function sendModeToggle() {
+  // Voraussetzung: WS + Mega1 online
+  const mega1online = !!(lastStateMsg && lastStateMsg.mega1 && lastStateMsg.mega1.online);
+  if (!wsConnected || !socket || socket.readyState !== 1) {
+    logLine("WS nicht verbunden – Aktion nicht gesendet");
+    return;
+  }
+  if (!mega1online) {
+    logLine("Mega1 offline – Aktion nicht gesendet");
+    return;
+  }
+
+  const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
+  const safetyLock   = !!(lastSafetyState && lastSafetyState.lock === true);
+  if (safetyLock || notausActive) {
+    logLine("Mode-Umschaltung gesperrt (Safety/HW-NOT-AUS)");
+    return;
+  }
+
+  const modeRaw = lastStateMsg?.mega1?.diag?.mode;
+  const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
+  if (mode < 0 || Number.isNaN(mode)) {
+    logLine("Mode unbekannt – Aktion nicht gesendet");
+    return;
+  }
+
+  // Toggle: 1 <-> 0
+  const newMode = (mode === 1) ? 0 : 1;
+
+  const ok = wsSend({ action: "m1SetMode", mode: newMode });
+  if (ok) logLine("Mode gesetzt: " + (newMode === 1 ? "Auto" : "Manuell"));
 }
 
 

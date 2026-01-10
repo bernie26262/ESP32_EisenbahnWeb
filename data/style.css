@@ -327,6 +327,39 @@ h2 {
     box-shadow: none;
 }
 
+.btn-mode{
+    width: 100%;
+    padding: 0.65rem;
+    margin-top: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.btn-mode.is-auto{
+    background: var(--ok);
+    color: #fff;
+    border: none;
+}
+
+.btn-mode.is-manual{
+    background: #1f6feb;   /* blau */
+    color: #fff;
+    border: none;
+}
+
+.btn-mode:disabled{
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-mode.is-offline{
+    opacity: 0.75;
+}
+
+
 .btn-stop{
     width: 100%;
     padding: 14px 14px;
