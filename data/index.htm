@@ -76,7 +76,7 @@
     <aside class="panel panel-right safety-panel ok" id="safety-panel">
 <!-- POWER (Toggle) -->
 <section class="power-toggle">
-    <button id="btn-power" class="btn-power" onclick="sendPowerOn()">
+    <button id="btn-power" class="btn-power" data-action="powerToggle" type="button">
         ⚡ POWER ON
     </button>
     <div class="hint" style="margin-top:.5rem;">
@@ -131,13 +131,13 @@
         </label>
 
         <div class="overlay-actions">
-            <button class="btn" onclick="closeOverlay()">Abbrechen</button>
-            <button class="btn btn-ack" onclick="confirmAck()">ACK senden</button>
+            <button class="btn" type="button" data-action="closeOverlay">Abbrechen</button>
+            <button class="btn btn-ack" type="button" data-action="confirmAck">ACK senden</button>
         </div>
     </div>
 </div>
 
 <script src="safety_ui_texts.js?v=20260106p17"></script>
-<script src="script.js?v=20260106p17"></script>
+<script src="script.js?v=20260109p01"></script>
 </body>
 </html>

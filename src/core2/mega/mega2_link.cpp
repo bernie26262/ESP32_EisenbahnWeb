@@ -160,8 +160,10 @@ void update()
             s_pollIntervalMs = POLL_STATUS_MS;
 
             // Link-Online: wir hatten gerade eine erfolgreiche I2C-Transaktion.
+            const bool wasOnline = s_mega2Online;
             s_mega2Online   = true;
             s_lastOkMsLink  = now;
+            if (!wasOnline) DBG_PRINTLN("[M2LINK] online=1");
         }
         else if (r == I2CBus::Result::BUSY)
         {
@@ -183,8 +185,10 @@ void update()
 
             // Poll-Fail = Kommunikationsproblem. NICHT als Safety-Fehler interpretieren!
             // -> Nur Mega2 online=false setzen; den zuletzt gültigen Mega2-Status unangetastet lassen.
+            const bool wasOnline = s_mega2Online;
             s_mega2Online    = false;
             s_lastFailMsLink = now;
+            if (wasOnline) DBG_PRINTLN("[M2LINK] online=0");
 
             if (s_pollFailCount < 6) s_pollFailCount++;
             const uint32_t backoff = POLL_STATUS_MS << s_pollFailCount; // 200,400,800,...
@@ -199,6 +203,18 @@ void update()
                            (unsigned)s_pollFailCount);
             }
         }
+
+        // DEBUG: 1Hz poll result log (OK/BUSY/ERROR)
+        static uint32_t s_lastPollLogMs = 0;
+        if (now - s_lastPollLogMs >= 1000)
+        {
+            s_lastPollLogMs = now;
+            const char* rs =
+                (r == I2CBus::Result::OK)   ? "OK" :
+                (r == I2CBus::Result::BUSY) ? "BUSY" : "ERROR";
+            DBG_PRINTF("[M2LINK] poll=%s online=%u\n", rs, (unsigned)s_mega2Online);
+        }
+
 
         s_nextPollMs = now + s_pollIntervalMs;
     }

@@ -380,3 +380,16 @@ h2 {
   font-size: 0.85rem;
 }
 .btn-mini:hover { filter: brightness(0.98); }
+
+
+/* =========================================================
+   Phase 1 / Maus-Fix: Button-Inhalte sollen keine Pointer-Events fangen
+   (verhindert "Click auf <span>" statt auf <button>)
+   ========================================================= */
+button.btn *,
+button.btn-mini *,
+button.btn-power *,
+button.btn-stop *,
+button.btn-nothalt * {
+  pointer-events: none;
+}

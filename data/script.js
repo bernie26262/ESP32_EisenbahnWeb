@@ -116,6 +116,9 @@ function handleWsMessage(msg) {
   if (DEBUG_WS) console.log("[WS MSG]", msg);
   if (!msg || msg.type !== "state") return;
 
+  // Debug/Inspection helper (Browser-Konsole)
+  window.lastState = msg;
+
   lastSafetyState = msg.safety || null;
 	// Sobald Safety-Lock wieder weg ist, ist ein evtl. laufender Quittierungs-/Test-Flow beendet.
 	if (lastSafetyState && lastSafetyState.lock === false) {
@@ -542,7 +545,69 @@ function renderOverviewLeft(msg) {
   renderSbhfLeft(msg);
   renderTurnoutsLeft(msg);
   renderBlocksLeft(msg);
-  // Mega1 Stations folgt später
+  renderStationsLeft(msg);
+}
+
+function fmtHex(v, width) {
+  const n = Number(v) >>> 0;
+  const s = n.toString(16).toUpperCase();
+  return "0x" + s.padStart(width || 2, "0");
+}
+
+function renderStationsLeft(msg) {
+  const el = document.getElementById("ov-stations");
+  if (!el) return;
+
+  const m1 = msg?.mega1;
+  const online = !!m1?.online;
+  const diag = m1?.diag;
+
+  if (!online || !diag) {
+    el.innerHTML = online ? "<em>keine Daten</em>" : "<em>offline</em>";
+    return;
+  }
+
+  const mode = Number(diag.mode ?? 0);
+  const powerMask = Number(diag.powerMask ?? 0);
+  const ist = Number(diag.weicheIstBits ?? 0);
+  const soll = Number(diag.weicheSollBits ?? 0);
+  const slow = Number(diag.weicheSlowBits ?? 0);
+
+  const mkBadge = (text, cls) => `<span class="badge ${cls}">${text}</span>`;
+
+  // Power channels (P1..P4)
+  const pBadges = [];
+  for (let i = 0; i < 4; i++) {
+    const on = ((powerMask >>> i) & 1) !== 0;
+    pBadges.push(mkBadge(`P${i + 1}: ${on ? "AN" : "AUS"}`, on ? "badge-ok" : "badge-warn"));
+  }
+
+  // Turnouts (W1..W12)
+  const W_COUNT = 12;
+  const wBadges = [];
+  for (let i = 0; i < W_COUNT; i++) {
+    const s = ((soll >>> i) & 1) !== 0;
+    const a = ((ist >>> i) & 1) !== 0;
+    const sl = ((slow >>> i) & 1) !== 0;
+
+    let cls = "badge-ok";
+    if (s !== a) cls = "badge-err";
+    else if (sl) cls = "badge-warn";
+
+    // Keep semantics neutral: show bits, not G/R, to avoid wrong interpretation.
+    wBadges.push(mkBadge(`W${i + 1} S${s ? 1 : 0} I${a ? 1 : 0}${sl ? " slow" : ""}`, cls));
+  }
+
+  el.innerHTML = `
+    <div>Mode: <b>${mode}</b></div>
+    <div style="margin-top:8px"><b>Power</b></div>
+    <div class="badge-wrap">${pBadges.join(" ")}</div>
+    <div style="margin-top:10px"><b>Weichen</b></div>
+    <div class="badge-wrap">${wBadges.join(" ")}</div>
+    <div style="margin-top:10px; opacity:0.75; font-size:0.9em">
+      Roh: PowerMask <b>${fmtHex(powerMask, 2)}</b> · Soll <b>${fmtHex(soll, 4)}</b> · Ist <b>${fmtHex(ist, 4)}</b> · Slow <b>${fmtHex(slow, 4)}</b>
+    </div>
+  `;
 }
 
 function renderSbhfLeft(msg) {
@@ -663,3 +728,4 @@ function renderBlocksLeft(msg) {
 
   el.innerHTML = html;
 }
+

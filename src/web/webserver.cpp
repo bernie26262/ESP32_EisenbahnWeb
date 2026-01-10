@@ -33,7 +33,8 @@ static String buildWsStateJson()
     doc["eth"]["connected"] = Net::EthManager::isConnected();
     doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
 
-    const bool m2online = SystemRuntimeState::mega2Online();
+    // Mega2 online: use link-layer flag (matches [M2LINK] online=1 in Serial)
+    const bool m2online = Mega2Link::mega2Online();
     const bool m1online = SystemRuntimeState::mega1Online();
 
     doc["mega2"]["online"] = m2online;

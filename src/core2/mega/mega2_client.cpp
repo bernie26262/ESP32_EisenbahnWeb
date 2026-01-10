@@ -63,6 +63,23 @@ I2CBus::Result Mega2Client::pollStatus()
         tmpStatus.size    != sizeof(SystemStatus)  ||
         tmpStatus.nodeId  != NODE_MEGA2)
     {
+        // If a command response (1 byte OK/FAIL) is still pending on Mega2,
+        // a plain read() may consume that 1 byte first and the remaining bytes
+        // are zero-filled -> looks like ver=0/size=0/node=0.
+        // In that case: do one immediate retry to fetch the real SystemStatus.
+        if (tmpStatus.version == 0 && tmpStatus.size == 0 && tmpStatus.nodeId == 0)
+        {
+            const auto r2 = I2CBus::readEx(MEGA2_ADDR, &tmpStatus, expected);
+            if (r2 == I2CBus::Result::OK &&
+                tmpStatus.version == SYSTEM_STATUS_VERSION &&
+                tmpStatus.size    == sizeof(SystemStatus) &&
+                tmpStatus.nodeId  == NODE_MEGA2)
+            {
+                SystemRuntimeState::updateMega2Status(tmpStatus);
+                return I2CBus::Result::OK;
+            }
+        }
+
         DBG_PRINTF(
             "[M2] Status reject: ver=%u(exp %u) size=%u(exp %u) node=%u\n",
             tmpStatus.version, SYSTEM_STATUS_VERSION,
