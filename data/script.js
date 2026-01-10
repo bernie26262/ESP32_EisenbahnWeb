@@ -241,8 +241,26 @@ const mega1online = !!(msg.mega1 && msg.mega1.online);
 const bWs = document.getElementById("badge-ws");
 const bM2 = document.getElementById("badge-mega2");
 const bM1 = document.getElementById("badge-mega1");
+const bMode = document.getElementById("badge-mode");   // <-- NEU
 const bPw = document.getElementById("badge-power");
 const bNo = document.getElementById("badge-notaus");
+
+// --- NEU: Auto/Manuell Badge ---
+if (bMode) {
+  const modeRaw = msg?.mega1?.diag?.mode;
+  const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
+
+  // Annahme: 1 = Auto, 0 = Manuell (wenn falsch herum, drehen wir es)
+  const isAuto = (mode === 1);
+
+  if (mode < 0 || Number.isNaN(mode)) {
+    bMode.className = "badge badge-warn";
+    bMode.textContent = "Mode: ?";
+  } else {
+    bMode.className = "badge " + (isAuto ? "badge-ok" : "badge-info");
+    bMode.textContent = isAuto ? "Auto" : "Manuell";
+  }
+}
 
 if (bWs) {
   bWs.className = "badge " + (wsOk ? "badge-ok" : "badge-err");
