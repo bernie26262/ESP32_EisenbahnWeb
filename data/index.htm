@@ -12,6 +12,7 @@
 <div class="container">
 
 
+
     <!-- ===================== LEFT ===================== -->
     <main class="panel">
         <h1>Betriebsübersicht</h1>
@@ -63,14 +64,15 @@
     <aside class="panel panel-right safety-panel ok" id="safety-panel">
 <!-- POWER (Toggle) -->
 <section class="power-toggle">
-    <button id="btn-power" class="btn-power" onclick="sendPowerOn()">
+    <button id="btn-power-on" class="btn-power btn-power-on" onclick="sendPowerOn()" disabled>
         ⚡ POWER ON
     </button>
-    
-    <button id="btn-mode" class="btn-mode" onclick="sendModeToggle()" disabled>
-        Mode: ?
+    <button id="btn-power-off" class="btn-power btn-power-off" onclick="sendPowerOff()" disabled>
+        ⏻ STOP / POWER OFF
     </button>
-    
+    <button id="btn-mode" class="btn-mode" onclick="sendModeToggle()" disabled>
+        AUTO / MANUELL
+    </button>
     <div class="hint" style="margin-top:.5rem;">
         HW-NOT-AUS ist separat verdrahtet (fail-safe).
     </div>
@@ -85,25 +87,25 @@
             <div id="safety-status" class="status-box status-ok">
                 🟢 System OK
             </div>
-
-            <!-- Zeile 1: Verbindungen / Online -->
-            <div class="badge-row">
-                <span id="badge-ws" class="badge badge-warn">WS: ?</span>
-                <span id="badge-mega2" class="badge badge-warn">Mega2: ?</span>
-                <span id="badge-mega1" class="badge badge-warn">Mega1: ?</span>
-            </div>
-
-            <!-- Zeile 2: Betriebszustände -->
-            <div class="badge-row">
-                <span id="badge-mode" class="badge badge-warn">Mode: ?</span>
-                <span id="badge-power" class="badge badge-warn">Power: ?</span>
-                <span id="badge-notaus" class="badge badge-warn">HW-NOT AUS: ?</span>
+            <!-- Status (WS / Mega / Power / HW-NOT-AUS) -->
+            <div id="status-badges" class="status-badges-inline">
+                <div class="badge-row">
+                    <span id="badge-ws" class="badge badge-warn">WS: ?</span>
+                    <span id="badge-mega2" class="badge badge-warn">Mega2: ?</span>
+                    <span id="badge-mega1" class="badge badge-warn">Mega1: ?</span>
+                </div>
+                <div class="badge-row">
+                    <span id="badge-mode" class="badge badge-warn">Mode: ?</span>
+                    <span id="badge-power" class="badge badge-warn">Power: ?</span>
+                    <span id="badge-notaus" class="badge badge-warn">HW-NOT AUS: ?</span>
+                </div>
             </div>
 
         </section>
 
         <div class="panel-separator"></div>
 
+        <!-- MELDUNGEN -->
         <section>
             <h2>Meldungen</h2>
             <div id="safety-messages-list">
@@ -113,6 +115,7 @@
 
         <div class="panel-separator"></div>
 
+        <!-- TRAFO -->
         <section>
             <h2>Trafo</h2>
             <div>Trafo A: – V</div>

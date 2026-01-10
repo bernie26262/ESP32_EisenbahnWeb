@@ -27,22 +27,10 @@ body {
 /* Layout */
 .container {
     display: grid;
-
-    /* Desktop: stabil 2-spaltig – unabhängig von Browser-Zoom */
-    grid-template-columns: minmax(980px, 1fr) 380px;
-
+    grid-template-columns: 1fr 380px;
     gap: 1rem;
     padding: 1rem;
-
-    max-width: 1400px;
-    margin: 0 auto;
-    align-items: start;
 }
-
-/* Explizite Platzierung: main links, aside rechts */
-.container > main { grid-column: 1; }
-.container > aside { grid-column: 2; }
-
 
 .panel {
     background: var(--panel);
@@ -199,7 +187,7 @@ h2 {
 }
 
 /* Responsive */
-@media (max-width: 1100px) {
+@media (max-width: 860px) {
     .container { grid-template-columns: 1fr; }
     .panel-right { position: static; }
 }
@@ -274,7 +262,7 @@ h2 {
     min-width: 220px;
 }
 
-.badge-row { grid-column: 1 / -1; }
+.badge-row{ display:flex; gap:8px; flex-wrap:wrap; }
 
 .badge{
     display:inline-flex;
@@ -292,12 +280,10 @@ h2 {
 .badge-ok{ border-color: rgba(45,164,78,0.35); }
 .badge-warn{ border-color: rgba(210,153,34,0.35); }
 .badge-err{ border-color: rgba(207,34,46,0.35); }
-.badge-info{ border-color: rgba(31,111,235,0.35); }
 
 .badge-ok::before{ content:"🟢"; }
 .badge-warn::before{ content:"🟡"; }
 .badge-err::before{ content:"🔴"; }
-.badge-info::before{ content:"🔵"; }
 
 /* =========================================================
    Buttons: POWER (grün an/aus), STOP neutral
@@ -326,39 +312,6 @@ h2 {
     cursor: not-allowed;
     box-shadow: none;
 }
-
-.btn-mode{
-    width: 100%;
-    padding: 0.65rem;
-    margin-top: 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: #fff;
-    cursor: pointer;
-    font-weight: 700;
-}
-
-.btn-mode.is-auto{
-    background: var(--ok);
-    color: #fff;
-    border: none;
-}
-
-.btn-mode.is-manual{
-    background: #1f6feb;   /* blau */
-    color: #fff;
-    border: none;
-}
-
-.btn-mode:disabled{
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.btn-mode.is-offline{
-    opacity: 0.75;
-}
-
 
 .btn-stop{
     width: 100%;
@@ -429,14 +382,53 @@ h2 {
 .btn-mini:hover { filter: brightness(0.98); }
 
 
-/* =========================================================
-   Phase 1 / Maus-Fix: Button-Inhalte sollen keine Pointer-Events fangen
-   (verhindert "Click auf <span>" statt auf <button>)
-   ========================================================= */
-button.btn *,
-button.btn-mini *,
-button.btn-power *,
-button.btn-stop *,
-button.btn-nothalt * {
-  pointer-events: none;
+/* Phase 2: 2 Buttons (Power On / Stop) + Mode Toggle */
+.btn-power-on {
+    margin-top: 0.25rem;
+    background: var(--ok);
+    color: #fff;
+    border: none;
+    font-weight: 800;
 }
+.btn-power-off {
+    margin-top: 0.5rem;
+    background: rgba(200, 45, 45, 0.85);
+    color: #fff;
+    border: none;
+    font-weight: 800;
+}
+.btn-power:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-mode{
+    width: 100%;
+    padding: 0.65rem;
+    margin-top: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    cursor: pointer;
+    font-weight: 800;
+}
+.btn-mode.is-auto{
+    background: var(--ok);
+    color: #fff;
+    border: none;
+}
+.btn-mode.is-manual{
+    background: #1f6feb;
+    color: #fff;
+    border: none;
+}
+.btn-mode:disabled{
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+.btn-mode.is-offline{
+    opacity: 0.75;
+}
+
+.badge-info{ border-color: rgba(31,111,235,0.35); }
+.badge-info::before{ content:"🔵"; }

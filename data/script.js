@@ -241,26 +241,9 @@ const mega1online = !!(msg.mega1 && msg.mega1.online);
 const bWs = document.getElementById("badge-ws");
 const bM2 = document.getElementById("badge-mega2");
 const bM1 = document.getElementById("badge-mega1");
-const bMode = document.getElementById("badge-mode");   // <-- NEU
+const bMode = document.getElementById("badge-mode");
 const bPw = document.getElementById("badge-power");
 const bNo = document.getElementById("badge-notaus");
-
-// --- NEU: Auto/Manuell Badge ---
-if (bMode) {
-  const modeRaw = msg?.mega1?.diag?.mode;
-  const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
-
-  // Annahme: 1 = Auto, 0 = Manuell (wenn falsch herum, drehen wir es)
-  const isAuto = (mode === 1);
-
-  if (mode < 0 || Number.isNaN(mode)) {
-    bMode.className = "badge badge-warn";
-    bMode.textContent = "Mode: ?";
-  } else {
-    bMode.className = "badge " + (isAuto ? "badge-ok" : "badge-info");
-    bMode.textContent = isAuto ? "Auto" : "Manuell";
-  }
-}
 
 if (bWs) {
   bWs.className = "badge " + (wsOk ? "badge-ok" : "badge-err");
@@ -274,6 +257,18 @@ if (bM1) {
   bM1.className = "badge " + (mega1online ? "badge-ok" : "badge-err");
   bM1.textContent = "Mega1: " + (mega1online ? "online" : "offline");
 }
+if (bMode) {
+  const modeRaw = msg?.mega1?.diag?.mode;
+  const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
+  const isAuto = (mode === 1);
+  if (mode < 0 || Number.isNaN(mode)) {
+    bMode.className = "badge badge-warn";
+    bMode.textContent = "Mode: ?";
+  } else {
+    bMode.className = "badge " + (isAuto ? "badge-ok" : "badge-info");
+    bMode.textContent = isAuto ? "Auto" : "Manuell";
+  }
+}
 if (bPw) {
   bPw.className = "badge " + (powerOn ? "badge-ok" : "badge-warn");
   bPw.textContent = "Power: " + (powerOn ? "AN" : "aus");
@@ -284,53 +279,43 @@ if (bNo) {
 }
 
 
-  // STOP (UI) – immer erlaubt (wenn WS verbunden), auch bei Safety lock.
-// (STOP ist UI-Command "PowerOff". HW-NOT-AUS ist rein Anzeige.)
 
-// POWER – wenn Mega2 offline, alles außer STOP sperren.
+  // --------------------------------------------------
+  // Buttons: Power (2 buttons) + Mode (toggle)
+  // --------------------------------------------------
 
-  // POWER – wenn Mega2 offline, alles außer STOP sperren.
-  const btnPower = document.getElementById("btn-power");
-  if (btnPower) {
-    btnPower.textContent = powerOn ? "⏻ STOP / POWER OFF" : "⚡ POWER ON";
-    btnPower.classList.toggle("is-on", powerOn);
-    btnPower.classList.toggle("is-off", !powerOn);
-    btnPower.classList.toggle("is-offline", !mega2online);
+  const btnPowerOn = document.getElementById("btn-power-on");
+  const btnPowerOff = document.getElementById("btn-power-off");
 
-    // Regeln:
-    // - Wenn WS down oder Mega2 offline: disable
-    // - Wenn Power bereits an: POWER OFF erlauben
-    // - Wenn Power aus: POWER ON nur erlauben, wenn nicht gelockt und HW-NOT-AUS nicht aktiv
-    if (!wsOk || !mega2online) {
-      btnPower.disabled = true;
-    } else if (powerOn) {
-      btnPower.disabled = false;
-    } else {
-      btnPower.disabled = (lock || notausActive);
-    }
+  if (btnPowerOn) {
+    // fixed label (Aktion). Status ist über Pill/Badge sichtbar.
+    btnPowerOn.textContent = "⚡ POWER ON";
+    btnPowerOn.classList.toggle("is-offline", !mega2online);
+    // enabled nur wenn Power aus und keine Sperre
+    btnPowerOn.disabled = (!wsOk || !mega2online) ? true : (powerOn || lock || notausActive);
   }
 
-// MODE (Auto/Manuell) – nur wenn WS + Mega1 online, und nicht gelockt / HW-NOT-AUS
-const btnMode = document.getElementById("btn-mode");
-if (btnMode) {
-  const modeRaw = msg?.mega1?.diag?.mode;
-  const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
+  if (btnPowerOff) {
+    btnPowerOff.textContent = "⏻ STOP / POWER OFF";
+    btnPowerOff.classList.toggle("is-offline", !mega2online);
+    // enabled nur wenn Power an
+    btnPowerOff.disabled = (!wsOk || !mega2online) ? true : (!powerOn);
+  }
 
-  const isAuto = (mode === 1);
-  const canUse = wsOk && mega2online && mega1online && !lock && !notausActive && (mode >= 0) && !Number.isNaN(mode);
+  const btnMode = document.getElementById("btn-mode");
+  if (btnMode) {
+    btnMode.textContent = "AUTO / MANUELL";
 
-  btnMode.disabled = !canUse;
+    const modeRaw = msg?.mega1?.diag?.mode;
+    const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
+    const isAuto = (mode === 1);
+    const canUseMode = wsOk && mega2online && mega1online && !lock && !notausActive && (mode >= 0) && !Number.isNaN(mode);
 
-  btnMode.classList.toggle("is-auto", isAuto && canUse);
-  btnMode.classList.toggle("is-manual", (!isAuto) && canUse);
-
-  // optional: visuell wenn offline
-  btnMode.classList.toggle("is-offline", !mega1online);
-
-  btnMode.textContent =
-    (mode < 0 || Number.isNaN(mode)) ? "Mode: ?" : (isAuto ? "🟢 AUTO" : "🔵 MANUELL");
-}
-
+    btnMode.disabled = !canUseMode;
+    btnMode.classList.toggle("is-auto", isAuto && canUseMode);
+    btnMode.classList.toggle("is-manual", (!isAuto) && canUseMode);
+    btnMode.classList.toggle("is-offline", !mega1online);
+  }
 }
 
 /* =========================================================
@@ -343,31 +328,26 @@ function sendNothalt() {
 
 
 function sendPowerOn() {
-  const powerOn = !!(lastSafetyState && lastSafetyState.powerOn === true);
-
   // Verbindung prüfen (damit der Klick nicht "ins Leere" läuft)
   if (!wsConnected || !socket || socket.readyState !== 1) {
     logLine("WS nicht verbunden – Aktion nicht gesendet");
     return;
   }
 
-  // Mega2-Online prüfen (optional: STOP bleibt trotzdem erlaubt, aber PowerToggle nicht)
+  // Mega2-Online prüfen
   if (!lastMega2Online) {
     logLine("Mega2 offline – Aktion nicht gesendet");
     return;
   }
 
-  const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
-  const safetyLock   = !!(lastSafetyState && lastSafetyState.lock === true);
-
-  // Toggle-Logik:
-  // - wenn Power bereits AN -> UI-STOP = PowerOff
-  // - wenn Power AUS -> nur PowerOn, wenn kein Safety-Lock und kein HW-NOT-AUS
+  const powerOn = !!(lastSafetyState && lastSafetyState.powerOn === true);
   if (powerOn) {
-    wsSendAction("powerOff", "STOP / POWER OFF gesendet");
+    logLine("Power ist bereits AN");
     return;
   }
 
+  const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
+  const safetyLock   = !!(lastSafetyState && lastSafetyState.lock === true);
   if (safetyLock || notausActive) {
     showAckOverlay(
       (lastSafetyState && lastSafetyState.text) ||
@@ -378,10 +358,32 @@ function sendPowerOn() {
 
   wsSendAction("powerOn", "POWER ON gesendet");
 }
+function sendPowerOff() {
+  // Verbindung prüfen
+  if (!wsConnected || !socket || socket.readyState !== 1) {
+    logLine("WS nicht verbunden – Aktion nicht gesendet");
+    return;
+  }
 
+  // Mega2-Online prüfen
+  if (!lastMega2Online) {
+    logLine("Mega2 offline – Aktion nicht gesendet");
+    return;
+  }
+
+  const powerOn = !!(lastSafetyState && lastSafetyState.powerOn === true);
+  if (!powerOn) {
+    logLine("Power ist bereits AUS");
+    return;
+  }
+
+  // STOP/POWER OFF ist auch bei Safety-Lock erlaubt (UI-STOP).
+  wsSendAction("powerOff", "STOP / POWER OFF gesendet");
+}
 function sendModeToggle() {
   // Voraussetzung: WS + Mega1 online
   const mega1online = !!(lastStateMsg && lastStateMsg.mega1 && lastStateMsg.mega1.online);
+
   if (!wsConnected || !socket || socket.readyState !== 1) {
     logLine("WS nicht verbunden – Aktion nicht gesendet");
     return;
@@ -801,4 +803,3 @@ function renderBlocksLeft(msg) {
 
   el.innerHTML = html;
 }
-
