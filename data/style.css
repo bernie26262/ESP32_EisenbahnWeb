@@ -432,3 +432,53 @@ h2 {
 
 .badge-info{ border-color: rgba(31,111,235,0.35); }
 .badge-info::before{ content:"🔵"; }
+
+
+/* =========================================================
+ *  Mega1 CMD Toggle Buttons (Bahnhöfe/Weichen)
+ * ========================================================= */
+.m1-section{ margin-top: .75rem; }
+.m1-title{ font-weight: 800; margin: .25rem 0 .35rem; }
+.toggle-grid{ display: grid; gap: .5rem; }
+.toggle-grid.grid-4{ grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.toggle-grid.grid-6{ grid-template-columns: repeat(3, minmax(0, 1fr)); } /* 3x4 for 12 weichen */
+@media (min-width: 1200px){
+  .toggle-grid.grid-6{ grid-template-columns: repeat(4, minmax(0, 1fr)); } /* desktop: 4x3 */
+}
+
+.toggle-btn{
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: .5rem;
+  text-align: left;
+  cursor: pointer;
+  min-height: 64px;
+}
+.toggle-btn:disabled{
+  opacity: .55;
+  cursor: not-allowed;
+}
+.toggle-btn.is-on{ background: rgba(0,180,90,0.12); }
+.toggle-btn.is-off{ background: rgba(160,160,160,0.10); }
+.toggle-btn.is-slow{ outline: 2px dashed rgba(255,165,0,0.45); outline-offset: 0px; }
+
+.toggle-title{ font-weight: 900; font-size: .95rem; }
+.toggle-state{ margin-top: .25rem; }
+.toggle-sub{ margin-top: .25rem; display:flex; gap:.25rem; flex-wrap: wrap; }
+
+.pill{
+  display: inline-flex;
+  align-items: center;
+  padding: .12rem .45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,0.08);
+  font-size: .78rem;
+  font-weight: 800;
+  background: #fff;
+}
+.pill-on{ background: rgba(0,180,90,0.15); }
+.pill-off{ background: rgba(120,120,120,0.12); }
+.pill-ok{ background: rgba(0,180,90,0.12); }
+.pill-warn{ background: rgba(255,165,0,0.18); }
+.pill-info{ background: rgba(31,111,235,0.14); }

@@ -415,6 +415,66 @@ function sendModeToggle() {
 }
 
 
+function sendM1BhfToggle(bhf1) {
+  const mega1online = !!(lastStateMsg && lastStateMsg.mega1 && lastStateMsg.mega1.online);
+  if (!wsConnected || !socket || socket.readyState !== 1) {
+    logLine("WS nicht verbunden – Aktion nicht gesendet");
+    return;
+  }
+  if (!mega1online) {
+    logLine("Mega1 offline – Aktion nicht gesendet");
+    return;
+  }
+  const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
+  const safetyLock   = !!(lastSafetyState && lastSafetyState.lock === true);
+  if (safetyLock || notausActive) {
+    logLine("Bahnhof-Toggle gesperrt (Safety/HW-NOT-AUS)");
+    return;
+  }
+
+  const diag = lastStateMsg?.mega1?.diag;
+  const powerMask = Number(diag?.powerMask ?? 0);
+  const idx0 = Number(bhf1) - 1;
+  if (idx0 < 0 || idx0 >= 4) return;
+
+  const curOn = ((powerMask >> idx0) & 1) === 1;
+  const newOn = !curOn;
+
+  const ok = wsSend({ action: "m1PowerSet", bhf: idx0, on: newOn });
+  if (ok) logLine(`BHF${bhf1} -> ${newOn ? "AN" : "aus"}`);
+}
+
+function sendM1WeicheToggle(idxW) {
+  const mega1online = !!(lastStateMsg && lastStateMsg.mega1 && lastStateMsg.mega1.online);
+  if (!wsConnected || !socket || socket.readyState !== 1) {
+    logLine("WS nicht verbunden – Aktion nicht gesendet");
+    return;
+  }
+  if (!mega1online) {
+    logLine("Mega1 offline – Aktion nicht gesendet");
+    return;
+  }
+  const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
+  const safetyLock   = !!(lastSafetyState && lastSafetyState.lock === true);
+  if (safetyLock || notausActive) {
+    logLine("Weichen-Toggle gesperrt (Safety/HW-NOT-AUS)");
+    return;
+  }
+
+  const diag = lastStateMsg?.mega1?.diag;
+  const istBits = Number(diag?.weicheIstBits ?? 0);
+  const i = Number(idxW);
+  if (i < 0 || i >= 12) return;
+
+  const curGerade = ((istBits >> i) & 1) === 1;
+  const newGerade = !curGerade;
+
+  const ok = wsSend({ action: "m1TurnoutSet", idx: i, gerade: newGerade });
+  if (ok) logLine(`W${i} -> ${newGerade ? "Gerade" : "Abzweig"}`);
+}
+
+
+
 /* =========================================================
  *  ACK OVERLAY
  * ========================================================= */
@@ -633,55 +693,102 @@ function renderStationsLeft(msg) {
   const el = document.getElementById("ov-stations");
   if (!el) return;
 
-  const m1 = msg?.mega1;
-  const online = !!m1?.online;
-  const diag = m1?.diag;
+  const mega1online = !!(msg && msg.mega1 && msg.mega1.online);
+  const hasDiag = !!(msg && msg.mega1 && msg.mega1.hasDiag);
+  const wsOk = (wsConnected === true);
+  const lock = !!(lastSafetyState && lastSafetyState.lock === true);
+  const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
 
-  if (!online || !diag) {
-    el.innerHTML = online ? "<em>keine Daten</em>" : "<em>offline</em>";
+  if (!mega1online) {
+    el.innerHTML = `<div class="hint">Mega1 offline</div>`;
+    return;
+  }
+  if (!hasDiag || !msg.mega1.diag) {
+    el.innerHTML = `<div class="hint">Mega1 online – diag noch nicht verfügbar</div>`;
     return;
   }
 
+  const diag = msg.mega1.diag;
   const mode = Number(diag.mode ?? 0);
   const powerMask = Number(diag.powerMask ?? 0);
   const ist = Number(diag.weicheIstBits ?? 0);
   const soll = Number(diag.weicheSollBits ?? 0);
   const slow = Number(diag.weicheSlowBits ?? 0);
 
-  const mkBadge = (text, cls) => `<span class="badge ${cls}">${text}</span>`;
+  // Enable rules for CMD buttons
+  const canCmd = wsOk && mega1online && !lock && !notausActive;
 
-  // Power channels (P1..P4)
-  const pBadges = [];
+  const modeText = (mode === 1) ? "Auto" : "Manuell";
+  const modeCls  = (mode === 1) ? "badge-ok" : "badge-info";
+
+  const mkPill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
+
+  // Bahnhöfe 1..4 (powerMask bit0..3)
+  const bhfBtns = [];
   for (let i = 0; i < 4; i++) {
-    const on = ((powerMask >>> i) & 1) !== 0;
-    pBadges.push(mkBadge(`P${i + 1}: ${on ? "AN" : "AUS"}`, on ? "badge-ok" : "badge-warn"));
+    const on = ((powerMask >> i) & 1) === 1;
+    const cls = "toggle-btn " + (on ? "is-on" : "is-off");
+    const st = mkPill(on ? "AN" : "aus", on ? "pill-on" : "pill-off");
+    const dis = canCmd ? "" : "disabled";
+    bhfBtns.push(
+      `<button class="${cls}" ${dis} onclick="sendM1BhfToggle(${i+1})">
+        <div class="toggle-title">BHF ${i+1}</div>
+        <div class="toggle-state">${st}</div>
+      </button>`
+    );
   }
 
-  // Turnouts (W1..W12)
-  const W_COUNT = 12;
-  const wBadges = [];
-  for (let i = 0; i < W_COUNT; i++) {
-    const s = ((soll >>> i) & 1) !== 0;
-    const a = ((ist >>> i) & 1) !== 0;
-    const sl = ((slow >>> i) & 1) !== 0;
+  // Weichen 0..11 (Ist gerade Bits)
+  const wBtns = [];
+  for (let i = 0; i < 12; i++) {
+    const curG = ((ist >> i) & 1) === 1;
+    const sG   = ((soll >> i) & 1) === 1;
+    const isSlow = ((slow >> i) & 1) === 1;
 
-    let cls = "badge-ok";
-    if (s !== a) cls = "badge-err";
-    else if (sl) cls = "badge-warn";
+    const cls = ["toggle-btn", curG ? "is-on" : "is-off", isSlow ? "is-slow" : ""].join(" ").trim();
+    const dis = canCmd ? "" : "disabled";
 
-    // Keep semantics neutral: show bits, not G/R, to avoid wrong interpretation.
-    wBadges.push(mkBadge(`W${i + 1} S${s ? 1 : 0} I${a ? 1 : 0}${sl ? " slow" : ""}`, cls));
+    const st = mkPill(curG ? "Gerade" : "Abzweig", curG ? "pill-on" : "pill-off");
+    const stSoll = mkPill("Soll: " + (sG ? "G" : "A"), (sG === curG ? "pill-ok" : "pill-warn"));
+    const slowTag = isSlow ? mkPill("Slow", "pill-info") : "";
+
+    wBtns.push(
+      `<button class="${cls}" ${dis} onclick="sendM1WeicheToggle(${i})">
+        <div class="toggle-title">W ${i}</div>
+        <div class="toggle-state">${st}</div>
+        <div class="toggle-sub">${stSoll}${slowTag}</div>
+      </button>`
+    );
   }
+
+  const lockHint = (!canCmd)
+    ? `<div class="hint" style="margin-top:.5rem;">CMD gesperrt: ${!wsOk ? "WS down" : (lock ? "Safety-Lock" : (notausActive ? "HW-NOT-AUS" : ""))}</div>`
+    : "";
 
   el.innerHTML = `
-    <div>Mode: <b>${mode}</b></div>
-    <div style="margin-top:8px"><b>Power</b></div>
-    <div class="badge-wrap">${pBadges.join(" ")}</div>
-    <div style="margin-top:10px"><b>Weichen</b></div>
-    <div class="badge-wrap">${wBadges.join(" ")}</div>
-    <div style="margin-top:10px; opacity:0.75; font-size:0.9em">
-      Roh: PowerMask <b>${fmtHex(powerMask, 2)}</b> · Soll <b>${fmtHex(soll, 4)}</b> · Ist <b>${fmtHex(ist, 4)}</b> · Slow <b>${fmtHex(slow, 4)}</b>
+    <div class="m1-summary">
+      <div class="badge-row">
+        <span class="badge ${modeCls}">Mode: ${modeText}</span>
+        <span class="badge badge-warn">PowerMask: ${powerMask}</span>
+        <span class="badge badge-warn">Ist: ${fmtHex(ist, 4)}</span>
+      </div>
     </div>
+
+    <div class="m1-section">
+      <div class="m1-title">Bahnhöfe</div>
+      <div class="toggle-grid grid-4">
+        ${bhfBtns.join("")}
+      </div>
+    </div>
+
+    <div class="m1-section">
+      <div class="m1-title">Weichen</div>
+      <div class="toggle-grid grid-6">
+        ${wBtns.join("")}
+      </div>
+    </div>
+
+    ${lockHint}
   `;
 }
 
