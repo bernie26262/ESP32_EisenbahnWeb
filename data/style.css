@@ -568,3 +568,29 @@ h2 {
   border-top:1px solid rgba(0,0,0,.10);
   margin:12px 0;
 }
+
+
+/* =========================================================
+ * Mega2: Info-Look (nicht klickbar)
+ * ========================================================= */
+.mega2-info .badge,
+.mega2-info .pill,
+.mega2-info button,
+.mega2-info [role="button"] {
+  cursor: default !important;
+}
+
+.mega2-info .badge:hover,
+.mega2-info .pill:hover,
+.mega2-info button:hover {
+  filter: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.mega2-info .badge:active,
+.mega2-info .pill:active,
+.mega2-info button:active {
+  transform: none !important;
+  box-shadow: none !important;
+}
