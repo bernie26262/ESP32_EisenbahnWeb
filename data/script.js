@@ -1,12 +1,12 @@
 /* =========================================================
- *  Eisenbahn WebUI – Safety & Status (WebSocket-only)
+ *  Eisenbahn WebUI - Safety & Status (WebSocket-only)
  * ========================================================= */
 
 const DEBUG_WS = true;
 const DEBUG_UI = false;
 
 // Wenn du nach einem Firmware-Flash "alte" Buttons siehst:
-// -> unbedingt auch "Upload File System Image" (UploadFS) ausführen.
+// -> unbedingt auch "Upload File System Image" (UploadFS) ausfuehren.
 // Diese Version hilft beim Verifizieren, dass Browser + LittleFS wirklich neu sind.
 const UI_VERSION = "2026-01-06-p20-ackpending";
 
@@ -18,11 +18,11 @@ let lastSafetyState = null;
 // letzter empfangener mega2-state (online/flags)
 let lastMega2Online = false;
 
-// letzter kompletter WS-State (für Button/Disable-Regeln)
+// letzter kompletter WS-State (fuer Button/Disable-Regeln)
 let lastStateMsg = null;
 
 // ACK wurde gesendet, aber Safety-Lock ist (noch) aktiv.
-// Wird zurückgesetzt, sobald safety.lock wieder false ist.
+// Wird zurueckgesetzt, sobald safety.lock wieder false ist.
 let ackPending = false;
 
 /* =========================================================
@@ -63,7 +63,7 @@ function connectWebSocket() {
   };
 
   socket.onerror = () => {
-    // onclose kommt meist danach sowieso, aber fürs Log ok
+    // onclose kommt meist danach sowieso, aber fuers Log ok
     wsConnected = false;
     logLine("WS error");
   };
@@ -84,7 +84,7 @@ function connectWebSocket() {
 
 function wsSend(obj) {
   if (!socket || wsConnected !== true) {
-    logLine("WS nicht verbunden – Aktion nicht möglich");
+    logLine("WS nicht verbunden - Aktion nicht moeglich");
     return false;
   }
   try {
@@ -99,7 +99,7 @@ function wsSend(obj) {
 
 function sendPollNow() {
   wsSend({ action: "pollNow" });
-  logLine("↻ Prüfen gesendet");
+  logLine(" Pruefen gesendet");
 }
 
 
@@ -130,10 +130,10 @@ function handleWsMessage(msg) {
   const uiState = getUiStateFromWs(msg, lastSafetyState, lastMega2Online);
   applyUiState(uiState, msg);
 
-  // Schritt 2: rechts "Meldungen" befüllen (Safety + SBHF Masken)
+  // Schritt 2: rechts "Meldungen" befuellen (Safety + SBHF Masken)
   renderPowerWarningsEmergencies(msg);
 
-  // Schritt 3.5: links Betriebsübersicht (SBHF/Blöcke/Weichen) + FROM→TO Signale
+  // Schritt 3.5: links Betriebsuebersicht (SBHF/Bloecke/Weichen) + FROM->TO Signale
   renderOverviewLeft(msg);
 }
 
@@ -147,7 +147,7 @@ function getSafetyOverlayTexts(safety) {
     if (window.SAFETY_UI_TEXTS && typeof window.SAFETY_UI_TEXTS.fromCodes === 'function') {
       const t = window.SAFETY_UI_TEXTS.fromCodes(safety?.errType, safety?.errIndex);
       if (t && (t.title || (t.lines && t.lines.length))) {
-        return { title: t.title || '⚠ Sicherheitsquittierung', lines: t.lines || [] };
+        return { title: t.title || '! Sicherheitsquittierung', lines: t.lines || [] };
       }
     }
   } catch (e) {
@@ -155,15 +155,15 @@ function getSafetyOverlayTexts(safety) {
   }
   // Fallback: backend-provided text
   if (safety && safety.text) {
-    return { title: '⚠ Sicherheitsquittierung', lines: [String(safety.text)] };
+    return { title: '! Sicherheitsquittierung', lines: [String(safety.text)] };
   }
-  return { title: '⚠ Sicherheitsquittierung', lines: ['🔴 Safety aktiv – Bedienung gesperrt'] };
+  return { title: '! Sicherheitsquittierung', lines: [' Safety aktiv - Bedienung gesperrt'] };
 }
 
 function getUiStateFromWs(msg, safety, mega2online) {
   // Default OK
   let level = "OK";
-  let text = ["🟢 System OK"];
+  let text = [" System OK"];
   let title = "";
   let overlay = false;
   let ackRequired = false;
@@ -171,7 +171,7 @@ function getUiStateFromWs(msg, safety, mega2online) {
 
   if (!mega2online) {
     level = "WARN";
-    text = ["🟡 Mega2 offline"];
+    text = [" Mega2 offline"];
     return { level, text, title, overlay, ackRequired, hasWarn };
   }
   // Safety lock dominates everything
@@ -181,8 +181,8 @@ function getUiStateFromWs(msg, safety, mega2online) {
     ackRequired = true;
 
     const t = getSafetyOverlayTexts(safety);
-    title = t.title || '⚠ Sicherheitsquittierung';
-    text = (t.lines && t.lines.length) ? t.lines : ['🔴 Safety aktiv – Bedienung gesperrt'];
+    title = t.title || '! Sicherheitsquittierung';
+    text = (t.lines && t.lines.length) ? t.lines : [' Safety aktiv - Bedienung gesperrt'];
 
     return { level, text, title, overlay, ackRequired, hasWarn };
   }
@@ -198,7 +198,7 @@ function getUiStateFromWs(msg, safety, mega2online) {
 
     if (hasWarn) {
       level = "WARN";
-      text = ["🟡 Warning aktiv"];
+      text = [" Warning aktiv"];
     }
   }
 
@@ -288,15 +288,15 @@ if (bNo) {
   const btnPowerOff = document.getElementById("btn-power-off");
 
   if (btnPowerOn) {
-    // fixed label (Aktion). Status ist über Pill/Badge sichtbar.
-    btnPowerOn.textContent = "⚡ POWER ON";
+    // fixed label (Aktion). Status ist ueber Pill/Badge sichtbar.
+    btnPowerOn.textContent = " POWER ON";
     btnPowerOn.classList.toggle("is-offline", !mega2online);
     // enabled nur wenn Power aus und keine Sperre
     btnPowerOn.disabled = (!wsOk || !mega2online) ? true : (powerOn || lock || notausActive);
   }
 
   if (btnPowerOff) {
-    btnPowerOff.textContent = "⏻ STOP / POWER OFF";
+    btnPowerOff.textContent = " STOP / POWER OFF";
     btnPowerOff.classList.toggle("is-offline", !mega2online);
     // enabled nur wenn Power an
     btnPowerOff.disabled = (!wsOk || !mega2online) ? true : (!powerOn);
@@ -328,15 +328,15 @@ function sendNothalt() {
 
 
 function sendPowerOn() {
-  // Verbindung prüfen (damit der Klick nicht "ins Leere" läuft)
+  // Verbindung pruefen (damit der Klick nicht "ins Leere" laeuft)
   if (!wsConnected || !socket || socket.readyState !== 1) {
-    logLine("WS nicht verbunden – Aktion nicht gesendet");
+    logLine("WS nicht verbunden - Aktion nicht gesendet");
     return;
   }
 
-  // Mega2-Online prüfen
+  // Mega2-Online pruefen
   if (!lastMega2Online) {
-    logLine("Mega2 offline – Aktion nicht gesendet");
+    logLine("Mega2 offline - Aktion nicht gesendet");
     return;
   }
 
@@ -351,7 +351,7 @@ function sendPowerOn() {
   if (safetyLock || notausActive) {
     showAckOverlay(
       (lastSafetyState && lastSafetyState.text) ||
-        "Power On nicht möglich – Safety aktiv oder HW-NOT-AUS"
+        "Power On nicht moeglich - Safety aktiv oder HW-NOT-AUS"
     );
     return;
   }
@@ -359,15 +359,15 @@ function sendPowerOn() {
   wsSendAction("powerOn", "POWER ON gesendet");
 }
 function sendPowerOff() {
-  // Verbindung prüfen
+  // Verbindung pruefen
   if (!wsConnected || !socket || socket.readyState !== 1) {
-    logLine("WS nicht verbunden – Aktion nicht gesendet");
+    logLine("WS nicht verbunden - Aktion nicht gesendet");
     return;
   }
 
-  // Mega2-Online prüfen
+  // Mega2-Online pruefen
   if (!lastMega2Online) {
-    logLine("Mega2 offline – Aktion nicht gesendet");
+    logLine("Mega2 offline - Aktion nicht gesendet");
     return;
   }
 
@@ -385,11 +385,11 @@ function sendModeToggle() {
   const mega1online = !!(lastStateMsg && lastStateMsg.mega1 && lastStateMsg.mega1.online);
 
   if (!wsConnected || !socket || socket.readyState !== 1) {
-    logLine("WS nicht verbunden – Aktion nicht gesendet");
+    logLine("WS nicht verbunden - Aktion nicht gesendet");
     return;
   }
   if (!mega1online) {
-    logLine("Mega1 offline – Aktion nicht gesendet");
+    logLine("Mega1 offline - Aktion nicht gesendet");
     return;
   }
 
@@ -403,7 +403,7 @@ function sendModeToggle() {
   const modeRaw = lastStateMsg?.mega1?.diag?.mode;
   const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
   if (mode < 0 || Number.isNaN(mode)) {
-    logLine("Mode unbekannt – Aktion nicht gesendet");
+    logLine("Mode unbekannt - Aktion nicht gesendet");
     return;
   }
 
@@ -418,11 +418,11 @@ function sendModeToggle() {
 function sendM1BhfToggle(bhf1) {
   const mega1online = !!(lastStateMsg && lastStateMsg.mega1 && lastStateMsg.mega1.online);
   if (!wsConnected || !socket || socket.readyState !== 1) {
-    logLine("WS nicht verbunden – Aktion nicht gesendet");
+    logLine("WS nicht verbunden - Aktion nicht gesendet");
     return;
   }
   if (!mega1online) {
-    logLine("Mega1 offline – Aktion nicht gesendet");
+    logLine("Mega1 offline - Aktion nicht gesendet");
     return;
   }
   const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
@@ -447,11 +447,11 @@ function sendM1BhfToggle(bhf1) {
 function sendM1WeicheToggle(idxW) {
   const mega1online = !!(lastStateMsg && lastStateMsg.mega1 && lastStateMsg.mega1.online);
   if (!wsConnected || !socket || socket.readyState !== 1) {
-    logLine("WS nicht verbunden – Aktion nicht gesendet");
+    logLine("WS nicht verbunden - Aktion nicht gesendet");
     return;
   }
   if (!mega1online) {
-    logLine("Mega1 offline – Aktion nicht gesendet");
+    logLine("Mega1 offline - Aktion nicht gesendet");
     return;
   }
   const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
@@ -492,7 +492,7 @@ function showOverlay(title, lines, requireChecked) {
 
   overlay.classList.remove("hidden");
 
-  titleEl.textContent = title || "⚠ Sicherheitsquittierung";
+  titleEl.textContent = title || "! Sicherheitsquittierung";
 
   const safeLines = (Array.isArray(lines) ? lines : [lines])
     .filter(Boolean)
@@ -501,20 +501,20 @@ function showOverlay(title, lines, requireChecked) {
   textEl.innerHTML = safeLines.join("<br>");
 
   // Wenn bereits ACK gesendet wurde, aber der Safety-Lock noch aktiv ist,
-  // dann läuft (z.B. im SBHF) typischerweise ein automatischer Selbsttest.
+  // dann laeuft (z.B. im SBHF) typischerweise ein automatischer Selbsttest.
   // In dieser Phase darf die Checkbox/ACK nicht weiter bedient werden.
   if (ackPending) {
-    titleEl.textContent = "🔄 SBHF Weichentest läuft";
+    titleEl.textContent = " SBHF Weichentest laeuft";
     textEl.innerHTML = [
-      "Bitte warten …",
-      "Der Selbsttest läuft im Hintergrund und wird automatisch abgeschlossen.",
+      "Bitte warten ...",
+      "Der Selbsttest laeuft im Hintergrund und wird automatisch abgeschlossen.",
     ].map((l) => escapeHtml(String(l))).join("<br>");
     if (checkbox) {
       checkbox.disabled = true;
     }
     if (ackBtn) {
       ackBtn.disabled = true;
-      ackBtn.textContent = "Bitte warten …";
+      ackBtn.textContent = "Bitte warten ...";
     }
     return;
   }
@@ -527,7 +527,7 @@ function showOverlay(title, lines, requireChecked) {
   }
 
   if (checkbox) {
-    // Wichtig: Checkbox ist User-Interaktion. Nicht bei jedem WS-State-Update zurücksetzen.
+    // Wichtig: Checkbox ist User-Interaktion. Nicht bei jedem WS-State-Update zuruecksetzen.
     if (wasHidden) {
       checkbox.checked = false;
     }
@@ -549,16 +549,16 @@ function confirmAck() {
   const overlay = document.getElementById("ack-overlay");
   const checkbox = overlay?.querySelector("input[type=checkbox]");
   if (checkbox && checkbox.disabled === false && checkbox.checked === false) {
-    logLine("Bitte vor Ort prüfen und Checkbox bestätigen.");
+    logLine("Bitte vor Ort pruefen und Checkbox bestaetigen.");
     return;
   }
 
   const ok = wsSend({ action: "safetyAck" });
   if (ok) {
-    logLine("ACK gesendet – Selbsttest läuft …");
+    logLine("ACK gesendet - Selbsttest laeuft ...");
     ackPending = true;
-    // Overlay absichtlich offen lassen, aber UI sperren + "läuft" anzeigen.
-    showOverlay("🔄 SBHF Weichentest läuft", ["Bitte warten …"], false);
+    // Overlay absichtlich offen lassen, aber UI sperren + "laeuft" anzeigen.
+    showOverlay(" SBHF Weichentest laeuft", ["Bitte warten ..."], false);
   }
 }
 
@@ -602,7 +602,7 @@ function renderPowerWarningsEmergencies(msg) {
   // 1) Emergencies / Safety-Text
   const safety = msg && msg.safety;
   if (safety && safety.text) {
-    items.push(`⛔ ${escapeHtml(String(safety.text))}`);
+    items.push(` ${escapeHtml(String(safety.text))}`);
   }
 
   // 2) Mega2 SBHF Masken
@@ -628,26 +628,26 @@ function renderPowerWarningsEmergencies(msg) {
     if (allowed & 0x04) tracks.push("G3");
 
     if (allowed === 0x00) {
-      items.push("⛔ SBHF gesperrt (kein sicherer Pfad)");
+      items.push(" SBHF gesperrt (kein sicherer Pfad)");
     } else {
-      items.push(`🚦 SBHF erlaubte Gleise: ${tracks.length ? tracks.join(", ") : "—"}`);
+      items.push(` SBHF erlaubte Gleise: ${tracks.length ? tracks.join(", ") : "-"}`);
     }
 
     const restricted =
       ((warn & WARN_RESTRICTED_MODE) !== 0) ||
       (allowed !== 0x07 && allowed !== 0x00);
 
-    if (restricted) items.push("⚠ SBHF: Restricted Mode aktiv");
-    if (warn & WARN_W12_DEFECT) items.push("⚠ W12 defekt");
-    if (warn & WARN_W13_DEFECT) items.push("⚠ W13 defekt");
-    if (warn & WARN_W14_DEFECT) items.push("ℹ W14 Störung");
-    if (warn & WARN_W15_DEFECT) items.push("ℹ W15 Störung");
-    if (warn & WARN_SBH_SERVICE_REQUIRED) items.push("🛠 Service erforderlich");
+    if (restricted) items.push("! SBHF: Restricted Mode aktiv");
+    if (warn & WARN_W12_DEFECT) items.push("! W12 defekt");
+    if (warn & WARN_W13_DEFECT) items.push("! W13 defekt");
+    if (warn & WARN_W14_DEFECT) items.push("i W14 Stoerung");
+    if (warn & WARN_W15_DEFECT) items.push("i W15 Stoerung");
+    if (warn & WARN_SBH_SERVICE_REQUIRED) items.push(" Service erforderlich");
   }
 
   
 
-// 3) "↻ Prüfen" (PollNow), wenn Warnings/Restricted aktiv sind
+// 3) " Pruefen" (PollNow), wenn Warnings/Restricted aktiv sind
 let warningActive = false;
 if (m2 && m2.sbhf) {
   const warn = Number(m2.sbhf.warningMask || 0);
@@ -662,14 +662,14 @@ if (m2 && m2.sbhf) {
 
 const canPollNow = wsConnected && !!(msg && msg.mega2 && msg.mega2.online);
 const pollBtnHtml = warningActive
-  ? `<div class="msg-actions"><button class="btn-mini" ${canPollNow ? "" : "disabled"} onclick="sendPollNow()">↻ Prüfen</button></div>`
+  ? `<div class="msg-actions"><button class="btn-mini" ${canPollNow ? "" : "disabled"} onclick="sendPollNow()"> Pruefen</button></div>`
   : "";
 
   el.innerHTML = (items.length ? items.map(t => `<div>${t}</div>`).join("") : "<em>Keine Meldungen</em>") + pollBtnHtml;
 }
 
 /* =========================================================
- *  Schritt 3.5: Links – Betriebsübersicht + Block-Signale
+ *  Schritt 3.5: Links - Betriebsuebersicht + Block-Signale
  * ========================================================= */
 
 function bit(mask, i) {
@@ -680,50 +680,45 @@ function renderOverviewLeft(msg) {
   renderSbhfLeft(msg);
   renderTurnoutsLeft(msg);
   renderBlocksLeft(msg);
-  renderStationsLeft(msg);
+
+  // Mega1 getrennt nach Layout:
+  renderMega1StationsLeft(msg);   // -> #ov-m1-stations
+  renderMega1TurnoutsLeft(msg);   // -> #ov-m1-turnouts
 }
 
-function fmtHex(v, width) {
-  const n = Number(v) >>> 0;
-  const s = n.toString(16).toUpperCase();
-  return "0x" + s.padStart(width || 2, "0");
+function getMega1DiagContext(msg) {
+  const mega1online = !!(msg?.mega1?.online);
+  const hasDiag = !!(msg?.mega1?.hasDiag);
+  const diag = msg?.mega1?.diag || null;
+  return { mega1online, hasDiag, diag };
 }
 
-function renderStationsLeft(msg) {
-  const el = document.getElementById("ov-stations");
+function renderMega1StationsLeft(msg) {
+  const el = document.getElementById("ov-m1-stations");
   if (!el) return;
 
-  const mega1online = !!(msg && msg.mega1 && msg.mega1.online);
-  const hasDiag = !!(msg && msg.mega1 && msg.mega1.hasDiag);
+  const { mega1online, hasDiag, diag } = getMega1DiagContext(msg);
+
   const wsOk = (wsConnected === true);
-  const lock = !!(lastSafetyState && lastSafetyState.lock === true);
-  const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
+  const lock = !!(lastSafetyState?.lock === true);
+  const notausActive = !!(lastSafetyState?.notausActive === true);
 
   if (!mega1online) {
     el.innerHTML = `<div class="hint">Mega1 offline</div>`;
     return;
   }
-  if (!hasDiag || !msg.mega1.diag) {
-    el.innerHTML = `<div class="hint">Mega1 online – diag noch nicht verfügbar</div>`;
+  if (!hasDiag || !diag) {
+    el.innerHTML = `<div class="hint">Mega1 online – diag noch nicht verfuegbar</div>`;
     return;
   }
 
-  const diag = msg.mega1.diag;
-  const mode = Number(diag.mode ?? 0);
   const powerMask = Number(diag.powerMask ?? 0);
-  const ist = Number(diag.weicheIstBits ?? 0);
-  const soll = Number(diag.weicheSollBits ?? 0);
-  const slow = Number(diag.weicheSlowBits ?? 0);
 
-  // Enable rules for CMD buttons
+  // CMD nur wenn WS ok und nicht gesperrt (wie bisher)
   const canCmd = wsOk && mega1online && !lock && !notausActive;
-
-  const modeText = (mode === 1) ? "Auto" : "Manuell";
-  const modeCls  = (mode === 1) ? "badge-ok" : "badge-info";
 
   const mkPill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
 
-  // Bahnhöfe 1..4 (powerMask bit0..3)
   const bhfBtns = [];
   for (let i = 0; i < 4; i++) {
     const on = ((powerMask >> i) & 1) === 1;
@@ -731,14 +726,54 @@ function renderStationsLeft(msg) {
     const st = mkPill(on ? "AN" : "aus", on ? "pill-on" : "pill-off");
     const dis = canCmd ? "" : "disabled";
     bhfBtns.push(
-      `<button class="${cls}" ${dis} onclick="sendM1BhfToggle(${i+1})">
-        <div class="toggle-title">BHF ${i+1}</div>
+      `<button class="${cls}" ${dis} onclick="sendM1BhfToggle(${i + 1})">
+        <div class="toggle-title">BHF ${i + 1}</div>
         <div class="toggle-state">${st}</div>
       </button>`
     );
   }
 
-  // Weichen 0..11 (Ist gerade Bits)
+  const lockHint = (!canCmd)
+    ? `<div class="hint" style="margin-top:.5rem;">CMD gesperrt: ${!wsOk ? "WS down" : (lock ? "Safety-Lock" : (notausActive ? "HW-NOT-AUS" : ""))}</div>`
+    : "";
+
+  el.innerHTML = `
+    <div class="m1-section">
+      <div class="toggle-grid grid-4">
+        ${bhfBtns.join("")}
+      </div>
+    </div>
+    ${lockHint}
+  `;
+}
+
+function renderMega1TurnoutsLeft(msg) {
+  const el = document.getElementById("ov-m1-turnouts");
+  if (!el) return;
+
+  const { mega1online, hasDiag, diag } = getMega1DiagContext(msg);
+
+  const wsOk = (wsConnected === true);
+  const lock = !!(lastSafetyState?.lock === true);
+  const notausActive = !!(lastSafetyState?.notausActive === true);
+
+  if (!mega1online) {
+    el.innerHTML = `<div class="hint">Mega1 offline</div>`;
+    return;
+  }
+  if (!hasDiag || !diag) {
+    el.innerHTML = `<div class="hint">Mega1 online – diag noch nicht verfuegbar</div>`;
+    return;
+  }
+
+  const ist = Number(diag.weicheIstBits ?? 0);
+  const soll = Number(diag.weicheSollBits ?? 0);
+  const slow = Number(diag.weicheSlowBits ?? 0);
+
+  const canCmd = wsOk && mega1online && !lock && !notausActive;
+
+  const mkPill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
+
   const wBtns = [];
   for (let i = 0; i < 12; i++) {
     const curG = ((ist >> i) & 1) === 1;
@@ -766,31 +801,22 @@ function renderStationsLeft(msg) {
     : "";
 
   el.innerHTML = `
-    <div class="m1-summary">
-      <div class="badge-row">
-        <span class="badge ${modeCls}">Mode: ${modeText}</span>
-        <span class="badge badge-warn">PowerMask: ${powerMask}</span>
-        <span class="badge badge-warn">Ist: ${fmtHex(ist, 4)}</span>
-      </div>
-    </div>
-
     <div class="m1-section">
-      <div class="m1-title">Bahnhöfe</div>
-      <div class="toggle-grid grid-4">
-        ${bhfBtns.join("")}
-      </div>
-    </div>
-
-    <div class="m1-section">
-      <div class="m1-title">Weichen</div>
       <div class="toggle-grid grid-6">
         ${wBtns.join("")}
       </div>
     </div>
-
     ${lockHint}
   `;
 }
+
+
+function fmtHex(v, width) {
+  const n = Number(v) >>> 0;
+  const s = n.toString(16).toUpperCase();
+  return "0x" + s.padStart(width || 2, "0");
+}
+
 
 function renderSbhfLeft(msg) {
   const el = document.getElementById("ov-sbhf");
@@ -823,8 +849,8 @@ function renderSbhfLeft(msg) {
   el.innerHTML = `
     <div>State: <b>${state}</b></div>
     <div>Ausfahr-Gleis: <b>${g}</b></div>
-    <div>Belegt: ${occList.length ? occList.join(", ") : "—"}</div>
-    <div>Erlaubt: ${allowList.length ? allowList.join(", ") : "—"}</div>
+    <div>Belegt: ${occList.length ? occList.join(", ") : "-"}</div>
+    <div>Erlaubt: ${allowList.length ? allowList.join(", ") : "-"}</div>
     <div>Restricted: <b>${restricted ? "ja" : "nein"}</b></div>
   `;
 }
@@ -878,7 +904,7 @@ function renderBlocksLeft(msg) {
   }
   html += `</div>`;
 
-  // 2) FROM→TO Signale (fixe Liste nach Topologie)
+  // 2) FROM->TO Signale (fixe Liste nach Topologie)
   if (Array.isArray(entryPrev) && entryPrev.length >= 9 && Array.isArray(entryNow) && entryNow.length >= 9) {
     const edges = [
       [1,2],[2,3],[3,4],[4,1],[4,5],
@@ -887,7 +913,7 @@ function renderBlocksLeft(msg) {
       [6,4]
     ];
 
-    html += `<div style="margin-top:0.8rem;"><b>Signale (FROM → TO):</b></div>`;
+    html += `<div style="margin-top:0.8rem;"><b>Signale (FROM -> TO):</b></div>`;
     html += `<div class="badge-wrap">`;
 
     for (const [from,to] of edges) {
@@ -898,7 +924,7 @@ function renderBlocksLeft(msg) {
       const nowOk  = (maskNow  & (1 << (to-1))) !== 0;
 
       html += `<span class="badge ${prevOk ? "badge-green" : "badge-red"}" style="line-height:1.15; padding-top:6px; padding-bottom:6px;">
-        <div style="font-size:0.85em; opacity:0.85;">P: B${from}→B${to}</div>
+        <div style="font-size:0.85em; opacity:0.85;">P: B${from}->B${to}</div>
         <div style="font-weight:700;">N: ${nowOk ? "OK" : "STOP"}</div>
       </span>`;
     }
