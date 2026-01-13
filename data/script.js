@@ -299,6 +299,11 @@ function sendPollNow() {
   logLine(" Pruefen gesendet");
 }
 
+function sendSbhfSelftestRetry() {
+  wsSend({ action: "sbhfSelftestRetry" });
+  logLine(" SBHF Selftest-Retry gesendet");
+}
+
 
 function wsSendAction(action, okMsg) {
   const ok = wsSend({ action: action });
@@ -868,12 +873,28 @@ if (m2 && m2.sbhf) {
 	  warningActive = restricted;
 }
 
-const canPollNow = wsConnected && !!(msg && msg.mega2 && msg.mega2.online);
-const pollBtnHtml = warningActive
-  ? `<div class="msg-actions"><button class="btn-mini" ${canPollNow ? "" : "disabled"} onclick="sendPollNow()"> Pruefen</button></div>`
+const canMega2 = wsConnected && !!(msg && msg.mega2 && msg.mega2.online);
+const selftestRunning = !!(msg?.mega2?.sbhf?.selftestRunning);
+const lock = !!(msg?.safety?.lock);
+
+let weicheWarnActive = false;
+if (m2 && m2.sbhf) {
+  const warn = Number(m2.sbhf.warningMask || 0) & 0xff;
+  // W12..W15 + Service erforderlich (UI-contract bits)
+  const WEICHE_WARN_MASK = 0x02 | 0x04 | 0x08 | 0x10 | 0x20;
+  weicheWarnActive = (warn & WEICHE_WARN_MASK) !== 0;
+}
+
+const retryBtn = weicheWarnActive
+  ? `<button class="btn-mini" ${(canMega2 && !selftestRunning && !lock) ? "" : "disabled"} onclick="sendSbhfSelftestRetry()"> SBHF Selftest erneut</button>`
   : "";
 
-  el.innerHTML = (items.length ? items.map(t => `<div>${t}</div>`).join("") : "<em>Keine Meldungen</em>") + pollBtnHtml;
+const actionsHtml = retryBtn
+  ? `<div class="msg-actions">${retryBtn}</div>`
+  : "";
+
+el.innerHTML = (items.length ? items.map(t => `<div>${t}</div>`).join("") : "<em>Keine Meldungen</em>") + actionsHtml;
+
 }
 
 /* =========================================================
