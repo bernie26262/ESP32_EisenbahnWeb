@@ -10,6 +10,106 @@ const DEBUG_UI = false;
 // Diese Version hilft beim Verifizieren, dass Browser + LittleFS wirklich neu sind.
 const UI_VERSION = "2026-01-06-p20-ackpending";
 
+
+/* =========================================================
+ *  UI Contract Self-Test (IDs + Functions)
+ *  - prevents "silent regressions" (e.g. Mega1 shows "keine Daten")
+ * ========================================================= */
+
+function uiContractBannerShow(lines) {
+  try {
+    const id = "ui-contract-banner";
+    let el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = id;
+      el.style.position = "fixed";
+      el.style.left = "0";
+      el.style.right = "0";
+      el.style.bottom = "0";
+      el.style.zIndex = "99999";
+      el.style.padding = "10px 12px";
+      el.style.background = "#7f1d1d"; // dark red
+      el.style.color = "#fff";
+      el.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+      el.style.fontSize = "13px";
+      el.style.lineHeight = "1.35";
+      el.style.boxShadow = "0 -6px 18px rgba(0,0,0,0.35)";
+      el.style.whiteSpace = "pre-line";
+      el.style.opacity = "0.98";
+      el.style.cursor = "pointer";
+      el.title = "Klicken zum Ausblenden";
+      el.addEventListener("click", () => el.remove());
+      document.body.appendChild(el);
+    }
+    el.textContent = String(lines || "").trim();
+  } catch (_) { /* ignore */ }
+}
+
+function uiContractSelfTest() {
+  const missing = [];
+
+  // --- Required DOM IDs (minimum viable UI wiring) ---
+  const requiredIds = [
+    "ov-m1-stations",
+    "ov-m1-turnouts",
+    "ack-overlay",
+    "ack-title",
+    "ack-text",
+  ];
+
+  requiredIds.forEach((id) => {
+    if (!document.getElementById(id)) missing.push(`DOM fehlt: #${id}`);
+  });
+
+  // --- Required JS functions (minimum viable render path) ---
+  const requiredFns = [
+    "renderOverviewLeft",
+    "renderMega1StationsLeft",
+    "renderMega1TurnoutsLeft",
+    "showOverlay",
+  ];
+
+  requiredFns.forEach((fn) => {
+    if (typeof window[fn] !== "function") missing.push(`Function fehlt: ${fn}()`);
+  });
+
+  // --- State plumbing sanity (optional but helpful) ---
+  try {
+  if (typeof lastStateMsg === "undefined") {
+    // not fatal, but helps debugging
+    // (some versions used a different global; we standardize on lastStateMsg)
+    // We'll still flag it because it breaks console debugging.
+    missing.push("State fehlt: lastStateMsg (wird fuer Debug genutzt)");
+  }
+} catch (_) { missing.push("State fehlt: lastStateMsg (wird fuer Debug genutzt)"); }
+
+  window.__uiContractOk = (missing.length === 0);
+
+  if (!window.__uiContractOk) {
+    const headline = `WEBUI CONTRACT BROKEN (UI_VERSION=${typeof UI_VERSION !== "undefined" ? UI_VERSION : "?"})`;
+    console.error(headline, missing);
+    uiContractBannerShow([headline, ...missing, "", "=> Ursache ist meist: inkonsistente Datei-Kombination (index/style/script) oder fehlende Render-Funktionen."].join("\n"));
+  } else {
+    // small, unobtrusive debug log
+    console.log(`[UI] contract ok (UI_VERSION=${typeof UI_VERSION !== "undefined" ? UI_VERSION : "?"})`);
+  }
+}
+
+// Run contract test once DOM is ready (and again shortly after, to catch late-inserted DOM)
+(function bootUiContractSelfTest() {
+  const run = () => {
+    uiContractSelfTest();
+    setTimeout(uiContractSelfTest, 750);
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", run, { once: true });
+  } else {
+    run();
+  }
+})();
+
+
 let socket = null;
 let wsConnected = false;
 
@@ -21,6 +121,49 @@ let lastMega2Online = false;
 // letzter kompletter WS-State (fuer Button/Disable-Regeln)
 let lastStateMsg = null;
 
+
+
+// Normalize WS state for backwards compatibility.
+// Older firmware sends Mega2 fields flat (allowedMask, warningMask, sbhfState, turnoutSollMask...).
+// Newer UI code expects nested objects: mega2.sbhf and mega2.turnouts.
+function normalizeWsState(msg) {
+  if (!msg || !msg.mega2) return msg;
+
+  const m2 = msg.mega2;
+
+  // Build mega2.sbhf if missing.
+  if (!m2.sbhf) {
+    const allowedMask = (typeof m2.allowedMask === "number") ? (m2.allowedMask & 0xff) : 0;
+    const warningMask = (typeof m2.warningMask === "number") ? (m2.warningMask & 0xff) : 0;
+
+    const occupiedMask = (typeof m2.sbhfOccupiedMask === "number") ? m2.sbhfOccupiedMask : 0;
+
+    m2.sbhf = {
+      state: (typeof m2.sbhfState === "number") ? m2.sbhfState : 0,
+      currentGleis: (typeof m2.sbhfCurrentGleis === "number") ? m2.sbhfCurrentGleis : 0,
+      occupiedMask: occupiedMask,
+      allowedMask: allowedMask,
+      warningMask: warningMask,
+      restricted: (allowedMask !== 0x07 && allowedMask !== 0x00),
+      // optional convenience
+      selftestRunning: (occupiedMask & 0x80) !== 0
+    };
+  }
+
+  // Build mega2.turnouts if missing.
+  if (!m2.turnouts) {
+    const soll = (typeof m2.turnoutSollMask === "number") ? m2.turnoutSollMask : undefined;
+    const ist  = (typeof m2.turnoutIstMask === "number") ? m2.turnoutIstMask : undefined;
+    if (soll !== undefined || ist !== undefined) {
+      m2.turnouts = {
+        sollMask: soll ?? 0,
+        istMask: ist ?? 0
+      };
+    }
+  }
+
+  return msg;
+}
 // ACK wurde gesendet, aber Safety-Lock ist (noch) aktiv.
 // Wird zurueckgesetzt, sobald safety.lock wieder false ist.
 let ackPending = false;
@@ -116,8 +259,12 @@ function handleWsMessage(msg) {
   if (DEBUG_WS) console.log("[WS MSG]", msg);
   if (!msg || msg.type !== "state") return;
 
+  // Backwards compatible shape for renderers (flat vs nested)
+  msg = normalizeWsState(msg);
+
   // Debug/Inspection helper (Browser-Konsole)
   window.lastState = msg;
+  window.lastStateMsg = msg;
 
   lastSafetyState = msg.safety || null;
 	// Sobald Safety-Lock wieder weg ist, ist ein evtl. laufender Quittierungs-/Test-Flow beendet.
