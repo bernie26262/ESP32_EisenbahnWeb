@@ -764,10 +764,9 @@ function confirmAck() {
 
   const ok = wsSend({ action: "safetyAck" });
   if (ok) {
-    logLine("ACK gesendet - Selbsttest laeuft ...");
-    ackPending = true;
-    // Overlay absichtlich offen lassen, aber UI sperren + "laeuft" anzeigen.
-    showOverlay(" SBHF Weichentest laeuft", ["Bitte warten ..."], false);
+    logLine("ACK gesendet.");
+    sendWsAction("ack");
+
   }
 }
 
