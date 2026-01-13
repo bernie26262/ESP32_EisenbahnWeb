@@ -1,0 +1,5 @@
+# WebUI files: keep LF to avoid noisy diffs
+data/*.js   text eol=lf
+data/*.css  text eol=lf
+data/*.htm  text eol=lf
+data/*.html text eol=lf
