@@ -5,10 +5,19 @@
 const DEBUG_WS = true;
 const DEBUG_UI = false;
 
+
+
 // Wenn du nach einem Firmware-Flash "alte" Buttons siehst:
 // -> unbedingt auch "Upload File System Image" (UploadFS) ausfuehren.
 // Diese Version hilft beim Verifizieren, dass Browser + LittleFS wirklich neu sind.
 const UI_VERSION = "2026-01-06-p20-ackpending";
+
+// ============ UI INVARIANTS (DO NOT BREAK) ============
+// 1) Overlay is driven ONLY by WS state; clicks may queue actions but never "pretend" state.
+// 2) window.lastStateMsg MUST be set for every received state before any render.
+// 3) If safety.lock === false -> overlay must be closed (no stuck states).
+// 4) "Selftest running" may be shown only if WS state explicitly indicates it.
+// ======================================================
 
 
 /* =========================================================
@@ -108,6 +117,51 @@ function uiContractSelfTest() {
     run();
   }
 })();
+
+/* =========================================================
+ *  UI Contract Checks (Runtime Invariants)
+ *  - makes regressions visible immediately (banner + console.error)
+ *  - does NOT change behavior, only diagnostics
+ * ========================================================= */
+
+function contractFail(msg) {
+  try {
+    console.error(`[UI-CONTRACT] ${msg}`);
+    if (typeof uiContractBannerShow === "function") {
+      uiContractBannerShow(`UI CONTRACT FAIL:\n${msg}`);
+    }
+  } catch (_) { /* ignore */ }
+}
+
+function getSelftestActiveFromState(s) {
+  // IMPORTANT:
+  // Only return true if WS state explicitly indicates selftest.
+  // Conservative by design to avoid false "selftest running" UI states.
+  // normalizeWsState() sets mega2.sbhf.selftestRunning from occupiedMask bit 0x80.
+  return !!s?.mega2?.sbhf?.selftestRunning;
+}
+
+function runUiContractChecks(state) {
+  // C1: lastStateMsg must be present for debugging + render decisions
+  if (!window.lastStateMsg) {
+    contractFail("window.lastStateMsg is not set (must be set before rendering).");
+  }
+
+  const lock = !!state?.safety?.lock;
+
+  // C2: If lock is false, ackPending must not remain true (stuck guard invariant)
+  if (!lock && ackPending === true) {
+    contractFail("ackPending==true while safety.lock==false (stuck risk / wrong transition).");
+  }
+
+  // C3: If UI would claim \"selftest running\", WS must explicitly say so.
+  const selftestWs = getSelftestActiveFromState(state);
+  if (ackPending === true && lock === true && !selftestWs) {
+    contractFail("ackPending==true but WS does not indicate selftestRunning (false selftest UI).");
+  }
+}
+
+
 
 
 let socket = null;
@@ -265,6 +319,14 @@ function handleWsMessage(msg) {
   // Debug/Inspection helper (Browser-Konsole)
   window.lastState = msg;
   window.lastStateMsg = msg;
+
+  // Contract checks (never throw; only diagnostics)
+  try {
+    runUiContractChecks(msg);
+  } catch (e) {
+    console.error("[UI-CONTRACT] checks threw", e);
+  }
+
 
   lastSafetyState = msg.safety || null;
 	// Sobald Safety-Lock wieder weg ist, ist ein evtl. laufender Quittierungs-/Test-Flow beendet.
