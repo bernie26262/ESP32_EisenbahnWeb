@@ -1,5 +1,12 @@
 # WebUI files: keep LF to avoid noisy diffs
-data/*.js   text eol=lf
-data/*.css  text eol=lf
-data/*.htm  text eol=lf
-data/*.html text eol=lf
+# Default: keep LF in repo
+* text=auto eol=lf
+
+# Explicit (optional)
+*.md text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.htm text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.ini text eol=lf
