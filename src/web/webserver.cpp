@@ -104,6 +104,10 @@ static String buildWsStateJson()
 
         JsonObject sbhf = doc["mega2"]["sbhf"].to<JsonObject>();
         sbhf["state"] = m2s.sbhfState;
+        // Also expose flat fields for backward compatibility / diagnostics.
+        // IMPORTANT: sbhfOccupiedMask includes META bits (e.g. 0x80 selftestRunning).
+        doc["mega2"]["sbhfState"]        = m2s.sbhfState;
+        doc["mega2"]["sbhfOccupiedMask"] = m2s.sbhfOccupiedMask;
 
         // sbhfOccupiedMask carries occupancy in bits 0..2 (G1..G3).
         // We additionally encode runtime META flags in higher bits to avoid
