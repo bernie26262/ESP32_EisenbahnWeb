@@ -39,3 +39,8 @@ __pycache__/
 !test/
 *.code-workspace
 *.xlsx
+
+notepad .gitignore
+
+# local patch artifacts
+patches/
