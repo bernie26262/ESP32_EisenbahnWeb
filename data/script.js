@@ -387,6 +387,23 @@ function getUiStateFromWs(msg, safety, mega2online) {
   if (safety && safety.lock === true) {
     level = 'ERR';
     overlay = true;
+    
+    // If Mega2 explicitly reports SBHF selftest running, show "wait" overlay.
+    // This is protocol-driven (0x80 meta-bit in sbhfOccupiedMask -> sbhf.selftestRunning).
+    const sb = msg?.mega2?.sbhf;
+    const selftestRunning = !!sb?.selftestRunning;
+    const isSbhfWeiche = (safety.blockReason === 2); // SBHF-Weichenfehler
+
+    if (isSbhfWeiche && selftestRunning) {
+      ackRequired = false;
+      title = "SBHF Weichentest laeuft";
+      text = [
+        " Bitte warten ...",
+        " Der Selbsttest laeuft im Hintergrund und wird automatisch abgeschlossen."
+      ];
+      return { level, text, title, overlay, ackRequired, hasWarn };
+    }
+
     ackRequired = true;
 
     const t = getSafetyOverlayTexts(safety);
@@ -765,7 +782,7 @@ function confirmAck() {
   const ok = wsSend({ action: "safetyAck" });
   if (ok) {
     logLine("ACK gesendet.");
-    sendWsAction("ack");
+    
 
   }
 }
