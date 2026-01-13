@@ -1,0 +1,162 @@
+From 8c22ad1d23e4f8c139c3f8369a3768609a37222b Mon Sep 17 00:00:00 2001
+From: bernie26262 <bernhard.helbich@gmail.com>
+Date: Tue, 13 Jan 2026 12:04:00 +0100
+Subject: [PATCH] webui: add UI contract checks + regression checklist
+
+---
+ WEBUI_REGRESSION.md | 50 ++++++++++++++++++++++++++++++++++++
+ data/script.js      | 62 +++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 112 insertions(+)
+ create mode 100644 WEBUI_REGRESSION.md
+
+diff --git a/WEBUI_REGRESSION.md b/WEBUI_REGRESSION.md
+new file mode 100644
+index 0000000..52e06cf
+--- /dev/null
++++ b/WEBUI_REGRESSION.md
+@@ -0,0 +1,50 @@
++# WebUI Regression Checklist (Phase 2)
++
++Ziel: Verhindern, dass bereits gelöste UI-Invarianten (ACK/Overlay/SBHF) durch Refactor/Änderungen wieder kaputt gehen.
++
++## UI-Invarianten (dürfen nie gebrochen werden)
++1) Overlay ist rein zustandsgetrieben: Es darf nur vom WS-State bestimmt werden (kein "Click setzt Selftest-Text").
++2) `window.lastStateMsg` wird bei jedem WS-State-Paket gesetzt, bevor gerendert wird.
++3) Wenn `safety.lock === false` → Overlay muss geschlossen sein (keine Sackgasse möglich).
++4) "Selftest läuft" darf nur erscheinen, wenn WS-State das explizit signalisiert.
++5) Mega2 links ist Info-only (keine interaktiven Buttons; nur Pills/Badges/Info-Row).
++
++## Testfälle (manuell, 2–3 Minuten)
++> Vor jedem Merge/Commit, der `script.js` oder `style.css` betrifft.
++
++### T1 – Systemstart ohne Fehler + ACK
++- Start: System hochfahren, keine Warnings/Fehler erwartet.
++- Erwartung UI:
++  - Overlay: ggf. Info/Startzustand, aber kein Selftest-Text.
++  - Klick ACK: UI-Log nur "ACK gesendet" (kein "Selbsttest läuft").
++  - Overlay darf nicht hängen bleiben.
++  - Nach nächstem WS-State: Overlay zu, Systemstatus normal.
++
++### T2 – SBHF Weichenfehler W12 + ACK → Selftest-Overlay
++- Trigger: SBHF Weichenfehler (z.B. W12).
++- Erwartung UI:
++  - Overlay: Weichenfehler-Text korrekt.
++  - Klick ACK: Overlay wechselt auf "Weichentest aktiv – bitte warten".
++  - Nach Ende: Overlay verschwindet automatisch.
++  - Danach: Systemstatus zeigt Warning aktiv (erwartet).
++
++### T3 – Nothalt Falschfahrt
++- Trigger: Falschfahrt → Nothalt (Safety Lock).
++- Erwartung UI:
++  - Overlay: "! Sicherheitsquittierung Nothalt ausgelöst" korrekt.
++  - ACK ohne Fehlerbehebung: Overlay bleibt quittierbar/erklärt blockiert, aber UI hängt nie.
++  - Sobald `safety.lock` false wird: Overlay schließt.
++
++### T4 – "Stuck-Guard" / Overlay muss immer freikommen
++- Beobachtung:
++  - Egal welche Reihenfolge von Klicks: Sobald `safety.lock` false, muss Overlay zu sein.
++  - Kein Zustand, in dem Overlay dauerhaft bleibt ohne Lock.
++
++### T5 – Rendering-Sanity (Mega1/Mega2)
++- Mega1: Bahnhöfe/Weichen als Buttons (interaktiv).
++- Mega2: SBHF/Blöcke/Weichen als Info-Pills/Badges (nicht interaktiv).
++- Keine Konsolen-Fehler im Normalbetrieb.
++
++## Build/Deploy Hinweis
++- Nach UI-Änderungen: LittleFS Upload (UploadFS) + Hard Reload (Ctrl+F5).
++- Versionsstring im `index.htm` für css/js muss bei Änderungen hochgezogen werden.
+diff --git a/data/script.js b/data/script.js
+index 1a33cf4..99af2cf 100644
+--- a/data/script.js
++++ b/data/script.js
+@@ -5,11 +5,20 @@
+ const DEBUG_WS = true;
+ const DEBUG_UI = false;
+ 
++
++
+ // Wenn du nach einem Firmware-Flash "alte" Buttons siehst:
+ // -> unbedingt auch "Upload File System Image" (UploadFS) ausfuehren.
+ // Diese Version hilft beim Verifizieren, dass Browser + LittleFS wirklich neu sind.
+ const UI_VERSION = "2026-01-06-p20-ackpending";
+ 
++// ============ UI INVARIANTS (DO NOT BREAK) ============
++// 1) Overlay is driven ONLY by WS state; clicks may queue actions but never "pretend" state.
++// 2) window.lastStateMsg MUST be set for every received state before any render.
++// 3) If safety.lock === false -> overlay must be closed (no stuck states).
++// 4) "Selftest running" may be shown only if WS state explicitly indicates it.
++// ======================================================
++
+ 
+ /* =========================================================
+  *  UI Contract Self-Test (IDs + Functions)
+@@ -109,6 +118,51 @@ function uiContractSelfTest() {
+   }
+ })();
+ 
++/* =========================================================
++ *  UI Contract Checks (Runtime Invariants)
++ *  - makes regressions visible immediately (banner + console.error)
++ *  - does NOT change behavior, only diagnostics
++ * ========================================================= */
++
++function contractFail(msg) {
++  try {
++    console.error(`[UI-CONTRACT] ${msg}`);
++    if (typeof uiContractBannerShow === "function") {
++      uiContractBannerShow(`UI CONTRACT FAIL:\n${msg}`);
++    }
++  } catch (_) { /* ignore */ }
++}
++
++function getSelftestActiveFromState(s) {
++  // IMPORTANT:
++  // Only return true if WS state explicitly indicates selftest.
++  // Conservative by design to avoid false "selftest running" UI states.
++  // normalizeWsState() sets mega2.sbhf.selftestRunning from occupiedMask bit 0x80.
++  return !!s?.mega2?.sbhf?.selftestRunning;
++}
++
++function runUiContractChecks(state) {
++  // C1: lastStateMsg must be present for debugging + render decisions
++  if (!window.lastStateMsg) {
++    contractFail("window.lastStateMsg is not set (must be set before rendering).");
++  }
++
++  const lock = !!state?.safety?.lock;
++
++  // C2: If lock is false, ackPending must not remain true (stuck guard invariant)
++  if (!lock && ackPending === true) {
++    contractFail("ackPending==true while safety.lock==false (stuck risk / wrong transition).");
++  }
++
++  // C3: If UI would claim \"selftest running\", WS must explicitly say so.
++  const selftestWs = getSelftestActiveFromState(state);
++  if (ackPending === true && lock === true && !selftestWs) {
++    contractFail("ackPending==true but WS does not indicate selftestRunning (false selftest UI).");
++  }
++}
++
++
++
+ 
+ let socket = null;
+ let wsConnected = false;
+@@ -266,6 +320,14 @@ function handleWsMessage(msg) {
+   window.lastState = msg;
+   window.lastStateMsg = msg;
+ 
++  // Contract checks (never throw; only diagnostics)
++  try {
++    runUiContractChecks(msg);
++  } catch (e) {
++    console.error("[UI-CONTRACT] checks threw", e);
++  }
++
++
+   lastSafetyState = msg.safety || null;
+ 	// Sobald Safety-Lock wieder weg ist, ist ein evtl. laufender Quittierungs-/Test-Flow beendet.
+ 	if (lastSafetyState && lastSafetyState.lock === false) {
+-- 
+2.46.2.windows.1
+

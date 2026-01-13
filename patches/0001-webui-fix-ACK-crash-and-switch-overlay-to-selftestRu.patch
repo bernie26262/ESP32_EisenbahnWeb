@@ -1,0 +1,50 @@
+From 9df72ee92521a26149c13a2499e69fe7c4b62b5f Mon Sep 17 00:00:00 2001
+From: bernie26262 <bernhard.helbich@gmail.com>
+Date: Tue, 13 Jan 2026 15:59:29 +0100
+Subject: [PATCH] webui: fix ACK crash and switch overlay to selftestRunning
+ state
+
+---
+ data/script.js | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/data/script.js b/data/script.js
+index 7e0b55f..880992b 100644
+--- a/data/script.js
++++ b/data/script.js
+@@ -387,6 +387,23 @@ function getUiStateFromWs(msg, safety, mega2online) {
+   if (safety && safety.lock === true) {
+     level = 'ERR';
+     overlay = true;
++    
++    // If Mega2 explicitly reports SBHF selftest running, show "wait" overlay.
++    // This is protocol-driven (0x80 meta-bit in sbhfOccupiedMask -> sbhf.selftestRunning).
++    const sb = msg?.mega2?.sbhf;
++    const selftestRunning = !!sb?.selftestRunning;
++    const isSbhfWeiche = (safety.blockReason === 2); // SBHF-Weichenfehler
++
++    if (isSbhfWeiche && selftestRunning) {
++      ackRequired = false;
++      title = "SBHF Weichentest laeuft";
++      text = [
++        " Bitte warten ...",
++        " Der Selbsttest laeuft im Hintergrund und wird automatisch abgeschlossen."
++      ];
++      return { level, text, title, overlay, ackRequired, hasWarn };
++    }
++
+     ackRequired = true;
+ 
+     const t = getSafetyOverlayTexts(safety);
+@@ -765,7 +782,7 @@ function confirmAck() {
+   const ok = wsSend({ action: "safetyAck" });
+   if (ok) {
+     logLine("ACK gesendet.");
+-    sendWsAction("ack");
++    
+ 
+   }
+ }
+-- 
+2.46.2.windows.1
+

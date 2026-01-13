@@ -1,0 +1,25 @@
+From 86f96a036c35bb1fb5c19ae4bf15d7757c037400 Mon Sep 17 00:00:00 2001
+From: bernie26262 <bernhard.helbich@gmail.com>
+Date: Tue, 13 Jan 2026 12:05:02 +0100
+Subject: [PATCH] chore: enforce LF for WebUI assets
+
+---
+ .gitattributes | 5 +++++
+ 1 file changed, 5 insertions(+)
+ create mode 100644 .gitattributes
+
+diff --git a/.gitattributes b/.gitattributes
+new file mode 100644
+index 0000000..6127d8a
+--- /dev/null
++++ b/.gitattributes
+@@ -0,0 +1,5 @@
++# WebUI files: keep LF to avoid noisy diffs
++data/*.js   text eol=lf
++data/*.css  text eol=lf
++data/*.htm  text eol=lf
++data/*.html text eol=lf
+\ No newline at end of file
+-- 
+2.46.2.windows.1
+
