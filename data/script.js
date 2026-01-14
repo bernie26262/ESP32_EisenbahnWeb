@@ -10,12 +10,12 @@ const DEBUG_UI = false;
 // Wenn du nach einem Firmware-Flash "alte" Buttons siehst:
 // -> unbedingt auch "Upload File System Image" (UploadFS) ausfuehren.
 // Diese Version hilft beim Verifizieren, dass Browser + LittleFS wirklich neu sind.
-const UI_VERSION = "2026-01-06-p20-ackpending";
+const UI_VERSION = "2026-01-14-p01";
 
 // ============ UI INVARIANTS (DO NOT BREAK) ============
 // 1) Overlay is driven ONLY by WS state; clicks may queue actions but never "pretend" state.
 // 2) window.lastStateMsg MUST be set for every received state before any render.
-// 3) If safety.lock === false -> overlay must be closed (no stuck states).
+// 3) If safety.lock === false AND selftestRunning === false -> overlay must be closed.
 // 4) "Selftest running" may be shown only if WS state explicitly indicates it.
 // ======================================================
 
@@ -116,6 +116,46 @@ function uiContractSelfTest() {
   } else {
     run();
   }
+})();
+
+
+// ------------------------------------------------------------
+// Fix: sporadisch verlorene click-Events auf Toggle-Buttons
+// -> pointerup erzeugt click nur dann, wenn kein click kam.
+// ------------------------------------------------------------
+(function installTogglePointerupFallback() {
+  const pending = new WeakMap(); // btn -> boolean
+
+  // Wenn click normal kommt: pending zurücksetzen
+  document.addEventListener(
+    "click",
+    (e) => {
+      const btn = e.target.closest("button.toggle-btn");
+      if (!btn) return;
+      pending.set(btn, false);
+    },
+    true
+  );
+
+  document.addEventListener(
+    "pointerup",
+    (e) => {
+      const btn = e.target.closest("button.toggle-btn");
+      if (!btn || btn.disabled) return;
+
+      // Markiere click als "erwartet"
+      pending.set(btn, true);
+
+      // Nächster Tick: wenn kein click kam, triggern wir ihn
+      setTimeout(() => {
+        if (pending.get(btn) === true) {
+          pending.set(btn, false);
+          btn.click();
+        }
+      }, 0);
+    },
+    true
+  );
 })();
 
 /* =========================================================
@@ -315,7 +355,7 @@ function wsSendAction(action, okMsg) {
  * ========================================================= */
 
 function handleWsMessage(msg) {
-  if (DEBUG_WS) console.log("[WS MSG]", msg);
+  if (DEBUG_WS) console.log("[WS MSG json]", JSON.stringify(msg));
   if (!msg || msg.type !== "state") return;
 
   // Backwards compatible shape for renderers (flat vs nested)
@@ -388,6 +428,21 @@ function getUiStateFromWs(msg, safety, mega2online) {
     text = [" Mega2 offline"];
     return { level, text, title, overlay, ackRequired, hasWarn };
   }
+  // --- SBHF Selftest Overlay (WS-driven, independent of safety.lock) ---
+  const selftestRunning = !!(msg?.mega2?.sbhf?.selftestRunning);
+  if (selftestRunning) {
+    level = "WARN";
+    overlay = true;
+    ackRequired = false;
+    title = " SBHF Weichentest laeuft";
+    text = [
+        "Bitte warten ...",
+        "Der Selbsttest laeuft im Hintergrund und wird automatisch abgeschlossen.",
+    ];
+    return { level, text, title, overlay, ackRequired, hasWarn };
+  }
+
+
   // Safety lock dominates everything
   if (safety && safety.lock === true) {
     level = 'ERR';
@@ -714,31 +769,24 @@ function showOverlay(title, lines, requireChecked) {
 
   textEl.innerHTML = safeLines.join("<br>");
 
-  // Wenn bereits ACK gesendet wurde, aber der Safety-Lock noch aktiv ist,
-  // dann laeuft (z.B. im SBHF) typischerweise ein automatischer Selbsttest.
-  // In dieser Phase darf die Checkbox/ACK nicht weiter bedient werden.
-  if (ackPending) {
-    titleEl.textContent = " SBHF Weichentest laeuft";
-    textEl.innerHTML = [
-      "Bitte warten ...",
-      "Der Selbsttest laeuft im Hintergrund und wird automatisch abgeschlossen.",
-    ].map((l) => escapeHtml(String(l))).join("<br>");
-    if (checkbox) {
-      checkbox.disabled = true;
-    }
-    if (ackBtn) {
-      ackBtn.disabled = true;
-      ackBtn.textContent = "Bitte warten ...";
-    }
-    return;
-  }
+
 
   // ACK senden ist nur sinnvoll, wenn WS ok und Mega2 online.
   const canAckSend = (wsConnected === true) && (lastMega2Online === true);
+  // ACK button
   if (ackBtn) {
-    ackBtn.disabled = !canAckSend;
-    ackBtn.textContent = "ACK";
+    // During non-ACK overlays (e.g. selftest running), force-disable the ACK button.
+    if (requireChecked === false) {
+      ackBtn.disabled = true;
+      ackBtn.textContent = "Bitte warten ...";
+    } else {
+      const enabled =
+        wsConnected && lastMega2Online && (requireChecked ? checkbox?.checked : true);
+      ackBtn.disabled = !enabled;
+      ackBtn.textContent = enabled ? "ACK" : "ACK";
+    }
   }
+
 
   if (checkbox) {
     // Wichtig: Checkbox ist User-Interaktion. Nicht bei jedem WS-State-Update zuruecksetzen.
@@ -770,8 +818,6 @@ function confirmAck() {
   const ok = wsSend({ action: "safetyAck" });
   if (ok) {
     logLine("ACK gesendet.");
-    sendWsAction("ack");
-
   }
 }
 

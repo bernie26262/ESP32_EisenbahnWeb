@@ -280,13 +280,33 @@ static void onWsEvent(AsyncWebSocket* server,
 
     if (!strcmp(action, "m1PowerSet"))
     {
-        const uint8_t bhf = (uint8_t)(cmd["bhf"] | 0);
-        const bool on = (bool)(cmd["on"] | 0);
-        const bool ok = Mega1Link::queueBhfPowerSet(bhf, on);
-        if (!ok) Serial.println("[WS] m1PowerSet rejected (args/queue full)");
-        g_stateDirty = true;
-        return;
-    }
+        const int bhf_i = cmd["bhf"] | -1;
+        if (bhf_i < 0 || bhf_i > 3) {
+            Serial.printf("[WS] m1PowerSet reject: bhf=%d out of range\n", bhf_i);
+            return;
+        }
+        const uint8_t bhf = (uint8_t)bhf_i;
+
+        // robust bool parse: true/false, 0/1, "true"/"false"
+        bool on = false;
+        JsonVariant vOn = cmd["on"];
+        if (vOn.is<bool>()) {
+            on = vOn.as<bool>();
+        } else if (vOn.is<int>()) {
+            on = (vOn.as<int>() != 0);
+        } else if (vOn.is<const char*>()) {
+            const char* s = vOn.as<const char*>();
+            if (s) on = (!strcasecmp(s, "true") || !strcasecmp(s, "on") || !strcmp(s, "1"));
+        }
+
+    Serial.printf("[WS] m1PowerSet bhf=%u on=%s\n", bhf, on ? "true" : "false");
+
+    const bool ok = Mega1Link::queueBhfPowerSet(bhf, on);
+    if (!ok) Serial.println("[WS] m1PowerSet rejected (args/queue full)");
+    g_stateDirty = true;
+    return;
+}
+
 
     if (!strcmp(action, "pollNow"))
     {

@@ -460,7 +460,30 @@ h2 {
   cursor: not-allowed;
 }
 .toggle-btn.is-on{ background: rgba(0,180,90,0.12); }
-.toggle-btn.is-off{ background: rgba(160,160,160,0.10); }
+/* AUS = rot (Signal) */
+.toggle-btn.is-off{
+  background: rgba(200, 0, 0, 0.12);
+  border-color: rgba(200, 0, 0, 0.55);
+}
+.toggle-btn.is-off .toggle-title,
+.toggle-btn.is-off .toggle-state,
+.toggle-btn.is-off .toggle-sub{
+  color: rgba(160, 0, 0, 0.95);
+}
+/* AUS (rot): Hover/Focus dezent und konsistent */
+.toggle-btn.is-off:hover{
+  background: rgba(200, 0, 0, 0.18);
+  border-color: rgba(200, 0, 0, 0.75);
+}
+
+.toggle-btn.is-off:focus-visible{
+  outline: 2px solid rgba(200, 0, 0, 0.55);
+  outline-offset: 2px;
+}
+
+.toggle-btn.is-off:active{
+  background: rgba(200, 0, 0, 0.10);
+}
 .toggle-btn.is-slow{ outline: 2px dashed rgba(255,165,0,0.45); outline-offset: 0px; }
 
 .toggle-title{ font-weight: 900; font-size: .95rem; }
@@ -621,4 +644,8 @@ h2 {
   background: transparent;
   font-size: 18px;
   cursor: pointer;
+}
+
+button, .toggle-btn {
+  touch-action: manipulation;
 }

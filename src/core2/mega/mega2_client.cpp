@@ -98,7 +98,7 @@ bool Mega2Client::pollSafetyStatus()
     const uint8_t cmd = M2_CMD_GET_SAFETY_STATUS;
 
     Mega2SafetyStatus st{};
-    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), &st, sizeof(st), 5000000);
+    const auto r = I2CBus::writeReadEx(MEGA2_ADDR, &cmd, sizeof(cmd), &st, sizeof(st), 1000);
     if (r != I2CBus::Result::OK)
         return false;
 
@@ -124,7 +124,7 @@ bool Mega2Client::sbhfSelftestRetry()
     const uint8_t cmd = M2_CMD_SBH_SELFTEST_RETRY;
 
     uint8_t resp = 0;
-    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), &resp, sizeof(resp), 5000000);
+    const auto r = I2CBus::writeReadEx(MEGA2_ADDR, &cmd, sizeof(cmd), &resp, sizeof(resp), 1000);
     if (r != I2CBus::Result::OK)
         return false;
 
@@ -138,7 +138,7 @@ bool Mega2Client::setNotaus(bool on)
     buf[1] = on ? 1 : 0;
 
     uint8_t resp = 0;
-    const auto r = writeReadRetry(MEGA2_ADDR, buf, sizeof(buf), &resp, sizeof(resp), 5000000);
+    const auto r = writeReadRetry(MEGA2_ADDR, buf, sizeof(buf), &resp, sizeof(resp), 8000);
     if (r != I2CBus::Result::OK)
         return false;
 
@@ -155,7 +155,7 @@ bool Mega2Client::powerOn()
     const uint8_t cmd = M2_CMD_POWER_ON;
 
     uint8_t resp = 0;
-    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), &resp, sizeof(resp), 5000000);
+    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), &resp, sizeof(resp), 8000);
     if (r != I2CBus::Result::OK)
         return false;
 
@@ -170,7 +170,7 @@ bool Mega2Client::setSsr(uint8_t idx, bool on)
     buf[2] = on ? 1 : 0;
 
     uint8_t resp = 0;
-    const auto r = writeReadRetry(MEGA2_ADDR, buf, sizeof(buf), &resp, sizeof(resp), 5000000);
+    const auto r = writeReadRetry(MEGA2_ADDR, buf, sizeof(buf), &resp, sizeof(resp), 8000);
     if (r != I2CBus::Result::OK)
         return false;
 
@@ -193,7 +193,7 @@ bool Mega2Client::pollEntryMatrix()
     const uint8_t cmd = M2_CMD_GET_ENTRY_MATRIX;
 
     uint16_t entry[9] = {0};
-    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), entry, sizeof(entry), 5000000);
+    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), entry, sizeof(entry), 15000);
     if (r != I2CBus::Result::OK)
         return false;
 
@@ -205,7 +205,7 @@ bool Mega2Client::pollEntryPreviewMatrix()
     const uint8_t cmd = M2_CMD_GET_ENTRY_PREVIEW_MATRIX;
 
     uint16_t entry[9] = {0};
-    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), entry, sizeof(entry), 5000000);
+    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), entry, sizeof(entry), 15000);
     if (r != I2CBus::Result::OK)
         return false;
 
