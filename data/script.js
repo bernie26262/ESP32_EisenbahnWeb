@@ -422,11 +422,12 @@ function getUiStateFromWs(msg, safety, mega2online) {
   let overlay = false;
   let ackRequired = false;
   let hasWarn = false;
+  let overlayMode = undefined; // "ack" | "info" | undefined
 
   if (!mega2online) {
     level = "WARN";
     text = [" Mega2 offline"];
-    return { level, text, title, overlay, ackRequired, hasWarn };
+    return { level, text, title, overlay, ackRequired, overlayMode, hasWarn };
   }
   // --- SBHF Selftest Overlay (WS-driven, independent of safety.lock) ---
   const selftestRunning = !!(msg?.mega2?.sbhf?.selftestRunning);
@@ -439,7 +440,9 @@ function getUiStateFromWs(msg, safety, mega2online) {
         "Bitte warten ...",
         "Der Selbsttest laeuft im Hintergrund und wird automatisch abgeschlossen.",
     ];
-    return { level, text, title, overlay, ackRequired, hasWarn };
+
+    overlayMode = "info"; // Info-only -> keine Buttons/Checkbox
+    return { level, text, title, overlay, ackRequired, overlayMode, hasWarn };
   }
 
 
@@ -448,12 +451,13 @@ function getUiStateFromWs(msg, safety, mega2online) {
     level = 'ERR';
     overlay = true;
     ackRequired = true;
+    overlayMode = "ack";
 
     const t = getSafetyOverlayTexts(safety);
     title = t.title || '! Sicherheitsquittierung';
     text = (t.lines && t.lines.length) ? t.lines : [' Safety aktiv - Bedienung gesperrt'];
 
-    return { level, text, title, overlay, ackRequired, hasWarn };
+    return { level, text, title, overlay, ackRequired, overlayMode, hasWarn };
   }
 
   // Warnings (z.B. Weichenfehler / Restricted Mode) -> Systemstatus = WARNING
@@ -471,7 +475,7 @@ function getUiStateFromWs(msg, safety, mega2online) {
     }
   }
 
-  return { level, text, title, overlay, ackRequired, hasWarn };
+  return { level, text, title, overlay, ackRequired, overlayMode, hasWarn };
 }
 
 /* =========================================================
@@ -488,7 +492,7 @@ function applyUiState(ui, msg) {
   status.textContent = ui.text[0] || "";
 
   if (ui.overlay) {
-    showOverlay(ui.title, ui.text, ui.ackRequired);
+    showOverlay(ui.title, ui.text, ui.ackRequired, { mode: ui.overlayMode });
   } else {
     hideOverlay();
   }
@@ -748,18 +752,23 @@ function sendM1WeicheToggle(idxW) {
  *  ACK OVERLAY
  * ========================================================= */
 
-function showOverlay(title, lines, requireChecked) {
+function showOverlay(title, lines, requireChecked, options = {}) {
   const overlay = document.getElementById("ack-overlay");
   const titleEl = document.getElementById("ack-title");
   const textEl = document.getElementById("ack-text");
   const checkbox = overlay?.querySelector("input[type=checkbox]");
   const ackBtn = overlay?.querySelector(".btn-ack");
+  const cancelBtn = overlay?.querySelector(".btn-cancel"); // falls vorhanden
 
   if (!overlay || !titleEl || !textEl) return;
 
   const wasHidden = overlay.classList.contains("hidden");
-
   overlay.classList.remove("hidden");
+
+  // Modes:
+  // - "ack": normaler ACK-Overlay mit Checkbox
+  // - "info": reine Info (z.B. Selftest läuft) -> keine Buttons/Checkbox
+  const mode = options.mode || (requireChecked === false ? "info" : "ack");
 
   titleEl.textContent = title || "! Sicherheitsquittierung";
 
@@ -769,33 +778,54 @@ function showOverlay(title, lines, requireChecked) {
 
   textEl.innerHTML = safeLines.join("<br>");
 
+  // ---------- INFO ONLY ----------
+  if (mode === "info") {
+    // Alles an Interaktion ausblenden
+    if (ackBtn) ackBtn.style.display = "none";
+    if (cancelBtn) cancelBtn.style.display = "none";
+    if (checkbox) checkbox.style.display = "none";
+    return;
+  }
 
+  // ---------- ACK MODE ----------
+  // Interaktion sichtbar machen (falls zuvor "info")
+  if (ackBtn) ackBtn.style.display = "";
+  if (cancelBtn) cancelBtn.style.display = "";
+  if (checkbox) checkbox.style.display = "";
 
   // ACK senden ist nur sinnvoll, wenn WS ok und Mega2 online.
   const canAckSend = (wsConnected === true) && (lastMega2Online === true);
+
+  // Checkbox handling
+  if (checkbox) {
+    // Nicht bei jedem WS-State-Update zuruecksetzen.
+    if (wasHidden) checkbox.checked = false;
+    checkbox.disabled = false;
+  }
+
   // ACK button
   if (ackBtn) {
-    // During non-ACK overlays (e.g. selftest running), force-disable the ACK button.
-    if (requireChecked === false) {
-      ackBtn.disabled = true;
-      ackBtn.textContent = "Bitte warten ...";
-    } else {
-      const enabled =
-        wsConnected && lastMega2Online && (requireChecked ? checkbox?.checked : true);
-      ackBtn.disabled = !enabled;
-      ackBtn.textContent = enabled ? "ACK" : "ACK";
-    }
+    const enabled = canAckSend && (checkbox?.checked === true);
+    ackBtn.disabled = !enabled;
+    ackBtn.textContent = "ACK";
   }
 
+  // Live-Enable/Disable ACK Button bei Checkbox-Änderung
+  if (checkbox && ackBtn) {
+    if (!checkbox.__ackListenerInstalled) {
+      checkbox.__ackListenerInstalled = true;
 
-  if (checkbox) {
-    // Wichtig: Checkbox ist User-Interaktion. Nicht bei jedem WS-State-Update zuruecksetzen.
-    if (wasHidden) {
-      checkbox.checked = false;
+      const syncAckEnabled = () => {
+        const enabled = (wsConnected === true) && (lastMega2Online === true) && (checkbox.checked === true);
+        ackBtn.disabled = !enabled;
+      };
+
+      checkbox.addEventListener("change", syncAckEnabled);
+      syncAckEnabled();
     }
-    checkbox.disabled = !requireChecked;
   }
 }
+
 
 function hideOverlay() {
   const overlay = document.getElementById("ack-overlay");
