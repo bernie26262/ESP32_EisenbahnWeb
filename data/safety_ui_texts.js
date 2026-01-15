@@ -1,8 +1,37 @@
 // safety_ui_texts.js
 // Enthält ausschließlich UI-Texte & Darstellung
 // KEINE Logik, KEINE imports
+// (Achtung: Diese Datei wird via index.htm geladen; UploadFS + Hard Reload nötig)
 
 window.safetyUiMap = {
+
+    "GENERIC_SAFETY_ACTIVE": {
+        level: "EMERGENCY",
+        color: "red",
+        icon: "alert",
+        overlay: true,
+        ackRequired: true,
+        title: "Sicherheitsquittierung",
+        text: [
+            "Safety aktiv – Bedienung gesperrt."
+        ]
+    },
+
+
+    "INFO_SBHF_SELFTEST_RUNNING": {
+    level: "INFO",
+    color: "blue",
+    icon: "info",
+    overlay: true,
+    ackRequired: false,
+    title: "SBHF Weichentest läuft",
+    text: [
+      "Bitte warten …",
+      "Der Selbsttest läuft im Hintergrund",
+      "und wird automatisch abgeschlossen."
+    ]
+  },
+
     "EMERG_ESTOP_CHAIN_OPEN": {
         level: "EMERGENCY",
         color: "red",
@@ -33,24 +62,56 @@ window.safetyUiMap = {
             "Nach Bestätigung (ACK) wird ein erneuter Schaltversuch durchgeführt."
         ]
     },
-
-    "EMERG_DOPPELTE_BLOCKBELEGUNG_BLOCK_x": {
+    
+    "EMERG_BLOCK_SHORT": {
         level: "EMERGENCY",
         color: "red",
-        icon: "stop",
+        icon: "alert",
         overlay: true,
         ackRequired: true,
-        title: "NOT-AUS – Anlage gestoppt",
+        title: "Not-Aus – Kurzschluss / Überstrom",
         text: [
-            "Mögliche Doppelbelegung in Block {x} erkannt.",
+            "Kurzschluss oder Überstrom erkannt: {x}.",
             "",
-            "Ein Zug ist trotz gesperrter Zufahrt in den Block gefahren.",
-            "Bitte Block prüfen und gegebenenfalls einen Zug entfernen.",
-            "Bitte langsamer fahren.",
-            "",
-            "Danach bestätigen (ACK)."
+            "Anlage wurde abgeschaltet.",
+            "Ursache prüfen (Verdrahtung, Fahrzeug, Weiche, Block).",
+            "Nach Beseitigung: ACK."
         ]
     },
+
+    "EMERG_SSR_STUCK": {
+        level: "EMERGENCY",
+        color: "red",
+        icon: "alert",
+        overlay: true,
+        ackRequired: true,
+        title: "Not-Aus – SSR hängt",
+        text: [
+            "Ein SSR scheint eingeschaltet zu bleiben ({x}).",
+            "",
+            "Anlage wurde abgeschaltet.",
+            "Hardware prüfen (Relais/SSR, Verdrahtung, Trafo).",
+            "Nach Beseitigung: ACK."
+        ]
+    },
+
+    "EMERG_DOUBLE_OCCUPANCY": {
+        level: "EMERGENCY",
+        color: "red",
+        icon: "alert",
+        overlay: true,
+        ackRequired: true,
+        title: "Doppelte Blockbelegung",
+        text: [
+            "Doppelte Belegung erkannt: {x}.",
+            "",
+            "Anlage wurde abgeschaltet.",
+            "Ursache prüfen; Quittierung erst möglich, wenn die Ursache weg ist",
+            "(z.B. Override aus / Strom ~0 mA).",
+            "Nach Beseitigung: ACK."
+        ]
+    },
+
 
     "WARN_BAHNHOFSDURCHFAHRT": {
         level: "WARNING",
@@ -65,7 +126,43 @@ window.safetyUiMap = {
             "Ein Zug ist über ein abgeschaltetes Bahnhofsgleis hinweg gefahren.",
             "Bitte langsamer fahren."
         ]
-    }
+    },
+
+    // ------------------------------------------------------------
+    // SBHF Warnings/Info (rechte Meldungsliste)
+    // ------------------------------------------------------------
+    "INFO_SBHF_ALLOWED_TRACKS": {
+        level: "INFO",
+        color: "blue",
+        icon: "info",
+        overlay: false,
+        ackRequired: false,
+        title: "SBHF",
+        text: ["SBHF erlaubte Gleise: {x}"]
+    },
+    "WARN_SBHF_NO_SAFE_PATH": {
+        level: "WARNING",
+        color: "yellow",
+        icon: "warning",
+        overlay: false,
+        ackRequired: false,
+        title: "SBHF",
+        text: ["SBHF gesperrt (kein sicherer Pfad)"]
+    },
+    "WARN_SBHF_RESTRICTED_MODE": {
+        level: "WARNING",
+        color: "yellow",
+        icon: "warning",
+        overlay: false,
+        ackRequired: false,
+        title: "SBHF",
+        text: ["SBHF: Restricted Mode aktiv"]
+    },
+    "WARN_W12_DEFECT": { level:"WARNING", color:"yellow", icon:"warning", overlay:false, ackRequired:false, title:"SBHF", text:["W12 defekt"] },
+    "WARN_W13_DEFECT": { level:"WARNING", color:"yellow", icon:"warning", overlay:false, ackRequired:false, title:"SBHF", text:["W13 defekt"] },
+    "INFO_W14_ISSUE":  { level:"INFO",    color:"blue",   icon:"info",    overlay:false, ackRequired:false, title:"SBHF", text:["W14 Störung"] },
+    "INFO_W15_ISSUE":  { level:"INFO",    color:"blue",   icon:"info",    overlay:false, ackRequired:false, title:"SBHF", text:["W15 Störung"] },
+    "WARN_SBH_SERVICE_REQUIRED": { level:"WARNING", color:"yellow", icon:"warning", overlay:false, ackRequired:false, title:"SBHF", text:["Service erforderlich"] }
 };
 
 // Alias: interne Map für fromCodes()
@@ -77,7 +174,7 @@ const SAFETY_TEXTS = window.safetyUiMap;
 // Numeric errorType/errorIndex support (ESP sends codes to keep WS payload small)
 // ---------------------------------------------------------------------------
 // Mega2 safety_error.h (errType):
-// 0=NONE, 1=NOTAUS, 2=BLOCK_SHORT, 3=SBH_WEICHE, 4=SSR_STUCK (patched)
+// 0=NONE, 1=NOTAUS, 2=BLOCK_SHORT, 3=SBH_WEICHE, 4=SSR_STUCK, 5=DOUBLE_OCC (patched)
 // If your enums differ, adjust this mapping.
 const SAFETY_ERRTYPE_TO_KEY = {
   0: null,
@@ -85,6 +182,7 @@ const SAFETY_ERRTYPE_TO_KEY = {
   2: "EMERG_BLOCK_SHORT",
   3: "EMERG_WEICHENFEHLER_SBHF",
   4: "EMERG_SSR_STUCK",
+  5: "EMERG_DOUBLE_OCCUPANCY",
 };
 
 // Optional: block display names (used for SBhf blocks in UI)
@@ -105,6 +203,19 @@ window.SAFETY_UI_TEXTS.blockName = function(id, fallbackPrefix="Block ") {
   if (BLOCK_NAME[n]) return BLOCK_NAME[n];
   return fallbackPrefix + n;
 };
+
+
+// Direct lookup by key (INFO/WARN overlays etc.)
+// Returns { title, lines[] } or null
+window.SAFETY_UI_TEXTS.fromKey = function(key) {
+  const def = window.safetyUiMap?.[key];
+  if (!def) return null;
+  return {
+    title: def.title || "",
+    lines: Array.isArray(def.text) ? def.text.slice() : []
+  };
+};
+
 
 /**
  * Build { title, lines[] } from numeric errType/errIndex.
@@ -134,9 +245,19 @@ window.SAFETY_UI_TEXTS.fromCodes = function(errType, errIndex) {
     return { title: "Safety aktiv", lines: [] };
   }
 
+  // idx formatting: for block-related errors, show "Block B<idx>" (Mega2 prints B%d)
+  let idxFmt = idx;
+  if (key === "EMERG_BLOCK_SHORT" || key === "EMERG_DOUBLE_OCCUPANCY") {
+    idxFmt = `Block B${idx}`;
+  } else if (key === "EMERG_SSR_STUCK") {
+    idxFmt = (idx === 0 ? "A" : "B");
+  }
+
   return {
     title: def.title || "Safety aktiv",
-    lines: _fmtLines(def.text || [], idx),
+    lines: _fmtLines(def.text || [], idxFmt),
   };
 };
+
+
 

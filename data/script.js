@@ -399,19 +399,24 @@ function getSafetyOverlayTexts(safety) {
   try {
     // Prefer numeric codes (errType/errIndex) -> text mapping from safety_ui_texts.js
     if (window.SAFETY_UI_TEXTS && typeof window.SAFETY_UI_TEXTS.fromCodes === 'function') {
-      const t = window.SAFETY_UI_TEXTS.fromCodes(safety?.errType, safety?.errIndex);
+      const et = (safety?.errType  ?? safety?.errorType);
+      const ei = (safety?.errIndex ?? safety?.errorIndex);
+      const t = window.SAFETY_UI_TEXTS.fromCodes(et, ei);
       if (t && (t.title || (t.lines && t.lines.length))) {
-        return { title: t.title || '! Sicherheitsquittierung', lines: t.lines || [] };
+        return { title: t.title || 'Sicherheitsquittierung', lines: t.lines || [] };
       }
     }
   } catch (e) {
     console.warn('SAFETY_UI_TEXTS error', e);
   }
-  // Fallback: backend-provided text
-  if (safety && safety.text) {
-    return { title: '! Sicherheitsquittierung', lines: [String(safety.text)] };
-  }
-  return { title: '! Sicherheitsquittierung', lines: [' Safety aktiv - Bedienung gesperrt'] };
+  
+  // Fallback ONLY via safety_ui_texts.js (no hardcoded strings here)
+  const fb = window.SAFETY_UI_TEXTS?.fromKey?.("GENERIC_SAFETY_ACTIVE");
+  if (fb) return { title: fb.title || "Sicherheitsquittierung", lines: fb.lines || [] };
+
+  // Last resort: keep UI functional even if text map missing
+  // (Should not happen in normal operation; contract banner will warn anyway.)
+  return { title: "Sicherheitsquittierung", lines: [] };
 }
 
 function getUiStateFromWs(msg, safety, mega2online) {
@@ -435,11 +440,9 @@ function getUiStateFromWs(msg, safety, mega2online) {
     level = "WARN";
     overlay = true;
     ackRequired = false;
-    title = " SBHF Weichentest laeuft";
-    text = [
-        "Bitte warten ...",
-        "Der Selbsttest laeuft im Hintergrund und wird automatisch abgeschlossen.",
-    ];
+    const t = window.SAFETY_UI_TEXTS?.fromKey?.("INFO_SBHF_SELFTEST_RUNNING");
+    title = t?.title || "SBHF Weichentest läuft";
+    text  = t?.lines || ["Bitte warten …"];
 
     overlayMode = "info"; // Info-only -> keine Buttons/Checkbox
     return { level, text, title, overlay, ackRequired, overlayMode, hasWarn };
@@ -455,7 +458,12 @@ function getUiStateFromWs(msg, safety, mega2online) {
 
     const t = getSafetyOverlayTexts(safety);
     title = t.title || '! Sicherheitsquittierung';
-    text = (t.lines && t.lines.length) ? t.lines : [' Safety aktiv - Bedienung gesperrt'];
+    if (t.lines && t.lines.length) {
+      text = t.lines;
+    } else {
+      const fb = window.SAFETY_UI_TEXTS?.fromKey?.("GENERIC_SAFETY_ACTIVE");
+      text = (fb?.lines && fb.lines.length) ? fb.lines : [];
+    }
 
     return { level, text, title, overlay, ackRequired, overlayMode, hasWarn };
   }
@@ -776,16 +784,23 @@ function showOverlay(title, lines, requireChecked, options = {}) {
     .filter(Boolean)
     .map((l) => escapeHtml(String(l)));
 
+  // Default: ohne Spinner
   textEl.innerHTML = safeLines.join("<br>");
 
   // ---------- INFO ONLY ----------
   if (mode === "info") {
+    // Spinner: nur per CSS-Klasse, damit die Animation nicht bei jedem Render neu startet
+    overlay.classList.add("is-info-wait");
+
     // Alles an Interaktion ausblenden
     if (ackBtn) ackBtn.style.display = "none";
     if (cancelBtn) cancelBtn.style.display = "none";
     if (checkbox) checkbox.style.display = "none";
     return;
   }
+
+  // Non-info overlay: ensure wait class is removed
+  overlay.classList.remove("is-info-wait");
 
   // ---------- ACK MODE ----------
   // Interaktion sichtbar machen (falls zuvor "info")
@@ -882,16 +897,108 @@ function escapeHtml(str) {
  *  Schritt 2: POWER / WARNINGS / EMERGENCIES (rechts)
  * ========================================================= */
 
+// ------------------------------------------------------------
+// Fix: "SBHF Selftest erneut" (btn-mini) schwer klickbar
+// Ursache: Meldungsbereich wird bei jedem WS-State via innerHTML ersetzt
+// -> während pointerdown/pointerup kann DOM ersetzt werden, click geht verloren
+// Lösung: Während Pointer im Meldungsbereich gedrückt ist, UI-Update puffern
+// ------------------------------------------------------------
+(function installSafetyMessagesPointerGuard() {
+  function ensureGuardInstalled(el) {
+    if (!el || el.__ptrGuardInstalled) return;
+    el.__ptrGuardInstalled = true;
+    el.__ptrDown = false;
+    el.__pendingHtml = null;
+
+    el.addEventListener("pointerdown", (e) => {
+      // Nur wenn im Actions-Bereich oder Button geklickt wird
+      if (e.target.closest(".msg-actions, .btn-mini")) {
+        el.__ptrDown = true;
+      }
+    }, true);
+
+    
+    // Robustness: if pointer gets cancelled (touch, focus loss), don't get stuck
+    el.addEventListener("pointercancel", () => {
+      el.__ptrDown = false;
+      // keep pendingHtml; it will apply on next normal render
+    }, true);
+    window.addEventListener("blur", () => {
+      el.__ptrDown = false;
+    }, true);
+
+    el.addEventListener("pointerup", () => {
+      if (!el.__ptrDown) return;
+      el.__ptrDown = false;
+      if (typeof el.__pendingHtml === "string") {
+        const html = el.__pendingHtml;
+        el.__pendingHtml = null;
+        // nächster Tick, damit click erst “fertig” ist
+        setTimeout(() => {
+          if (el.__lastHtml !== html) {
+            el.innerHTML = html;
+            el.__lastHtml = html;
+          }
+        }, 0);
+      }
+    }, true);
+  }
+
+  // Install lazily once DOM is there
+  window.addEventListener("load", () => {
+    ensureGuardInstalled(document.getElementById("safety-messages-list"));
+  });
+})();
+
 function renderPowerWarningsEmergencies(msg) {
   const el = document.getElementById("safety-messages-list");
   if (!el) return;
 
   const items = [];
 
+  const pushUiText = (key, x, prefix) => {
+    const t = window.SAFETY_UI_TEXTS?.fromKey?.(key);
+    if (!t || !Array.isArray(t.lines) || t.lines.length === 0) {
+      // Quality Gate: missing texts should be visible immediately
+      if (typeof contractFail === "function") {
+        contractFail(`Missing UI text key in safety_ui_texts.js: ${key}`);
+      } else if (typeof uiContractBannerShow === "function") {
+        uiContractBannerShow(`UI TEXT MISSING:\n${key}\n=> safety_ui_texts.js ist unvollständig oder nicht geladen (UploadFS/Cache).`);
+      }
+      return;
+    }
+    let line = String(t.lines[0] || "").trim();
+    if (!line) return;
+    const needsX = line.includes("{x}");
+    if (needsX && typeof x === "undefined") {
+      if (typeof contractFail === "function") {
+        contractFail(`UI text key ${key} requires {x} but no value provided`);
+      }
+    }
+    if (typeof x !== "undefined") line = line.replaceAll("{x}", String(x));
+    const pre = (prefix !== undefined) ? prefix : "i";
+    items.push(`${pre} ${escapeHtml(line)}`);
+  };
+
   // 1) Emergencies / Safety-Text
   const safety = msg && msg.safety;
-  if (safety && safety.text) {
-    items.push(` ${escapeHtml(String(safety.text))}`);
+  if (safety && (safety.lock === true || safety.ackRequired === true || (safety.errorType ?? safety.errType) > 0)) {
+    const t = getSafetyOverlayTexts(safety);
+
+    // Build a concise single-line message for the right panel
+    const title = (t?.title || "").trim();
+    const first = (Array.isArray(t?.lines) && t.lines.length) ? String(t.lines[0]).trim() : "";
+
+    // Prefer "Title: first line", fallback to title only
+    let line = "";
+    if (title && first) line = `${title}: ${first}`;
+    else if (title)   line = title;
+    else if (first)   line = first;
+
+    if (line) {
+      // Use a consistent prefix icon on the right panel
+      items.push(`! ${escapeHtml(line)}`);
+    }
   }
 
   // 2) Mega2 SBHF Masken
@@ -917,21 +1024,21 @@ function renderPowerWarningsEmergencies(msg) {
     if (allowed & 0x04) tracks.push("G3");
 
     if (allowed === 0x00) {
-      items.push(" SBHF gesperrt (kein sicherer Pfad)");
+      pushUiText("WARN_SBHF_NO_SAFE_PATH", undefined, "!");
     } else {
-      items.push(` SBHF erlaubte Gleise: ${tracks.length ? tracks.join(", ") : "-"}`);
+      pushUiText("INFO_SBHF_ALLOWED_TRACKS", (tracks.length ? tracks.join(", ") : "-"), "i");
     }
 
     const restricted =
       ((warn & WARN_RESTRICTED_MODE) !== 0) ||
       (allowed !== 0x07 && allowed !== 0x00);
 
-    if (restricted) items.push("! SBHF: Restricted Mode aktiv");
-    if (warn & WARN_W12_DEFECT) items.push("! W12 defekt");
-    if (warn & WARN_W13_DEFECT) items.push("! W13 defekt");
-    if (warn & WARN_W14_DEFECT) items.push("i W14 Stoerung");
-    if (warn & WARN_W15_DEFECT) items.push("i W15 Stoerung");
-    if (warn & WARN_SBH_SERVICE_REQUIRED) items.push(" Service erforderlich");
+    if (restricted) pushUiText("WARN_SBHF_RESTRICTED_MODE", undefined, "!");
+    if (warn & WARN_W12_DEFECT) pushUiText("WARN_W12_DEFECT", undefined, "!");
+    if (warn & WARN_W13_DEFECT) pushUiText("WARN_W13_DEFECT", undefined, "!");
+    if (warn & WARN_W14_DEFECT) pushUiText("INFO_W14_ISSUE", undefined, "i");
+    if (warn & WARN_W15_DEFECT) pushUiText("INFO_W15_ISSUE", undefined, "i");
+    if (warn & WARN_SBH_SERVICE_REQUIRED) pushUiText("WARN_SBH_SERVICE_REQUIRED", undefined, "!");
   }
 
   
@@ -969,7 +1076,18 @@ const actionsHtml = retryBtn
   ? `<div class="msg-actions">${retryBtn}</div>`
   : "";
 
-el.innerHTML = (items.length ? items.map(t => `<div>${t}</div>`).join("") : "<em>Keine Meldungen</em>") + actionsHtml;
+  const html = (items.length ? items.map(t => `<div>${t}</div>`).join("") : "<em>Keine Meldungen</em>") + actionsHtml;
+
+  // If user is currently clicking in this area, defer DOM replacement
+  if (el.__ptrDown === true) {
+    el.__pendingHtml = html;
+    return;
+  }
+
+  // Avoid DOM churn if nothing changed (prevents flicker + click races)
+  if (el.__lastHtml === html) return;
+  el.innerHTML = html;
+  el.__lastHtml = html;
 
 }
 
