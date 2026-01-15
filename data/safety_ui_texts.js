@@ -32,6 +32,18 @@ window.safetyUiMap = {
     ]
   },
 
+  "INFO_SELFTEST_POWER_STAYS_OFF": {
+    level: "INFO",
+    color: "blue",
+    icon: "info",
+    overlay: false,
+    ackRequired: false,
+    title: "SBHF",
+    text: [
+      "Selftest beendet – Power bleibt aus, bitte manuell einschalten."
+    ]
+  },
+
     "EMERG_ESTOP_CHAIN_OPEN": {
         level: "EMERGENCY",
         color: "red",

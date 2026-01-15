@@ -215,6 +215,16 @@ let lastMega2Online = false;
 // letzter kompletter WS-State (fuer Button/Disable-Regeln)
 let lastStateMsg = null;
 
+// ------------------------------------------------------------
+// UI one-shot hint: SBHF selftest finished, power remains OFF
+// (shown in right message list for a short time)
+// ------------------------------------------------------------
+let uiPrevSbhfSelftestRunning = null;
+let uiSbhfSelftestPowerHintShown = false;
+let uiTransientInfoText = null;
+let uiTransientInfoUntil = 0;
+
+
 
 
 // Normalize WS state for backwards compatibility.
@@ -365,6 +375,46 @@ function handleWsMessage(msg) {
   window.lastState = msg;
   window.lastStateMsg = msg;
 
+  // ------------------------------------------------------------
+// One-shot UI hint after SBHF selftest finished
+// ------------------------------------------------------------
+try {
+  const sbhf = msg?.mega2?.sbhf;
+  const safety = msg?.safety;
+
+  if (sbhf && typeof sbhf.selftestRunning === "boolean") {
+    // re-arm for next run
+    if (uiPrevSbhfSelftestRunning === false && sbhf.selftestRunning === true) {
+      uiSbhfSelftestPowerHintShown = false;
+    }
+
+    // detect falling edge: true -> false
+    if (
+      uiPrevSbhfSelftestRunning === true &&
+      sbhf.selftestRunning === false &&
+      safety?.powerOn === false &&
+      uiSbhfSelftestPowerHintShown === false
+    ) {
+
+       // Transient UI message (right-hand message list), text from safety_ui_texts.js
+      const t = window.SAFETY_UI_TEXTS?.fromKey?.("INFO_SELFTEST_POWER_STAYS_OFF");
+      const line = (t?.lines && t.lines.length) ? String(t.lines[0]) : null;
+      if (line) {
+        uiTransientInfoText = line;
+        uiTransientInfoUntil = Date.now() + 12000; // 12s
+      } else {
+        console.info("[UI] INFO_SELFTEST_POWER_STAYS_OFF missing in safety_ui_texts.js");
+      }
+
+      uiSbhfSelftestPowerHintShown = true;
+    }
+
+    uiPrevSbhfSelftestRunning = sbhf.selftestRunning;
+  }
+} catch (e) {
+  console.warn("[UI] Selftest power-off hint failed:", e);
+}
+
   // Contract checks (never throw; only diagnostics)
   try {
     runUiContractChecks(msg);
@@ -383,6 +433,40 @@ function handleWsMessage(msg) {
 
   const uiState = getUiStateFromWs(msg, lastSafetyState, lastMega2Online);
   applyUiState(uiState, msg);
+  
+  // ------------------------------------------------------------
+  // One-shot UI hint after SBHF selftest finished
+  // Trigger: selftestRunning true -> false AND power remains OFF
+  // ------------------------------------------------------------
+  try {
+    const sbhf = msg?.mega2?.sbhf;
+    const safety = msg?.safety;
+    if (sbhf && typeof sbhf.selftestRunning === "boolean") {
+      // re-arm for next selftest run
+      if (uiPrevSbhfSelftestRunning === false && sbhf.selftestRunning === true) {
+        uiSbhfSelftestPowerHintShown = false;
+      }
+
+      // falling edge -> show hint once
+      if (
+        uiPrevSbhfSelftestRunning === true &&
+        sbhf.selftestRunning === false &&
+        safety?.powerOn === false &&
+        uiSbhfSelftestPowerHintShown === false
+      ) {
+        uiTransientInfoText = "Selftest beendet – Power bleibt aus, bitte manuell einschalten.";
+        uiTransientInfoUntil = Date.now() + 12000; // 12s
+        uiSbhfSelftestPowerHintShown = true;
+      }
+
+      uiPrevSbhfSelftestRunning = sbhf.selftestRunning;
+    }
+  } catch (e) {
+    console.warn("[UI] selftest power-off hint failed:", e);
+  }
+
+   // Schritt 2: rechts "Meldungen" befuellen (Safety + SBHF Masken)
+   renderPowerWarningsEmergencies(msg);
 
   // Schritt 2: rechts "Meldungen" befuellen (Safety + SBHF Masken)
   renderPowerWarningsEmergencies(msg);
@@ -955,6 +1039,14 @@ function renderPowerWarningsEmergencies(msg) {
   if (!el) return;
 
   const items = [];
+
+    // transient one-shot info (e.g. selftest finished, power remains OFF)
+  if (uiTransientInfoText && Date.now() < uiTransientInfoUntil) {
+    items.push(`i ${escapeHtml(String(uiTransientInfoText))}`);
+  } else if (uiTransientInfoText && Date.now() >= uiTransientInfoUntil) {
+    uiTransientInfoText = null;
+  }
+
 
   const pushUiText = (key, x, prefix) => {
     const t = window.SAFETY_UI_TEXTS?.fromKey?.(key);
