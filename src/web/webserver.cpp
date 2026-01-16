@@ -45,6 +45,28 @@ static String buildWsStateJson()
     // --- Compatibility + Debug (damit WebUI sicher etwas findet) ---
     doc["mega1Online"] = m1online;  // Legacy: falls script.js das so erwartet
 
+    // -----------------------------
+    // Startup checklist / boot detection (ESP)
+    // -----------------------------
+    const bool m1Needs = SystemRuntimeState::mega1NeedsStartupChecklist();
+    const bool m2Needs = SystemRuntimeState::mega2NeedsStartupChecklist();
+
+    // "ready" bedeutet erstmal: aus ESP-Sicht keine offenen Boot-Checklist-Punkte.
+    // (Spaeter ersetzen wir das durch "Selftests PASS".)
+    JsonObject startup = doc["startup"].to<JsonObject>();
+    startup["m1Needs"] = m1Needs;
+    startup["m2Needs"] = m2Needs;
+    startup["ready"]   = (!m1Needs && !m2Needs);
+    startup["m2SelftestDone"] = SystemRuntimeState::mega2SelftestDone();
+
+    // Optional Debug: BootId/Uptime sichtbar machen (sehr hilfreich fürs Verifizieren)
+    const auto& m1dbg = SystemRuntimeState::mega1Status();
+    const auto& m2dbg = SystemRuntimeState::mega2Status();
+    startup["m1BootId"]   = (unsigned)m1dbg.bootId;
+    startup["m2BootId"]   = (unsigned)m2dbg.bootId;
+    startup["m1UptimeMs"] = (uint32_t)m1dbg.uptimeMs;
+    startup["m2UptimeMs"] = (uint32_t)m2dbg.uptimeMs;
+
     const auto& m1s = SystemRuntimeState::mega1Status();
     JsonObject m1st = doc["mega1"]["status"].to<JsonObject>();
     m1st["ver"]   = m1s.version;
@@ -166,7 +188,7 @@ static String buildWsStateJson()
         const auto& m1d = SystemRuntimeState::mega1Diag();
 
         JsonObject d  = doc["mega1"]["diag"].to<JsonObject>();
-d["mode"]      = m1d.mode;
+        d["mode"]      = m1d.mode;
         d["powerMask"] = m1d.powerMask;
 
         // NOTE: Mega1DiagV1 field names

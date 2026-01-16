@@ -350,8 +350,11 @@ function sendPollNow() {
 }
 
 function sendSbhfSelftestRetry() {
-  wsSend({ action: "sbhfSelftestRetry" });
-  logLine(" SBHF Selftest-Retry gesendet");
+  // Always log locally so we can see whether the click happened at all.
+  logLine(" SBHF Selftest start/retry (WS action) ...");
+  const ok = wsSend({ action: "sbhfSelftestRetry" });
+  if (ok) logLine(" SBHF Selftest-Retry gesendet");
+  else    logLine(" SBHF Selftest-Retry NICHT gesendet (WS down?)");
 }
 
 
@@ -511,7 +514,10 @@ function getUiStateFromWs(msg, safety, mega2online) {
   let overlay = false;
   let ackRequired = false;
   let hasWarn = false;
-  let overlayMode = undefined; // "ack" | "info" | undefined
+  let overlayMode = undefined; // "ack" | "info" | "startup" | undefined
+
+  const startup = msg?.startup;
+  const inStartup = !!(startup && startup.ready === false);
 
   if (!mega2online) {
     level = "WARN";
@@ -520,7 +526,9 @@ function getUiStateFromWs(msg, safety, mega2online) {
   }
   // --- SBHF Selftest Overlay (WS-driven, independent of safety.lock) ---
   const selftestRunning = !!(msg?.mega2?.sbhf?.selftestRunning);
-  if (selftestRunning) {
+  // IMPORTANT: while startup checklist is active, do NOT switch away to a separate overlay.
+  // The "läuft..." state is rendered inside the startup checklist.
+  if (selftestRunning && !inStartup) {
     level = "WARN";
     overlay = true;
     ackRequired = false;
@@ -532,6 +540,17 @@ function getUiStateFromWs(msg, safety, mega2online) {
     return { level, text, title, overlay, ackRequired, overlayMode, hasWarn };
   }
 
+  // --- STARTUP CHECKLIST Overlay (WS-driven) ---
+  if (inStartup) {
+    level = "WARN";
+    overlay = true;
+    ackRequired = false;
+    overlayMode = "startup";
+    const t = window.SAFETY_UI_TEXTS?.fromKey?.("INFO_STARTUP_CHECKLIST");
+    title = t?.title || "Systemstart – Checkliste";
+    text  = t?.lines || ["Bitte die folgenden Punkte abarbeiten, bevor Power eingeschaltet werden kann."];
+    return { level, text, title, overlay, ackRequired, overlayMode, hasWarn };
+  }
 
   // Safety lock dominates everything
   if (safety && safety.lock === true) {
@@ -584,7 +603,8 @@ function applyUiState(ui, msg) {
   status.textContent = ui.text[0] || "";
 
   if (ui.overlay) {
-    showOverlay(ui.title, ui.text, ui.ackRequired, { mode: ui.overlayMode });
+    // pass msg so overlay can render checklist state
+    showOverlay(ui.title, ui.text, ui.ackRequired, { mode: ui.overlayMode, state: msg });
   } else {
     hideOverlay();
   }
@@ -599,6 +619,7 @@ function applyUiState(ui, msg) {
   const lock = !!(lastSafetyState && lastSafetyState.lock === true);
   const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
   const powerOn = !!(lastSafetyState && lastSafetyState.powerOn === true);
+  const startup = msg?.startup;
 
 // --------------------------------------------------
 // Status-Badges (oben rechts)
@@ -657,7 +678,10 @@ if (bNo) {
     btnPowerOn.textContent = " POWER ON";
     btnPowerOn.classList.toggle("is-offline", !mega2online);
     // enabled nur wenn Power aus und keine Sperre
-    btnPowerOn.disabled = (!wsOk || !mega2online) ? true : (powerOn || lock || notausActive);
+    // PLUS: im Startup-Checklist-Modus NIE PowerOn erlauben (bis ready==true)
+    const startupNotReady = (startup && startup.ready === false);
+    btnPowerOn.disabled = (!wsOk || !mega2online) ? true
+                        : (powerOn || notausActive || lock || startupNotReady);
   }
 
   if (btnPowerOff) {
@@ -860,6 +884,7 @@ function showOverlay(title, lines, requireChecked, options = {}) {
   // Modes:
   // - "ack": normaler ACK-Overlay mit Checkbox
   // - "info": reine Info (z.B. Selftest läuft) -> keine Buttons/Checkbox
+  // - "startup": Startup-Checklist (eigene Buttons)
   const mode = options.mode || (requireChecked === false ? "info" : "ack");
 
   titleEl.textContent = title || "! Sicherheitsquittierung";
@@ -870,6 +895,150 @@ function showOverlay(title, lines, requireChecked, options = {}) {
 
   // Default: ohne Spinner
   textEl.innerHTML = safeLines.join("<br>");
+
+    // ---------- STARTUP CHECKLIST ----------
+  if (mode === "startup") {
+    overlay.classList.remove("is-info-wait");
+
+    // Default: ACK UI ausblenden. Sobald alle Checklist-Tests erledigt sind,
+    // wird der ACK-Button *innerhalb* dieses Startup-Overlays eingeblendet.
+    if (ackBtn) ackBtn.style.display = "none";
+    if (checkbox) checkbox.style.display = "none";
+    if (cancelBtn) cancelBtn.style.display = ""; // Abbrechen bleibt ok
+
+    // Build/Update startup checklist DOM (stable IDs, no rebind each tick)
+    if (!overlay.__startupUiBuilt) {
+      overlay.__startupUiBuilt = true;
+
+      // Append checklist below the existing text area
+      const wrap = document.createElement("div");
+      wrap.id = "startup-checklist-wrap";
+      wrap.style.marginTop = "14px";
+
+      wrap.innerHTML = `
+        <div style="font-weight:700; margin: 10px 0 6px;">Checkliste</div>
+
+        <div class="startup-item" style="padding:10px 0; border-top: 1px solid rgba(0,0,0,0.08);">
+          <div style="display:flex; gap:10px; align-items:flex-start;">
+            <span id="st-m2-box" aria-hidden="true">⬜</span>
+            <div style="flex:1;">
+              <div style="font-weight:700;">SBHF-Weichen Selftest (Mega2)</div>
+              <div id="st-m2-state" style="opacity:.85; margin-top:2px;">offen</div>
+              <div style="margin-top:8px;">
+                <button id="st-m2-btn" class="btn-mini" type="button">SBHF Selftest starten</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="startup-item" style="padding:10px 0; border-top: 1px solid rgba(0,0,0,0.08);">
+          <div style="display:flex; gap:10px; align-items:flex-start;">
+            <span id="st-m1-box" aria-hidden="true">⬜</span>
+            <div style="flex:1;">
+              <div style="font-weight:700;">Weichen Selftest (Mega1)</div>
+              <div id="st-m1-state" style="opacity:.85; margin-top:2px;">nicht erforderlich</div>
+              <div style="margin-top:8px;">
+                <button id="st-m1-btn" class="btn-mini" type="button" disabled>Mega1 Selftest (kommt später)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Put it after textEl (ack-text)
+      textEl.parentNode.insertBefore(wrap, textEl.nextSibling);
+
+      // One-time click handler
+      const m2btn = document.getElementById("st-m2-btn");
+      if (m2btn) {
+        m2btn.addEventListener("click", () => {
+          // IMPORTANT: Startup flow must work even while safety.lock==true.
+          sendSbhfSelftestRetry();
+        });
+      }
+    }
+
+   // Update state (from latest WS message)
+    const startup = window.lastStateMsg?.startup;
+    const m2Needs = !!startup?.m2Needs;
+    const m1Needs = !!startup?.m1Needs;
+    const selftestRunning = !!window.lastStateMsg?.mega2?.sbhf?.selftestRunning;
+    // Step-done markers (stay within the startup overlay until user ACKs).
+    // If a Mega does not need a checklist, it counts as "done".
+    // m1SelftestDone is optional (may not exist yet).
+    const m2Done = (!m2Needs) || !!startup?.m2SelftestDone;
+    const m1Done = (!m1Needs) || !!startup?.m1SelftestDone;
+    const allDone = (m1Done && m2Done);
+
+
+    const m2box = document.getElementById("st-m2-box");
+    const m2state = document.getElementById("st-m2-state");
+    const m2btn = document.getElementById("st-m2-btn");
+
+    if (m2box)   m2box.textContent = (m2Done ? "✅" : "⬜");
+    if (m2state) m2state.textContent = (m2Done ? "erledigt" : (selftestRunning ? "läuft…" : "offen"));
+
+    // Enable rule for the STARTUP button:
+    // - WS ok + Mega2 online
+    // - NOT dependent on safety.lock (boot lock is expected!)
+    // - only if checklist says it's needed
+    const canStartM2 =
+      (wsConnected === true) &&
+      (lastMega2Online === true) &&
+      (m2Needs === true) &&
+      (m2Done === false) &&
+      (selftestRunning === false);
+    if (m2btn) m2btn.disabled = !canStartM2;
+
+    const m1box = document.getElementById("st-m1-box");
+    const m1state = document.getElementById("st-m1-state");
+    if (m1box)   m1box.textContent = (m1Done ? "✅" : "⬜");
+    if (m1state) m1state.textContent = (!m1Needs ? "nicht erforderlich" : (m1Done ? "erledigt" : "offen"));
+
+    // Once both checklist steps are done, show ACK UI within this startup overlay.
+    // The checklist itself remains visible until the user explicitly ACKs.
+    if (checkbox && ackBtn) {
+      if (!allDone) {
+        checkbox.checked = false;
+        checkbox.style.display = "none";
+        ackBtn.style.display = "none";
+      } else {
+        checkbox.style.display = "";
+        ackBtn.style.display = "";
+
+        // Text: move to safety_ui_texts.js later; keep a sensible default here.
+        const labelEl = checkbox.closest("label")?.querySelector("span") || checkbox.closest("label");
+        if (labelEl) {
+          const t = window.SAFETY_UI_TEXTS?.fromKey?.("STARTUP_READY_TO_ACK");
+          const msg =
+            (t && Array.isArray(t.lines) && String(t.lines[0] || "").trim())
+            || "System betriebsbereit? Bitte quittieren.";
+          labelEl.textContent = msg;
+        }
+
+        // ACK button text
+        const tBtn = window.SAFETY_UI_TEXTS?.fromKey?.("STARTUP_ACK_BUTTON");
+        ackBtn.textContent =
+          (tBtn && Array.isArray(tBtn.lines) && String(tBtn.lines[0] || "").trim())
+          || "Quittieren";
+        // Enable rule: WS ok + Mega2 online + checkbox checked
+        const syncAckEnabled = () => {
+          const enabled = (wsConnected === true) && (lastMega2Online === true) && (checkbox.checked === true);
+          ackBtn.disabled = !enabled;
+        };
+
+        if (!checkbox.__startupAckListenerInstalled) {
+          checkbox.__startupAckListenerInstalled = true;
+          checkbox.addEventListener("change", syncAckEnabled);
+        }
+        syncAckEnabled();
+      }
+    }
+
+    return;
+  }
+
+
 
   // ---------- INFO ONLY ----------
   if (mode === "info") {
@@ -885,6 +1054,15 @@ function showOverlay(title, lines, requireChecked, options = {}) {
 
   // Non-info overlay: ensure wait class is removed
   overlay.classList.remove("is-info-wait");
+
+
+  // If we leave startup mode, remove checklist DOM once (optional cleanup)
+  // Keeps overlay from growing if modes change often.
+  const stWrap = document.getElementById("startup-checklist-wrap");
+  if (stWrap) {
+    stWrap.remove();
+    overlay.__startupUiBuilt = false;
+  }
 
   // ---------- ACK MODE ----------
   // Interaktion sichtbar machen (falls zuvor "info")

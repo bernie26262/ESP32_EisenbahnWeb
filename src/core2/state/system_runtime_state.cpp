@@ -24,6 +24,77 @@ static uint32_t     s_lastRxMsM1 = 0;
 uint8_t SystemRuntimeState::errorType  = 0;
 uint8_t SystemRuntimeState::errorIndex = 0;
 
+// Online-edge tracking (for checklist logic)
+static bool         s_m2OnlinePrev = false;
+static bool         s_m1OnlinePrev = false;
+
+// ----------------------------------------------------
+// Boot-Detection / Startup-Checklist
+// ----------------------------------------------------
+// Guard-Zeit: nur fuer den Sonderfall "ESP rebootet und hat sein RAM verloren".
+// Wenn ein Mega laenger als diese Zeit laeuft, behandeln wir ihn beim ersten
+// Empfang nach ESP-Boot als "nicht frisch gebootet".
+static constexpr uint32_t ESP_REBOOT_GUARD_MS = 60000; // 60s konservativ
+
+struct BootTrack {
+    bool     seen = false;
+    uint16_t lastBootId = 0;
+    bool     bootChanged = false;   // sticky within ESP session
+    bool     needsChecklist = false;
+    uint32_t lastUptimeMs = 0;
+};
+
+static BootTrack s_m1Boot{};
+static BootTrack s_m2Boot{};
+
+// Selftest edge tracking (Mega2 SBHF)
+static bool s_m2SelftestRunningPrev = false;
+static bool s_m2SelftestDone = false; // Step marker (does NOT auto-complete checklist)
+
+static bool updateBootTrack(BootTrack& bt, const SystemStatus& st)
+{
+    static constexpr uint32_t UPTIME_REBOOT_MARGIN_MS = 5000;
+    bool rebootDetected = false;
+
+    if (!bt.seen)
+    {
+        bt.seen = true;
+        bt.lastBootId = st.bootId;
+        bt.lastUptimeMs = st.uptimeMs;
+
+        // ESP-Reboot-Fall: Mega lief schon -> keine neue Checklist erzwingen
+        bt.needsChecklist = (st.uptimeMs <= ESP_REBOOT_GUARD_MS);
+        rebootDetected = bt.needsChecklist; // treat "fresh" as requiring checklist
+        return rebootDetected;
+    }
+
+    // Reboot detection by uptime going backwards (covers the case bootId is constant/invalid)
+    if (st.uptimeMs + UPTIME_REBOOT_MARGIN_MS < bt.lastUptimeMs)
+    {
+        rebootDetected = true;
+        bt.bootChanged = true;      // treat as reboot event
+        bt.needsChecklist = true;
+        bt.lastBootId = st.bootId;  // keep for completeness
+        bt.lastUptimeMs = st.uptimeMs;
+        return rebootDetected;
+    }
+
+    bt.lastUptimeMs = st.uptimeMs;
+
+
+    if (st.bootId != bt.lastBootId)
+    {
+        rebootDetected = true;
+        bt.lastBootId = st.bootId;
+        bt.bootChanged = true;
+        bt.needsChecklist = true;
+    }
+
+    return rebootDetected;
+
+}
+
+
 static bool         s_safetyLock   = false;
 static SafetyReason s_safetyReason = SafetyReason::NONE;
 
@@ -75,6 +146,27 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     s_m2Status = st;
     s_lastRxMs = millis();
 
+    // selftestRunning is encoded as META bit 0x80 in sbhfOccupiedMask.
+    const bool selftestRunning = ((st.sbhfOccupiedMask & 0x80u) != 0);
+    // Step marker: Selftest finished (running -> not running) => remember "done".
+    // IMPORTANT: does NOT close checklist (contract: only after full user flow incl. ACK).
+    if (s_m2Boot.needsChecklist && s_m2SelftestRunningPrev && !selftestRunning)
+    {
+        s_m2SelftestDone = true;
+        g_stateDirty = true;
+    }
+    s_m2SelftestRunningPrev = selftestRunning;
+
+    // If Mega2 just came back online (offline -> online), treat as a fresh "first seen"
+    // for checklist/boot detection. This fixes the case where bt.seen stayed true across
+    // transient bus issues or link-layer online changes, causing small uptimeMs to be ignored.
+    if (!s_m2OnlinePrev)
+        s_m2Boot.seen = false;
+    s_m2OnlinePrev = true;
+    const bool rebootDetected = updateBootTrack(s_m2Boot, st);
+    if (rebootDetected)
+        s_m2SelftestDone = false;
+
     s_safetyLock =
         (st.flags & SYS_NOTAUS_ACTIVE) ||
         (st.flags & SYS_ERROR_PRESENT);
@@ -85,6 +177,23 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     // Fehlerdetails aus Mega2
     errorType  = st.safetyErrorType;
     errorIndex = st.safetyErrorIndex;
+
+    // Checklist auto-complete ONLY as part of the full user flow:
+    // - SBHF selftest completed (step done)
+    // - Boot-ERR cleared (SYS_ERROR_PRESENT no longer set) => implies successful ACK
+    // This is still "state-driven" and avoids time/UI heuristics.
+    if (s_m2Boot.needsChecklist)
+    {
+        const bool bootErr = ((st.flags & SYS_ERROR_PRESENT) != 0);
+        const bool notaus  = ((st.flags & SYS_NOTAUS_ACTIVE) != 0);
+        if (s_m2SelftestDone && !bootErr && !notaus)
+        {
+            s_m2Boot.needsChecklist = false;
+            s_m2SelftestDone = false;
+            g_stateDirty = true;
+        }
+    }
+
 
     static uint16_t lastFlags = 0xFFFF;
     if (st.flags != lastFlags)
@@ -108,7 +217,16 @@ void SystemRuntimeState::updateMega1Status(const SystemStatus& st)
 {
     s_m1Status   = st;
     s_lastRxMsM1 = millis();
+    if (!s_m1OnlinePrev)
+        s_m1Boot.seen = false;
+    s_m1OnlinePrev = true;    
+    (void)updateBootTrack(s_m1Boot, st);
     g_stateDirty = true;
+}
+
+bool SystemRuntimeState::mega2SelftestDone()
+{
+    return s_m2SelftestDone;
 }
 
 
@@ -116,7 +234,9 @@ bool SystemRuntimeState::mega1Online()
 {
     // I2C polls can temporarily fail (e.g. bus contention). Treat Mega1 as online
     // for a longer grace period to avoid UI flapping.
-    return (millis() - s_lastRxMsM1) < 3000;
+    const bool on = (millis() - s_lastRxMsM1) < 3000;
+    if (!on) s_m1OnlinePrev = false;
+    return on;
 }
 
 const SystemStatus& SystemRuntimeState::mega1Status()
@@ -155,7 +275,9 @@ const Mega2SafetyStatus& SystemRuntimeState::mega2SafetyStatus()
 // ----------------------------------------------------
 bool SystemRuntimeState::mega2Online()
 {
-    return (millis() - s_lastRxMs) < 3000;
+    const bool on = (millis() - s_lastRxMs) < 3000;
+    if (!on) { s_m2OnlinePrev = false; s_m2SelftestRunningPrev = false; }
+    return on;
 }
 
 const SystemStatus& SystemRuntimeState::mega2Status()
@@ -175,7 +297,42 @@ SafetyReason SystemRuntimeState::safetyReason()
 
 uint8_t SystemRuntimeState::safetyBlockReason()
 {
-    return s_blockReasonUi;
+    return s_blockReasonUi;   
+}
+
+// ----------------------------------------------------
+// Boot-Detection / Startup-Checklist Getter/Setter
+// ----------------------------------------------------
+bool SystemRuntimeState::mega1NeedsStartupChecklist()
+{
+    return s_m1Boot.needsChecklist;
+}
+
+bool SystemRuntimeState::mega2NeedsStartupChecklist()
+{
+    return s_m2Boot.needsChecklist;
+}
+
+bool SystemRuntimeState::mega1BootChanged()
+{
+    return s_m1Boot.bootChanged;
+}
+
+bool SystemRuntimeState::mega2BootChanged()
+{
+    return s_m2Boot.bootChanged;
+}
+
+void SystemRuntimeState::markMega1ChecklistDone()
+{
+    s_m1Boot.needsChecklist = false;
+    g_stateDirty = true;
+}
+
+void SystemRuntimeState::markMega2ChecklistDone()
+{
+    s_m2Boot.needsChecklist = false;
+    g_stateDirty = true;
 }
 
 // ----------------------------------------------------

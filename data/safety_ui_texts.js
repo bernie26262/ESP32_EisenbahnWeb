@@ -17,6 +17,33 @@ window.safetyUiMap = {
         ]
     },
 
+    // ------------------------------------------------------------
+    // Startup-Checklist: Abschluss / ACK innerhalb der Checklist
+    // ------------------------------------------------------------
+    "STARTUP_READY_TO_ACK": {
+        level: "WARNING",
+        color: "yellow",
+        icon: "info",
+        overlay: true,
+        ackRequired: false,
+        title: "",
+        text: [
+            "System betriebsbereit? Bitte quittieren."
+        ]
+    },
+    "STARTUP_ACK_BUTTON": {
+        level: "WARNING",
+        color: "yellow",
+        icon: "info",
+        overlay: true,
+        ackRequired: false,
+        title: "",
+        text: [
+            "Quittieren"
+        ]
+    },
+   
+
 
     "INFO_SBHF_SELFTEST_RUNNING": {
     level: "INFO",

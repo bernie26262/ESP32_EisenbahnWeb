@@ -54,6 +54,27 @@ namespace SystemRuntimeState
     uint8_t safetyBlockReason();
     const char* safetyLockText();
 
+        // ----------------------------------------------------
+    // Boot-Detection / Startup-Checklist (Supervisor)
+    //
+    // Zweck:
+    // - ESP-Reboot soll NICHT automatisch eine neue Checklist erzwingen,
+    //   wenn die Megas bereits laenger laufen.
+    // - Mega-Reboot (bootId-Wechsel) soll fuer genau diesen Mega die
+    //   Checklist wieder oeffnen.
+    // ----------------------------------------------------
+    bool mega1NeedsStartupChecklist();
+    bool mega2NeedsStartupChecklist();
+    bool mega1BootChanged();
+    bool mega2BootChanged();
+    void markMega1ChecklistDone();
+    void markMega2ChecklistDone();
+    
+    // Mega2 Startup-Checklist Step: SBHF Selftest beendet
+    // (setzt NICHT automatisch needsChecklist=false!)
+    bool mega2SelftestDone();
+
+
     // ----------------------------------------------------
     // Step 3.5: Block-Einfahrten (FROM->TO) (Mega2)
     // ----------------------------------------------------
