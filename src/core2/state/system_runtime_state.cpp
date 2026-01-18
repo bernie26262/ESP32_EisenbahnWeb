@@ -240,7 +240,8 @@ void SystemRuntimeState::updateMega1Status(const SystemStatus& st)
 
 bool SystemRuntimeState::mega2SelftestDone()
 {
-    return s_m2SelftestDone;
+    // SIM helper: when bypass is enabled, treat the SBHF selftest-step as done.
+    // This affects ONLY the startup checklist step marker; it must not alter Mega2 safety logic.
     if (s_bypassSbhfSelftest)
         return true;
     return s_m2SelftestDone;

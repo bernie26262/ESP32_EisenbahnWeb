@@ -989,12 +989,37 @@ function showOverlay(title, lines, requireChecked, options = {}) {
 
       const m2skip = document.getElementById("st-m2-skip-btn");
       if (m2skip) {
-        m2skip.addEventListener("click", () => {
-          const cur = !!window.lastStateMsg?.sim?.bypassSbhfSelftest;
-          const en = !cur; // toggle
-          logLine(` SIM: SBHF Selftest-Step ${en ? "überspringen" : "wieder aktivieren"} ...`);
-          wsSend({ action: "setBypassSbhfSelftest", enable: en });
-        });
+        // Bind only once (overlay may re-render / reconnect)
+        if (!m2skip.__bound) {
+          m2skip.__bound = true;
+          m2skip.addEventListener("click", () => {
+            // Robust toggle:
+            // - derive from WS state (not from button text / transient labels)
+            // - do not allow while the real selftest is running
+            // - only in SIM (noHwBuild)
+            const st = window.lastStateMsg || {};
+            const sim = st.sim || {};
+            const selftestRunning = !!st.mega2?.sbhf?.selftestRunning;
+
+            if (!(wsConnected === true)) {
+              logLine(" SIM: cannot toggle bypass (WS down)");
+              return;
+            }
+            if (!sim.noHwBuild) {
+              logLine(" SIM: bypass toggle ignored (not a SIM noHw build)");
+              return;
+            }
+            if (selftestRunning) {
+              logLine(" SIM: bypass toggle blocked (selftest is running)");
+              return;
+            }
+
+            const cur = !!sim.bypassSbhfSelftest;
+            const en  = !cur;
+            logLine(` SIM: bypass SBHF selftest step -> ${en ? "ON" : "OFF"} ...`);
+            wsSend({ action: "setBypassSbhfSelftest", enable: en });
+          });
+        }
       }
               
       const m1btn = document.getElementById("st-m1-btn");
@@ -1093,10 +1118,14 @@ function showOverlay(title, lines, requireChecked, options = {}) {
     if (m2skip) {
       if (simNoHw) {
         m2skip.style.display = "";
+
+        // Truth source for button labeling: WS state.
+        const bypass = !!window.lastStateMsg?.sim?.bypassSbhfSelftest;
+
         // While the real selftest is running, do not allow toggling (keeps UI consistent)
         m2skip.disabled = !(wsConnected === true) || selftestRunning;
-        const key = simBypass ? "STARTUP_M2_SKIP_BTN_OFF" : "STARTUP_M2_SKIP_BTN_ON";
-        const fallback = simBypass ? "SBHF Selftest-Step wieder aktivieren (SIM)" : "SBHF Selftest überspringen (SIM)";
+        const key = bypass ? "STARTUP_M2_SKIP_BTN_OFF" : "STARTUP_M2_SKIP_BTN_ON";
+        const fallback = bypass ? "SBHF Selftest-Step wieder aktivieren (SIM)" : "SBHF Selftest überspringen (SIM)";
         m2skip.textContent = _uiText0(key, fallback);
       } else {
         m2skip.style.display = "none";
