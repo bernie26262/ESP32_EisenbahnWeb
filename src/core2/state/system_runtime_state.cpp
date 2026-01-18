@@ -51,10 +51,15 @@ static BootTrack s_m2Boot{};
 static bool s_m2SelftestRunningPrev = false;
 static bool s_m2SelftestDone = false; // Step marker (does NOT auto-complete checklist)
 
+
+
 // Selftest tracking (Mega1 Weichen)
 static bool s_m1SelftestDone = false; // Step marker (does NOT auto-complete checklist)
 static bool s_m1SelftestRunningPrev = false;
 static bool s_m1SelftestEverRunning = false;
+
+// Simulation: Startup-Checklist Mega2/SBHF Selftest-Step überspringen
+static bool s_bypassSbhfSelftest = false;
 
 static bool updateBootTrack(BootTrack& bt, const SystemStatus& st)
 {
@@ -235,6 +240,10 @@ void SystemRuntimeState::updateMega1Status(const SystemStatus& st)
 
 bool SystemRuntimeState::mega2SelftestDone()
 {
+    // SIM helper: when bypass is enabled, treat the SBHF selftest-step as done.
+    // This affects ONLY the startup checklist step marker; it must not alter Mega2 safety logic.
+    if (s_bypassSbhfSelftest)
+        return true;
     return s_m2SelftestDone;
 }
 
@@ -351,6 +360,9 @@ bool SystemRuntimeState::mega1NeedsStartupChecklist()
 bool SystemRuntimeState::mega2NeedsStartupChecklist()
 {
     return s_m2Boot.needsChecklist;
+    if (s_bypassSbhfSelftest)
+        return false;
+    return s_m2Boot.needsChecklist;
 }
 
 bool SystemRuntimeState::mega1BootChanged()
@@ -373,6 +385,20 @@ void SystemRuntimeState::markMega2ChecklistDone()
 {
     s_m2Boot.needsChecklist = false;
     g_stateDirty = true;
+}
+
+void SystemRuntimeState::setBypassSbhfSelftest(bool en)
+{
+    if (s_bypassSbhfSelftest != en)
+    {
+        s_bypassSbhfSelftest = en;
+        g_stateDirty = true;
+    }
+}
+
+bool SystemRuntimeState::bypassSbhfSelftest()
+{
+    return s_bypassSbhfSelftest;
 }
 
 // ----------------------------------------------------

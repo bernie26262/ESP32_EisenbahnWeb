@@ -27,13 +27,24 @@ volatile bool g_stateDirty = true;
 // ---------------------------------------------------------
 static String buildWsStateJson()
 {
-    StaticJsonDocument<1024> doc;
+    // NOTE: This payload grew over time (mega1 diag, startup, entry matrices, sim flags, ...).
+    // Keep this generously sized to avoid ArduinoJson overflow (which would silently drop fields
+    // and look like "random" UI state glitches).
+    StaticJsonDocument<3072> doc;
 
     doc["type"] = "state";
     doc["ts"]   = (uint32_t)millis();
 
     doc["eth"]["connected"] = Net::EthManager::isConnected();
     doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
+
+    // Simulation flags (UI/Debug)
+#if defined(EE_SIM_NO_HW)
+    doc["sim"]["noHwBuild"] = true;
+#else
+    doc["sim"]["noHwBuild"] = false;
+#endif
+    doc["sim"]["bypassSbhfSelftest"] = SystemRuntimeState::bypassSbhfSelftest();
 
     // Mega2 online: use link-layer flag (matches [M2LINK] online=1 in Serial)
     const bool m2online = Mega2Link::mega2Online();
@@ -212,6 +223,11 @@ static String buildWsStateJson()
 
 
     String out;
+    if (doc.overflowed())
+    {
+        // If you ever see this, increase the document size above.
+        Serial.println("[WS] buildWsStateJson: JSON document overflow (fields may be missing!)");
+    }
     serializeJson(doc, out);
     return out;
 }
@@ -249,6 +265,37 @@ static void onWsEvent(AsyncWebSocket* server,
         return;
 
     Serial.printf("[WS] action rx: %s\n", action);
+
+    // -------------------------------------------------
+    // Simulation helpers (only enabled in sim builds)
+    // -------------------------------------------------
+    if (!strcmp(action, "setBypassSbhfSelftest"))
+    {
+#if defined(EE_SIM_NO_HW)
+       // robust bool parse: true/false, 0/1, "true"/"false"
+        bool en = false;
+        JsonVariant vEn = cmd["enable"];
+        if (vEn.is<bool>()) {
+            en = vEn.as<bool>();
+        } else if (vEn.is<int>()) {
+            en = (vEn.as<int>() != 0);
+        } else if (vEn.is<const char*>()) {
+            const char* s = vEn.as<const char*>();
+            if (s) en = (!strcasecmp(s, "true") || !strcasecmp(s, "on") || !strcmp(s, "1"));
+        }
+
+        SystemRuntimeState::setBypassSbhfSelftest(en);
+        Serial.printf("[SIM] setBypassSbhfSelftest(enable=%s) -> now=%s\n",
+                      en ? "true" : "false",
+                      SystemRuntimeState::bypassSbhfSelftest() ? "true" : "false");
+        g_stateDirty = true;
+#else
+        Serial.println("[SIM] setBypassSbhfSelftest ignored (not a sim build)");
+#endif
+        return;
+    }
+
+
 
     // -------------------------------------------------
     // Startup-Checklist: explicit "done" markers

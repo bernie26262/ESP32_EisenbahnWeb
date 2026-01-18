@@ -54,7 +54,7 @@ namespace SystemRuntimeState
     uint8_t safetyBlockReason();
     const char* safetyLockText();
 
-        // ----------------------------------------------------
+    // ----------------------------------------------------
     // Boot-Detection / Startup-Checklist (Supervisor)
     //
     // Zweck:
@@ -62,7 +62,11 @@ namespace SystemRuntimeState
     //   wenn die Megas bereits laenger laufen.
     // - Mega-Reboot (bootId-Wechsel) soll fuer genau diesen Mega die
     //   Checklist wieder oeffnen.
-    // ----------------------------------------------------
+    
+    
+
+
+
     bool mega1NeedsStartupChecklist();
     bool mega2NeedsStartupChecklist();
     bool mega1BootChanged();
@@ -78,6 +82,11 @@ namespace SystemRuntimeState
     // Understand: "done" != "PASS". PASS/FAIL wird ueber FailMask als Warning abgebildet.
     // (setzt NICHT automatisch needsChecklist=false!)
     bool mega1SelftestDone();
+
+    // ----------------------------------------------------
+    // --- Simulation helpers ---
+    void setBypassSbhfSelftest(bool en);
+    bool bypassSbhfSelftest();
 
 
     // ----------------------------------------------------
