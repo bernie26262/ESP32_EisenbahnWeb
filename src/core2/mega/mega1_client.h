@@ -13,5 +13,6 @@ namespace Mega1Client
 I2CBus::Result cmdSetMode(uint8_t mode);                 // 0=MANUELL,1=AUTO
 I2CBus::Result cmdSetWeiche(uint8_t idx, bool gerade);   // 0..11
 I2CBus::Result cmdSetBhfPower(uint8_t bhf, bool on);     // 0..3
+I2CBus::Result cmdStartSelftest();                       // start Weichen-Selftest
 
 }

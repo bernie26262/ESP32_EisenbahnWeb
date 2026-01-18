@@ -56,8 +56,13 @@ static String buildWsStateJson()
     JsonObject startup = doc["startup"].to<JsonObject>();
     startup["m1Needs"] = m1Needs;
     startup["m2Needs"] = m2Needs;
-    startup["ready"]   = (!m1Needs && !m2Needs);
     startup["m2SelftestDone"] = SystemRuntimeState::mega2SelftestDone();
+    startup["m1SelftestDone"] = SystemRuntimeState::mega1SelftestDone();
+
+    // ready: only when required checklists have their selftest-step done
+    const bool m1Ok = (!m1Needs) || SystemRuntimeState::mega1SelftestDone();
+    const bool m2Ok = (!m2Needs) || SystemRuntimeState::mega2SelftestDone();
+    startup["ready"] = (m1Ok && m2Ok);
 
     // Optional Debug: BootId/Uptime sichtbar machen (sehr hilfreich fürs Verifizieren)
     const auto& m1dbg = SystemRuntimeState::mega1Status();
@@ -195,6 +200,12 @@ static String buildWsStateJson()
         d["weicheIstBits"]  = m1d.weicheIstGeradeBits;
         d["weicheSollBits"] = m1d.weicheSollGeradeBits;
         d["weicheSlowBits"] = m1d.weicheSlowActiveBits;
+        
+        // Mega1 Selftest (Startup-Checklist)
+        d["selftestRunning"]    = ((m1d.selftestFlags & 0x01u) != 0);
+        d["selftestDone"]       = ((m1d.selftestFlags & 0x02u) != 0);
+        d["selftestFailMask"]   = (uint16_t)m1d.selftestFailMask;
+        d["selftestCurrentIdx"] = (uint8_t)m1d.selftestCurrentIdx;
 
         doc["mega1"]["hasDiag"] = true;
     }
@@ -238,6 +249,24 @@ static void onWsEvent(AsyncWebSocket* server,
         return;
 
     Serial.printf("[WS] action rx: %s\n", action);
+
+    // -------------------------------------------------
+    // Startup-Checklist: explicit "done" markers
+    // (Checklist disappears ONLY through these actions)
+    // -------------------------------------------------
+    if (!strcmp(action, "markMega1ChecklistDone"))
+    {
+        SystemRuntimeState::markMega1ChecklistDone();
+        g_stateDirty = true;
+        return;
+    }
+
+    if (!strcmp(action, "markMega2ChecklistDone"))
+    {
+        SystemRuntimeState::markMega2ChecklistDone();
+        g_stateDirty = true;
+        return;
+    }
 
     if (!strcmp(action, "safetyAck"))
     {
@@ -321,14 +350,21 @@ static void onWsEvent(AsyncWebSocket* server,
             if (s) on = (!strcasecmp(s, "true") || !strcasecmp(s, "on") || !strcmp(s, "1"));
         }
 
-    Serial.printf("[WS] m1PowerSet bhf=%u on=%s\n", bhf, on ? "true" : "false");
+        Serial.printf("[WS] m1PowerSet bhf=%u on=%s\n", bhf, on ? "true" : "false");
 
-    const bool ok = Mega1Link::queueBhfPowerSet(bhf, on);
-    if (!ok) Serial.println("[WS] m1PowerSet rejected (args/queue full)");
-    g_stateDirty = true;
-    return;
-}
+        const bool ok = Mega1Link::queueBhfPowerSet(bhf, on);
+        if (!ok) Serial.println("[WS] m1PowerSet rejected (args/queue full)");
+        g_stateDirty = true;
+        return;
+    }
 
+    if (!strcmp(action, "m1SelftestStart"))
+    {
+        const bool ok = Mega1Link::queueStartSelftest();
+        if (!ok) Serial.println("[WS] m1SelftestStart rejected (queue full)");
+        g_stateDirty = true;
+        return;
+    }
 
     if (!strcmp(action, "pollNow"))
     {

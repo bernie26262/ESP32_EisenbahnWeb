@@ -14,6 +14,7 @@ static constexpr uint8_t CMD_GET_DIAG     = 0xD1; // CMD_GET_DIAG (see Mega1/inc
 static constexpr uint8_t CMD_SET_MODE     = 0x02;
 static constexpr uint8_t CMD_SET_WEICHE   = 0x03;
 static constexpr uint8_t CMD_SET_BHF_PWR  = 0x06; // neu in Mega1 (Power/Signal)
+static constexpr uint8_t CMD_SELFTEST_START = 0x07;
 
 void Mega1Client::begin()
 {
@@ -98,5 +99,11 @@ I2CBus::Result Mega1Client::cmdSetWeiche(uint8_t idx, bool gerade)
 I2CBus::Result Mega1Client::cmdSetBhfPower(uint8_t bhf, bool on)
 {
     const uint8_t buf[3] = { CMD_SET_BHF_PWR, bhf, (uint8_t)(on ? 1 : 0) };
+    return sendCmdWithAck(buf, sizeof(buf));
+}
+
+I2CBus::Result Mega1Client::cmdStartSelftest()
+{
+    const uint8_t buf[1] = { CMD_SELFTEST_START };
     return sendCmdWithAck(buf, sizeof(buf));
 }

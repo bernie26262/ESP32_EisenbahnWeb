@@ -31,6 +31,17 @@ struct Mega1DiagV1
 
     uint8_t  powerMask;      // Bit i (0..3)
     uint16_t uptime16;       // uptime/100ms (wrap ok)
+
+    // -------------------------------------------------
+    // Startup-Checklist / Weichen-Selbsttest (Mega1)
+    // -------------------------------------------------
+    // selftestFlags:
+    //   bit0: running
+    //   bit1: done (Selbsttest einmal durchgelaufen)
+    //   bit2: hasFail (optional Quick-Flag; FailMask bleibt Source of Truth)
+    uint8_t  selftestFlags;
+    uint16_t selftestFailMask;    // Bit i: 1 = FAIL bei Weiche i (0..11)
+    uint8_t  selftestCurrentIdx;  // 0..11 (nur Anzeige), 0xFF = none
 };
 #pragma pack(pop)
 

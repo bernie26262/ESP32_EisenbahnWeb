@@ -357,6 +357,14 @@ function sendSbhfSelftestRetry() {
   else    logLine(" SBHF Selftest-Retry NICHT gesendet (WS down?)");
 }
 
+function sendM1SelftestRetry() {
+  // Always log locally so we can see whether the click happened at all.
+  logLine(" Mega1 Selftest start/retry (WS action) ...");
+  const ok = wsSend({ action: "m1SelftestStart" });
+  if (ok) logLine(" Mega1 Selftest-Retry gesendet");
+  else    logLine(" Mega1 Selftest-Retry NICHT gesendet (WS down?)");
+}
+
 
 function wsSendAction(action, okMsg) {
   const ok = wsSend({ action: action });
@@ -517,7 +525,13 @@ function getUiStateFromWs(msg, safety, mega2online) {
   let overlayMode = undefined; // "ack" | "info" | "startup" | undefined
 
   const startup = msg?.startup;
-  const inStartup = !!(startup && startup.ready === false);
+  // Startup-Overlay soll bleiben, bis der User explizit quittiert.
+  // "ready" kann bereits true sein, aber m1Needs/m2Needs bleiben true,
+  // bis markMegaXChecklistDone (bzw. das zugehörige ACK) erfolgt.
+  const inStartup = !!(startup && (
+    startup.m1Needs === true ||
+    startup.m2Needs === true
+  ));
 
   if (!mega2online) {
     level = "WARN";
@@ -899,12 +913,26 @@ function showOverlay(title, lines, requireChecked, options = {}) {
     // ---------- STARTUP CHECKLIST ----------
   if (mode === "startup") {
     overlay.classList.remove("is-info-wait");
+  
+
+    // Helper: fetch UI text from safety_ui_texts.js (fallbacks keep UI usable)
+    const _uiText0 = (key, fallback) => {
+      const t = window.SAFETY_UI_TEXTS?.fromKey?.(key);
+      const s = (t && Array.isArray(t.lines) && String(t.lines[0] || "").trim()) || "";
+      return s ? s : (fallback || "");
+    };
+    const _uiFmt0 = (key, x, fallback) => {
+      return _uiText0(key, fallback).replaceAll("{x}", String(x ?? ""));
+    };
+
 
     // Default: ACK UI ausblenden. Sobald alle Checklist-Tests erledigt sind,
     // wird der ACK-Button *innerhalb* dieses Startup-Overlays eingeblendet.
     if (ackBtn) ackBtn.style.display = "none";
     if (checkbox) checkbox.style.display = "none";
     if (cancelBtn) cancelBtn.style.display = ""; // Abbrechen bleibt ok
+
+
 
     // Build/Update startup checklist DOM (stable IDs, no rebind each tick)
     if (!overlay.__startupUiBuilt) {
@@ -916,16 +944,16 @@ function showOverlay(title, lines, requireChecked, options = {}) {
       wrap.style.marginTop = "14px";
 
       wrap.innerHTML = `
-        <div style="font-weight:700; margin: 10px 0 6px;">Checkliste</div>
+        <div style="font-weight:700; margin: 10px 0 6px;">${escapeHtml(_uiText0("STARTUP_CHECKLIST_TITLE", "Checkliste"))}</div>
 
         <div class="startup-item" style="padding:10px 0; border-top: 1px solid rgba(0,0,0,0.08);">
           <div style="display:flex; gap:10px; align-items:flex-start;">
             <span id="st-m2-box" aria-hidden="true">⬜</span>
             <div style="flex:1;">
-              <div style="font-weight:700;">SBHF-Weichen Selftest (Mega2)</div>
-              <div id="st-m2-state" style="opacity:.85; margin-top:2px;">offen</div>
+              <div style="font-weight:700;">${escapeHtml(_uiText0("STARTUP_M2_TITLE", "SBHF-Weichen Selftest (Mega2)"))}</div>
+              <div id="st-m2-state" style="opacity:.85; margin-top:2px;">${escapeHtml(_uiText0("STARTUP_STATE_OPEN", "offen"))}</div>
               <div style="margin-top:8px;">
-                <button id="st-m2-btn" class="btn-mini" type="button">SBHF Selftest starten</button>
+                <button id="st-m2-btn" class="btn-mini" type="button">${escapeHtml(_uiText0("STARTUP_M2_BTN", "SBHF Selftest starten"))}</button>
               </div>
             </div>
           </div>
@@ -935,10 +963,10 @@ function showOverlay(title, lines, requireChecked, options = {}) {
           <div style="display:flex; gap:10px; align-items:flex-start;">
             <span id="st-m1-box" aria-hidden="true">⬜</span>
             <div style="flex:1;">
-              <div style="font-weight:700;">Weichen Selftest (Mega1)</div>
-              <div id="st-m1-state" style="opacity:.85; margin-top:2px;">nicht erforderlich</div>
+              <div style="font-weight:700;">${escapeHtml(_uiText0("STARTUP_M1_TITLE", "Weichen Selftest (Mega1)"))}</div>
+              <div id="st-m1-state" style="opacity:.85; margin-top:2px;">${escapeHtml(_uiText0("STARTUP_STATE_NOT_REQUIRED", "nicht erforderlich"))}</div>
               <div style="margin-top:8px;">
-                <button id="st-m1-btn" class="btn-mini" type="button" disabled>Mega1 Selftest (kommt später)</button>
+                <button id="st-m1-btn" class="btn-mini" type="button">${escapeHtml(_uiText0("STARTUP_M1_BTN_DISABLED", "Mega1 Selftest starten"))}</button>
               </div>
             </div>
           </div>
@@ -956,6 +984,17 @@ function showOverlay(title, lines, requireChecked, options = {}) {
           sendSbhfSelftestRetry();
         });
       }
+      
+      const m1btn = document.getElementById("st-m1-btn");
+      if (m1btn) {
+        m1btn.addEventListener("click", () => {
+          // Mega1 Selftest explizit starten
+          logLine(" Mega1 Selftest start (WS action) ...");
+          const ok = wsSend({ action: "m1SelftestStart" });
+          if (ok) logLine(" Mega1 Selftest-Start gesendet");
+          else    logLine(" Mega1 Selftest-Start NICHT gesendet (WS down?)");
+        });
+      }
     }
 
    // Update state (from latest WS message)
@@ -963,6 +1002,8 @@ function showOverlay(title, lines, requireChecked, options = {}) {
     const m2Needs = !!startup?.m2Needs;
     const m1Needs = !!startup?.m1Needs;
     const selftestRunning = !!window.lastStateMsg?.mega2?.sbhf?.selftestRunning;
+    // Mega1 Selftest running (optional; may not exist yet)
+    const m1SelftestRunning = !!window.lastStateMsg?.mega1?.diag?.selftestRunning;
     // Step-done markers (stay within the startup overlay until user ACKs).
     // If a Mega does not need a checklist, it counts as "done".
     // m1SelftestDone is optional (may not exist yet).
@@ -976,7 +1017,38 @@ function showOverlay(title, lines, requireChecked, options = {}) {
     const m2btn = document.getElementById("st-m2-btn");
 
     if (m2box)   m2box.textContent = (m2Done ? "✅" : "⬜");
-    if (m2state) m2state.textContent = (m2Done ? "erledigt" : (selftestRunning ? "läuft…" : "offen"));
+    if (m2state) {
+      if (m2Done) {
+          m2state.textContent = _uiText0("STARTUP_STATE_DONE", "erledigt");
+          delete m2state.dataset.spinner;
+      }
+      else if (selftestRunning) {
+
+        // Spinner nur EINMAL erzeugen → Animation bleibt stabil
+        if (!m2state.dataset.spinner) {
+            m2state.textContent = "";
+
+            const spinner = document.createElement("span");
+            spinner.className = "ui-spinner";
+            spinner.setAttribute("aria-hidden", "true");
+
+            const text = document.createElement("span");
+            text.id = "st-m2-text";
+
+            m2state.appendChild(spinner);
+            m2state.appendChild(text);
+            m2state.dataset.spinner = "1";
+            }
+
+        const txt = _uiFmt0("STARTUP_STATE_RUNNING", "", "läuft…{x}").trim();
+        const textNode = m2state.querySelector("#st-m2-text");
+        if (textNode) textNode.textContent = txt;
+      }
+      else {
+        m2state.textContent = _uiText0("STARTUP_STATE_OPEN", "offen");
+        delete m2state.dataset.spinner;
+      }
+    }
 
     // Enable rule for the STARTUP button:
     // - WS ok + Mega2 online
@@ -993,7 +1065,26 @@ function showOverlay(title, lines, requireChecked, options = {}) {
     const m1box = document.getElementById("st-m1-box");
     const m1state = document.getElementById("st-m1-state");
     if (m1box)   m1box.textContent = (m1Done ? "✅" : "⬜");
-    if (m1state) m1state.textContent = (!m1Needs ? "nicht erforderlich" : (m1Done ? "erledigt" : "offen"));
+    if (m1state) {
+      if (!m1Needs) m1state.textContent = _uiText0("STARTUP_STATE_NOT_REQUIRED", "nicht erforderlich");
+      else if (m1Done) m1state.textContent = _uiText0("STARTUP_STATE_DONE", "erledigt");
+      else m1state.textContent = _uiText0("STARTUP_STATE_OPEN", "offen");
+    }
+
+    // Enable rule for Mega1 Selftest button:
+    // - WS ok
+    // - Mega1 online
+    // - checklist says it's needed
+    // - not already done
+    // - not currently running
+    const m1btn = document.getElementById("st-m1-btn");
+    const canStartM1 =
+      (wsConnected === true) &&
+      (window.lastStateMsg?.mega1?.online === true) &&
+      (m1Needs === true) &&
+      (m1Done === false) &&
+      (m1SelftestRunning === false);
+    if (m1btn) m1btn.disabled = !canStartM1;
 
     // Once both checklist steps are done, show ACK UI within this startup overlay.
     // The checklist itself remains visible until the user explicitly ACKs.
@@ -1122,10 +1213,28 @@ function confirmAck() {
     return;
   }
 
-  const ok = wsSend({ action: "safetyAck" });
-  if (ok) {
-    logLine("ACK gesendet.");
+  // If the startup checklist is active, "ACK" must also close the checklist steps.
+  // Contract: Checklist disappears only by explicit markMegaXChecklistDone.
+  const st = window.lastStateMsg?.startup;
+  const inStartupChecklist = !!(st && (st.m1Needs === true || st.m2Needs === true));
+
+  if (inStartupChecklist) {
+    // Close checklist steps first (sticky flags on ESP)
+    if (st?.m1Needs === true) {
+      const ok1 = wsSend({ action: "markMega1ChecklistDone" });
+      if (ok1) logLine(" Startup: Mega1 Checklist quittiert");
+      else     logLine(" Startup: Mega1 Checklist NICHT quittiert (WS down?)");
+    }
+    if (st?.m2Needs === true) {
+      const ok2 = wsSend({ action: "markMega2ChecklistDone" });
+      if (ok2) logLine(" Startup: Mega2 Checklist quittiert");
+      else     logLine(" Startup: Mega2 Checklist NICHT quittiert (WS down?)");
+    }
   }
+
+  // Safety ACK (may still be needed even after checklist is done)
+  const ok = wsSend({ action: "safetyAck" });
+  if (ok) logLine("ACK gesendet.");
 }
 
 /* =========================================================
@@ -1311,6 +1420,21 @@ function renderPowerWarningsEmergencies(msg) {
     if (warn & WARN_SBH_SERVICE_REQUIRED) pushUiText("WARN_SBH_SERVICE_REQUIRED", undefined, "!");
   }
 
+    // 2b) Mega1 Weichen-Selbsttest (Diagnoseliste)
+  const m1 = msg && msg.mega1;
+  if (m1 && m1.online && m1.diag) {
+    const fm = Number(m1.diag.selftestFailMask || 0) & 0x0fff;
+    if (fm !== 0) {
+      const names = [];
+      for (let i = 0; i < 12; i++) {
+        if (fm & (1 << i)) names.push(`W${i+1}`);
+      }
+      const listTxt = names.length ? names.join(", ") : "-";
+      pushUiText("WARN_M1_TURNOUTS_DEFECT_LIST", listTxt, "!");
+    }
+  }
+
+
   
 
 // 3) " Pruefen" (PollNow), wenn Warnings/Restricted aktiv sind
@@ -1330,6 +1454,9 @@ const canMega2 = wsConnected && !!(msg && msg.mega2 && msg.mega2.online);
 const selftestRunning = !!(msg?.mega2?.sbhf?.selftestRunning);
 const lock = !!(msg?.safety?.lock);
 
+const canMega1 = wsConnected && !!(msg && msg.mega1 && msg.mega1.online);
+const m1SelftestRunning = !!(msg?.mega1?.diag?.selftestRunning);
+
 let weicheWarnActive = false;
 if (m2 && m2.sbhf) {
   const warn = Number(m2.sbhf.warningMask || 0) & 0xff;
@@ -1338,12 +1465,23 @@ if (m2 && m2.sbhf) {
   weicheWarnActive = (warn & WEICHE_WARN_MASK) !== 0;
 }
 
+let m1WeicheWarnActive = false;
+if (msg?.mega1?.online && msg?.mega1?.diag) {
+  const fm = Number(msg.mega1.diag.selftestFailMask || 0) & 0x0fff;
+  m1WeicheWarnActive = (fm !== 0);
+}
+
+
 const retryBtn = weicheWarnActive
   ? `<button class="btn-mini" ${(canMega2 && !selftestRunning && !lock) ? "" : "disabled"} onclick="sendSbhfSelftestRetry()"> SBHF Selftest erneut</button>`
   : "";
 
-const actionsHtml = retryBtn
-  ? `<div class="msg-actions">${retryBtn}</div>`
+const retryBtnM1 = m1WeicheWarnActive
+  ? `<button class="btn-mini" ${(canMega1 && !m1SelftestRunning && !lock) ? "" : "disabled"} onclick="sendM1SelftestRetry()"> Mega1 Selftest erneut</button>`
+  : "";
+
+const actionsHtml = (retryBtn || retryBtnM1)
+  ? `<div class="msg-actions">${retryBtn}${retryBtn ? " " : ""}${retryBtnM1}</div>`
   : "";
 
   const html = (items.length ? items.map(t => `<div>${t}</div>`).join("") : "<em>Keine Meldungen</em>") + actionsHtml;

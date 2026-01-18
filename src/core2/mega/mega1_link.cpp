@@ -18,7 +18,7 @@
 // ------------------------------------------------------------
 namespace
 {
-    enum : uint8_t { CMDQ_SET_MODE = 1, CMDQ_SET_WEICHE = 2, CMDQ_SET_BHF_POWER = 3 };
+    enum : uint8_t { CMDQ_SET_MODE = 1, CMDQ_SET_WEICHE = 2, CMDQ_SET_BHF_POWER = 3, CMDQ_START_SELFTEST = 4 };
 
     struct CmdQItem
     {
@@ -202,6 +202,9 @@ void Mega1Link::update()
                 case CMDQ_SET_BHF_POWER:
                     cr = Mega1Client::cmdSetBhfPower(cmd.a, cmd.b != 0);
                     break;
+                case CMDQ_START_SELFTEST:
+                    cr = Mega1Client::cmdStartSelftest();
+                    break;
                 default:
                     cr = I2CBus::Result::ERROR;
                     break;
@@ -249,3 +252,8 @@ bool Mega1Link::queueBhfPowerSet(uint8_t bhf, bool on)
     return cmdqPush(CMDQ_SET_BHF_POWER, bhf, on ? 1 : 0);
 }
 
+bool Mega1Link::queueStartSelftest()
+{
+    // keine Parameter (reflects Mega1 default: startSelftest())
+    return cmdqPush(CMDQ_START_SELFTEST, 0, 0);
+}

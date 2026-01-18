@@ -74,13 +74,19 @@ namespace SystemRuntimeState
     // (setzt NICHT automatisch needsChecklist=false!)
     bool mega2SelftestDone();
 
+    // Mega1 Startup-Checklist Step: Weichen-Selbsttest beendet (durchgefuehrt)
+    // Understand: "done" != "PASS". PASS/FAIL wird ueber FailMask als Warning abgebildet.
+    // (setzt NICHT automatisch needsChecklist=false!)
+    bool mega1SelftestDone();
+
 
     // ----------------------------------------------------
     // Step 3.5: Block-Einfahrten (FROM->TO) (Mega2)
     // ----------------------------------------------------
     const uint16_t* mega2EntryAllowed();
     void updateMega2EntryAllowed(const uint16_t* arr, uint8_t n);
-
+    
     const uint16_t* mega2EntryPreview();
     void updateMega2EntryPreview(const uint16_t* arr, uint8_t n);
+
 }

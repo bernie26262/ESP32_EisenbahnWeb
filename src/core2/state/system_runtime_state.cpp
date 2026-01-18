@@ -51,6 +51,11 @@ static BootTrack s_m2Boot{};
 static bool s_m2SelftestRunningPrev = false;
 static bool s_m2SelftestDone = false; // Step marker (does NOT auto-complete checklist)
 
+// Selftest tracking (Mega1 Weichen)
+static bool s_m1SelftestDone = false; // Step marker (does NOT auto-complete checklist)
+static bool s_m1SelftestRunningPrev = false;
+static bool s_m1SelftestEverRunning = false;
+
 static bool updateBootTrack(BootTrack& bt, const SystemStatus& st)
 {
     static constexpr uint32_t UPTIME_REBOOT_MARGIN_MS = 5000;
@@ -178,22 +183,18 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     errorType  = st.safetyErrorType;
     errorIndex = st.safetyErrorIndex;
 
-    // Checklist auto-complete ONLY as part of the full user flow:
-    // - SBHF selftest completed (step done)
-    // - Boot-ERR cleared (SYS_ERROR_PRESENT no longer set) => implies successful ACK
-    // This is still "state-driven" and avoids time/UI heuristics.
-    if (s_m2Boot.needsChecklist)
-    {
-        const bool bootErr = ((st.flags & SYS_ERROR_PRESENT) != 0);
-        const bool notaus  = ((st.flags & SYS_NOTAUS_ACTIVE) != 0);
-        if (s_m2SelftestDone && !bootErr && !notaus)
-        {
-            s_m2Boot.needsChecklist = false;
-            s_m2SelftestDone = false;
-            g_stateDirty = true;
-        }
-    }
-
+    // REMOVE / DISABLE: checklist auto-clear for Mega2
+// if (s_m2Boot.needsChecklist)
+// {
+//     const bool bootErr = ((st.flags & SYS_ERROR_PRESENT) != 0);
+//     const bool notaus  = ((st.flags & SYS_NOTAUS_ACTIVE) != 0);
+//     if (s_m2SelftestDone && !bootErr && !notaus)
+//     {
+//         s_m2Boot.needsChecklist = false;
+//         s_m2SelftestDone = false;
+//         g_stateDirty = true;
+//     }
+// }
 
     static uint16_t lastFlags = 0xFFFF;
     if (st.flags != lastFlags)
@@ -220,7 +221,15 @@ void SystemRuntimeState::updateMega1Status(const SystemStatus& st)
     if (!s_m1OnlinePrev)
         s_m1Boot.seen = false;
     s_m1OnlinePrev = true;    
-    (void)updateBootTrack(s_m1Boot, st);
+    const bool rebootDetected = updateBootTrack(s_m1Boot, st);
+    if (rebootDetected)
+    {
+        // Reset startup-checklist step markers only on real Mega1 reboot
+        // (bootId/uptime detection). Do NOT reset on short online flaps.
+        s_m1SelftestDone = false;
+        s_m1SelftestRunningPrev = false;
+        s_m1SelftestEverRunning = false;
+    }
     g_stateDirty = true;
 }
 
@@ -229,13 +238,23 @@ bool SystemRuntimeState::mega2SelftestDone()
     return s_m2SelftestDone;
 }
 
+bool SystemRuntimeState::mega1SelftestDone()
+{
+    return s_m1SelftestDone;
+}
+
 
 bool SystemRuntimeState::mega1Online()
 {
     // I2C polls can temporarily fail (e.g. bus contention). Treat Mega1 as online
     // for a longer grace period to avoid UI flapping.
     const bool on = (millis() - s_lastRxMsM1) < 3000;
-    if (!on) s_m1OnlinePrev = false;
+    if (!on)
+    {
+        // Mark link as offline, but keep selftest markers.
+        // They must only reset on Mega1 reboot (bootId/uptime), not on short flaps.
+        s_m1OnlinePrev = false;
+    }
     return on;
 }
 
@@ -249,6 +268,27 @@ const SystemStatus& SystemRuntimeState::mega1Status()
 void SystemRuntimeState::updateMega1Diag(const Mega1DiagV1& d)
 {
     s_m1Diag     = d;
+
+    const bool running  = ((d.selftestFlags & 0x01u) != 0);
+    if (running) s_m1SelftestEverRunning = true;
+
+    // Startup-Checklist Step: Mega1 Weichen-Selbsttest
+    // Contract:
+    // - Der Step-Marker s_m1SelftestDone schliesst NICHT automatisch die Checklist.
+    // - "Done" gilt, sobald der Selbsttest als DONE gemeldet wird, unabhängig von PASS/FAIL.
+    //   PASS/FAIL wird ueber selftestFailMask als Warning/Diag dargestellt.
+    if (s_m1Boot.needsChecklist)
+    {
+        const bool doneFlag = ((d.selftestFlags & 0x02u) != 0);
+        // robust/sticky: sobald DONE einmal gesehen wurde, bleibt der Step gesetzt
+        // (Reset nur bei Bootwechsel, nicht bei Poll-Flaps und nicht bei FailMask!=0)
+        if (doneFlag && !s_m1SelftestDone)
+        {
+            s_m1SelftestDone = true;
+            g_stateDirty = true;
+        }
+    }
+    s_m1SelftestRunningPrev = running;
     g_stateDirty = true;
 }
 

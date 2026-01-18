@@ -42,6 +42,59 @@ window.safetyUiMap = {
             "Quittieren"
         ]
     },
+    
+    // ------------------------------------------------------------
+    // Startup-Checklist: Labels / States (UI-only)
+    // ------------------------------------------------------------
+    "STARTUP_CHECKLIST_TITLE": {
+        level: "INFO",
+        color: "blue",
+        icon: "info",
+        overlay: true,
+        ackRequired: false,
+        title: "",
+        text: ["Checkliste"]
+    },
+    "STARTUP_M2_TITLE": { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["SBHF-Weichen Selftest (Mega2)"] },
+    "STARTUP_M2_BTN":   { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["SBHF Selftest starten"] },
+    "STARTUP_M1_TITLE": { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["Weichen Selftest (Mega1)"] },
+    "STARTUP_M1_RETRY_BTN": {
+        level: "INFO",
+        color: "blue",
+        icon: "info",
+        overlay: true,
+        ackRequired: false,
+        title: "",
+        text: ["Mega1 Selftest erneut"]
+    },
+    "STARTUP_M1_FAIL_LIST": {
+        level: "WARNING",
+        color: "yellow",
+        icon: "warning",
+        overlay: true,
+        ackRequired: false,
+        title: "",
+        // {x} wird ersetzt durch z.B. "W1, W2, W5"
+        text: ["Defekte Weichen: {x}"]
+    },
+
+    "STARTUP_STATE_OPEN":         { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["offen"] },
+    "STARTUP_STATE_RUNNING":      { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["läuft…{x}"] },
+    "STARTUP_STATE_DONE":         { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["erledigt"] },
+    "STARTUP_STATE_NOT_REQUIRED": { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["nicht erforderlich"] },
+    "STARTUP_STATE_FAILMASK":     { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["fehlgeschlagen (Maske {x})"] },
+
+    "STARTUP_M1_BTN_AUTO":         { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["Mega1 Selftest läuft/auto"] },
+    "STARTUP_M1_BTN_NOT_REQUIRED": { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["nicht erforderlich"] },
+    "STARTUP_M1_BTN_DISABLED": {
+        level: "INFO",
+        color: "blue",
+        icon: "info",
+        overlay: true,
+        ackRequired: false,
+        title: "",
+        text: ["Mega1 Selftest (kommt später)"]
+    },
    
 
 
@@ -201,7 +254,20 @@ window.safetyUiMap = {
     "WARN_W13_DEFECT": { level:"WARNING", color:"yellow", icon:"warning", overlay:false, ackRequired:false, title:"SBHF", text:["W13 defekt"] },
     "INFO_W14_ISSUE":  { level:"INFO",    color:"blue",   icon:"info",    overlay:false, ackRequired:false, title:"SBHF", text:["W14 Störung"] },
     "INFO_W15_ISSUE":  { level:"INFO",    color:"blue",   icon:"info",    overlay:false, ackRequired:false, title:"SBHF", text:["W15 Störung"] },
-    "WARN_SBH_SERVICE_REQUIRED": { level:"WARNING", color:"yellow", icon:"warning", overlay:false, ackRequired:false, title:"SBHF", text:["Service erforderlich"] }
+    "WARN_SBH_SERVICE_REQUIRED": { level:"WARNING", color:"yellow", icon:"warning", overlay:false, ackRequired:false, title:"SBHF", text:["Service erforderlich"] },
+
+    // ------------------------------------------------------------
+    // Mega1 Weichen-Selbsttest (rechte Meldungsliste)
+    // ------------------------------------------------------------
+    "WARN_M1_TURNOUTS_DEFECT_LIST": {
+        level: "WARNING",
+        color: "yellow",
+        icon: "warning",
+        overlay: false,
+        ackRequired: false,
+        title: "Mega1",
+        text: ["Defekte Weichen: {x}"]
+    }
 };
 
 // Alias: interne Map für fromCodes()
