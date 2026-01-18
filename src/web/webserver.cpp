@@ -35,6 +35,14 @@ static String buildWsStateJson()
     doc["eth"]["connected"] = Net::EthManager::isConnected();
     doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
 
+    // Simulation flags (UI/Debug)
+#if defined(EE_SIM_NO_HW)
+    doc["sim"]["noHwBuild"] = true;
+#else
+    doc["sim"]["noHwBuild"] = false;
+#endif
+    doc["sim"]["bypassSbhfSelftest"] = SystemRuntimeState::bypassSbhfSelftest();
+
     // Mega2 online: use link-layer flag (matches [M2LINK] online=1 in Serial)
     const bool m2online = Mega2Link::mega2Online();
     const bool m1online = SystemRuntimeState::mega1Online();
@@ -249,6 +257,24 @@ static void onWsEvent(AsyncWebSocket* server,
         return;
 
     Serial.printf("[WS] action rx: %s\n", action);
+
+    // -------------------------------------------------
+    // Simulation helpers (only enabled in sim builds)
+    // -------------------------------------------------
+    if (!strcmp(action, "setBypassSbhfSelftest"))
+    {
+#if defined(EE_SIM_NO_HW)
+        const bool en = (bool)(cmd["enable"] | 0);
+        SystemRuntimeState::setBypassSbhfSelftest(en);
+        Serial.printf("[SIM] bypass SBHF selftest step = %s\n", en ? "ON" : "OFF");
+        g_stateDirty = true;
+#else
+        Serial.println("[SIM] setBypassSbhfSelftest ignored (not a sim build)");
+#endif
+        return;
+    }
+
+
 
     // -------------------------------------------------
     // Startup-Checklist: explicit "done" markers

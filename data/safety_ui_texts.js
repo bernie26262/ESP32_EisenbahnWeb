@@ -57,6 +57,33 @@ window.safetyUiMap = {
     },
     "STARTUP_M2_TITLE": { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["SBHF-Weichen Selftest (Mega2)"] },
     "STARTUP_M2_BTN":   { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["SBHF Selftest starten"] },
+    "STARTUP_M2_SKIP_BTN_ON": {
+        level: "INFO",
+        color: "blue",
+        icon: "info",
+        overlay: true,
+        ackRequired: false,
+        title: "",
+        text: ["SBHF Selftest überspringen (SIM)"]
+    },
+    "STARTUP_M2_SKIP_BTN_OFF": {
+        level: "INFO",
+        color: "blue",
+        icon: "info",
+        overlay: true,
+        ackRequired: false,
+        title: "",
+        text: ["SBHF Selftest-Step wieder aktivieren (SIM)"]
+    },
+    "STARTUP_SIM_HINT": {
+        level: "INFO",
+        color: "blue",
+        icon: "info",
+        overlay: true,
+        ackRequired: false,
+        title: "",
+        text: ["SIM: Ohne Hardware kannst du den SBHF-Selftest-Step überspringen."]
+    },
     "STARTUP_M1_TITLE": { level:"INFO", color:"blue", icon:"info", overlay:true, ackRequired:false, title:"", text:["Weichen Selftest (Mega1)"] },
     "STARTUP_M1_RETRY_BTN": {
         level: "INFO",

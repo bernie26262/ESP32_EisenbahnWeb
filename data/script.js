@@ -952,8 +952,10 @@ function showOverlay(title, lines, requireChecked, options = {}) {
             <div style="flex:1;">
               <div style="font-weight:700;">${escapeHtml(_uiText0("STARTUP_M2_TITLE", "SBHF-Weichen Selftest (Mega2)"))}</div>
               <div id="st-m2-state" style="opacity:.85; margin-top:2px;">${escapeHtml(_uiText0("STARTUP_STATE_OPEN", "offen"))}</div>
+              <div id="st-sim-hint" style="opacity:.75; margin-top:6px; display:none;"></div>
               <div style="margin-top:8px;">
                 <button id="st-m2-btn" class="btn-mini" type="button">${escapeHtml(_uiText0("STARTUP_M2_BTN", "SBHF Selftest starten"))}</button>
+                <button id="st-m2-skip-btn" class="btn-mini" type="button" style="margin-left:8px; display:none;"></button>
               </div>
             </div>
           </div>
@@ -984,7 +986,17 @@ function showOverlay(title, lines, requireChecked, options = {}) {
           sendSbhfSelftestRetry();
         });
       }
-      
+
+      const m2skip = document.getElementById("st-m2-skip-btn");
+      if (m2skip) {
+        m2skip.addEventListener("click", () => {
+          const cur = !!window.lastStateMsg?.sim?.bypassSbhfSelftest;
+          const en = !cur; // toggle
+          logLine(` SIM: SBHF Selftest-Step ${en ? "überspringen" : "wieder aktivieren"} ...`);
+          wsSend({ action: "setBypassSbhfSelftest", enable: en });
+        });
+      }
+              
       const m1btn = document.getElementById("st-m1-btn");
       if (m1btn) {
         m1btn.addEventListener("click", () => {
@@ -999,9 +1011,13 @@ function showOverlay(title, lines, requireChecked, options = {}) {
 
    // Update state (from latest WS message)
     const startup = window.lastStateMsg?.startup;
+    const simNoHw = !!window.lastStateMsg?.sim?.noHwBuild;
+    const simBypass = !!window.lastStateMsg?.sim?.bypassSbhfSelftest;
     const m2Needs = !!startup?.m2Needs;
     const m1Needs = !!startup?.m1Needs;
     const selftestRunning = !!window.lastStateMsg?.mega2?.sbhf?.selftestRunning;
+
+
     // Mega1 Selftest running (optional; may not exist yet)
     const m1SelftestRunning = !!window.lastStateMsg?.mega1?.diag?.selftestRunning;
     // Step-done markers (stay within the startup overlay until user ACKs).
@@ -1015,6 +1031,8 @@ function showOverlay(title, lines, requireChecked, options = {}) {
     const m2box = document.getElementById("st-m2-box");
     const m2state = document.getElementById("st-m2-state");
     const m2btn = document.getElementById("st-m2-btn");
+    const m2skip = document.getElementById("st-m2-skip-btn");
+    const simHint = document.getElementById("st-sim-hint");
 
     if (m2box)   m2box.textContent = (m2Done ? "✅" : "⬜");
     if (m2state) {
@@ -1061,6 +1079,29 @@ function showOverlay(title, lines, requireChecked, options = {}) {
       (m2Done === false) &&
       (selftestRunning === false);
     if (m2btn) m2btn.disabled = !canStartM2;
+
+    // SIM-only: allow bypassing SBHF selftest step (toggle)
+    if (simHint) {
+      if (simNoHw) {
+        simHint.style.display = "";
+        simHint.textContent = _uiText0("STARTUP_SIM_HINT", "SIM: SBHF-Selftest-Step kann übersprungen werden.");
+      } else {
+        simHint.style.display = "none";
+      }
+    }
+
+    if (m2skip) {
+      if (simNoHw) {
+        m2skip.style.display = "";
+        // While the real selftest is running, do not allow toggling (keeps UI consistent)
+        m2skip.disabled = !(wsConnected === true) || selftestRunning;
+        const key = simBypass ? "STARTUP_M2_SKIP_BTN_OFF" : "STARTUP_M2_SKIP_BTN_ON";
+        const fallback = simBypass ? "SBHF Selftest-Step wieder aktivieren (SIM)" : "SBHF Selftest überspringen (SIM)";
+        m2skip.textContent = _uiText0(key, fallback);
+      } else {
+        m2skip.style.display = "none";
+      }
+    }
 
     const m1box = document.getElementById("st-m1-box");
     const m1state = document.getElementById("st-m1-state");
