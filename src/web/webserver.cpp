@@ -89,6 +89,10 @@ static String buildWsStateJson()
     m1st["size"]  = m1s.size;
     m1st["node"]  = m1s.nodeId;
     m1st["flags"] = m1s.flags;
+    m1st["reserved"] = m1s.reserved;
+
+    // Mega1 warning mask (normativ): low byte of SystemStatus.reserved
+    doc["mega1"]["warningMask"] = (uint8_t)(m1s.reserved & 0xFFu);
 
     // Optional: rxAge als Debug (wenn du s_lastRxMsM1 nicht exposen willst, dann erstmal weglassen)
     // m1st["rxAgeMs"] = SystemRuntimeState::mega1RxAgeMs();

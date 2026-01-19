@@ -6,6 +6,9 @@ const DEBUG_WS = true;
 const DEBUG_UI = false;
 
 
+// SystemStatus.flags bits (include/system/system_status_payload.h)
+// Keep in sync with firmware. Used ONLY for UI level/badges.
+const SYS_WARNING_PRESENT = 0x10;
 
 // Wenn du nach einem Firmware-Flash "alte" Buttons siehst:
 // -> unbedingt auch "Upload File System Image" (UploadFS) ausfuehren.
@@ -600,6 +603,17 @@ function getUiStateFromWs(msg, safety, mega2online) {
     }
   }
 
+  
+  // Mega1 warnings: "wie Mega2" -> Mega1 entscheidet selbst und setzt SYS_WARNING_PRESENT.
+  // ESP/WebUI zeigt nur an (keine Interpretation aus selftestFailMask als Level-Quelle).
+  const m1online = !!(msg?.mega1?.online);
+  const m1Flags  = Number(msg?.mega1?.status?.flags ?? 0) & 0xff;
+  if (m1online && ((m1Flags & SYS_WARNING_PRESENT) !== 0)) {
+    hasWarn = true;
+    level = "WARN";
+    text = [" Warning aktiv"];
+  }
+
   return { level, text, title, overlay, ackRequired, overlayMode, hasWarn };
 }
 
@@ -650,12 +664,20 @@ if (bWs) {
   bWs.textContent = "WS: " + (wsOk ? "verbunden" : "getrennt");
 }
 if (bM2) {
-  bM2.className = "badge " + (mega2online ? "badge-ok" : "badge-err");
-  bM2.textContent = "Mega2: " + (mega2online ? "online" : "offline");
+  const m2WarnMask = Number(msg?.mega2?.warningMask ?? 0) & 0xff;
+  const m2Restricted = !!(msg?.mega2?.sbhf?.restricted);
+  const m2WarnPresent = mega2online && ((m2WarnMask !== 0) || m2Restricted);
+
+  bM2.className = "badge " + (!mega2online ? "badge-err" : (m2WarnPresent ? "badge-warn" : "badge-ok"));
+  bM2.textContent = "Mega2: " + (mega2online ? (m2WarnPresent ? "online, warn" : "online") : "offline");
 }
 if (bM1) {
-  bM1.className = "badge " + (mega1online ? "badge-ok" : "badge-err");
-  bM1.textContent = "Mega1: " + (mega1online ? "online" : "offline");
+  const m1WarnMask = Number(msg?.mega1?.warningMask ?? 0) & 0xff;
+  const m1Flags = Number(msg?.mega1?.status?.flags ?? 0) & 0xffff;
+  const m1WarnPresent = mega1online && ((m1WarnMask !== 0) || ((m1Flags & SYS_WARNING_PRESENT) !== 0));
+
+  bM1.className = "badge " + (!mega1online ? "badge-err" : (m1WarnPresent ? "badge-warn" : "badge-ok"));
+  bM1.textContent = "Mega1: " + (mega1online ? (m1WarnPresent ? "online, warn" : "online") : "offline");
 }
 if (bMode) {
   const modeRaw = msg?.mega1?.diag?.mode;
@@ -1490,18 +1512,31 @@ function renderPowerWarningsEmergencies(msg) {
     if (warn & WARN_SBH_SERVICE_REQUIRED) pushUiText("WARN_SBH_SERVICE_REQUIRED", undefined, "!");
   }
 
-    // 2b) Mega1 Weichen-Selbsttest (Diagnoseliste)
+    // 2b) Mega1 Warnings / Weichen-Selbsttest (Diagnoseliste)
   const m1 = msg && msg.mega1;
   if (m1 && m1.online && m1.diag) {
-    const fm = Number(m1.diag.selftestFailMask || 0) & 0x0fff;
-    if (fm !== 0) {
-      const names = [];
-      for (let i = 0; i < 12; i++) {
-        if (fm & (1 << i)) names.push(`W${i+1}`);
+    
+    const m1WarnMask = Number(m1.warningMask ?? 0) & 0xff;
+
+    // Bit 0: WARN_WEICHEN_NO_SWITCH (canonical)
+    if (m1WarnMask & 0x01) {
+      pushUiText("WARN_WEICHEN_NO_SWITCH", undefined, "!");
+
+      // Details: defekte Weichen aus selftestFailMask (nur Anzeige, keine Entscheidung)
+      const fm = Number(m1.diag.selftestFailMask || 0) & 0x0fff;
+      if (fm !== 0) {
+        const names = [];
+        for (let i = 0; i < 12; i++) {
+          if (fm & (1 << i)) names.push(`W${i+1}`);
+        }
+        const listTxt = names.length ? names.join(", ") : "-";
+        pushUiText("WARN_M1_TURNOUTS_DEFECT_LIST", listTxt, "!");
       }
-      const listTxt = names.length ? names.join(", ") : "-";
-      pushUiText("WARN_M1_TURNOUTS_DEFECT_LIST", listTxt, "!");
+      
     }
+    
+    // Bit 1: WARN_BAHNHOF_DURCHFAHRT (reserved / TODO)
+    // if (m1WarnMask & 0x02) pushUiText("WARN_BAHNHOF_DURCHFAHRT", undefined, "!");
   }
 
 

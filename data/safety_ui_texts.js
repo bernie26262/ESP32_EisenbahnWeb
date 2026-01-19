@@ -232,6 +232,26 @@ window.safetyUiMap = {
     },
 
 
+    // ------------------------------------------------------------
+    // Mega1 Warning: Bahnhofsdurchfahrt trotz abgeschaltetem Stromgleis
+    // Canonical key (new):
+    // ------------------------------------------------------------
+    "WARN_BAHNHOF_DURCHFAHRT": {
+        level: "WARNING",
+        color: "yellow",
+        icon: "warning",
+        overlay: false,
+        ackRequired: false,
+        title: "Warnung",
+        text: [
+            "Bahnhofsdurchfahrt erkannt.",
+            "",
+            "Ein Zug ist über ein abgeschaltetes Bahnhofsgleis hinweg gefahren.",
+            "Bitte Ursache prüfen (Fremdeinspeisung/Verdrahtung)."
+        ]
+    },
+
+    // Deprecated (kept for backward compatibility; use WARN_BAHNHOF_DURCHFAHRT)
     "WARN_BAHNHOFSDURCHFAHRT": {
         level: "WARNING",
         color: "yellow",
@@ -243,7 +263,7 @@ window.safetyUiMap = {
             "Bahnhofsdurchfahrt erkannt.",
             "",
             "Ein Zug ist über ein abgeschaltetes Bahnhofsgleis hinweg gefahren.",
-            "Bitte langsamer fahren."
+            "Bitte Ursache prüfen (Fremdeinspeisung/Verdrahtung)."
         ]
     },
 
@@ -286,6 +306,35 @@ window.safetyUiMap = {
     // ------------------------------------------------------------
     // Mega1 Weichen-Selbsttest (rechte Meldungsliste)
     // ------------------------------------------------------------
+    // Canonical Mega1 warning: Weichen schalten nicht (Soll != Ist nach Timeout)
+    // Use this key in documentation / future UI messages.
+    "WARN_WEICHEN_NO_SWITCH": {
+        level: "WARNING",
+        color: "yellow",
+        icon: "warning",
+        overlay: false,
+        ackRequired: false,
+        title: "Mega1",
+        text: [
+            "Eine oder mehrere Weichen schalten nicht in die Sollstellung.",
+            "Details: Defekte Weichen siehe Liste."
+        ]
+    },
+
+    // Deprecated (kept for backward compatibility; use WARN_WEICHEN_NO_SWITCH)
+    "WARN_WEICHEN_SLOW": {
+        level: "WARNING",
+        color: "yellow",
+        icon: "warning",
+        overlay: false,
+        ackRequired: false,
+        title: "Mega1",
+        text: [
+            "Eine oder mehrere Weichen schalten nicht in die Sollstellung.",
+            "Details: Defekte Weichen siehe Liste."
+        ]
+    },
+
     "WARN_M1_TURNOUTS_DEFECT_LIST": {
         level: "WARNING",
         color: "yellow",
