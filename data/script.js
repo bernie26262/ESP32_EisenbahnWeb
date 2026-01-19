@@ -224,10 +224,38 @@ let lastStateMsg = null;
 // ------------------------------------------------------------
 let uiPrevSbhfSelftestRunning = null;
 let uiSbhfSelftestPowerHintShown = false;
+let uiPrevM1SelftestRunning = null;
+let uiM1SelftestPowerHintShown = false;
 let uiTransientInfoText = null;
 let uiTransientInfoUntil = 0;
 
-
+ 
+ // Overlay spinner helper (do not recreate DOM on every WS tick)
+ function ensureOverlaySpinner(textEl) {
+   if (!textEl) return;
+   if (textEl.__spinnerInstalled) return;
+   textEl.__spinnerInstalled = true;
+ 
+   const wrap = document.createElement("div");
+   wrap.className = "ui-info-wait-wrap";
+ 
+   const sp = document.createElement("span");
+   sp.className = "ui-spinner";
+   sp.setAttribute("aria-hidden", "true");
+   // Fallback if CSS is missing:
+   sp.textContent = "⏳";
+ 
+   const cont = document.createElement("div");
+   cont.className = "ui-info-lines";
+ 
+   // Move current content into cont
+   cont.innerHTML = textEl.innerHTML;
+   textEl.innerHTML = "";
+ 
+   wrap.appendChild(sp);
+   wrap.appendChild(cont);
+   textEl.appendChild(wrap);
+ }
 
 
 // Normalize WS state for backwards compatibility.
@@ -363,9 +391,16 @@ function sendSbhfSelftestRetry() {
 function sendM1SelftestRetry() {
   // Always log locally so we can see whether the click happened at all.
   logLine(" Mega1 Selftest start/retry (WS action) ...");
+
+  // Komfort/UX: wie bei Mega2 -> vor Selftest Power ausschalten.
+  // (Power muss nach dem Test manuell wieder eingeschaltet werden.)
+  const okP = wsSend({ action: "powerOff" });
+  if (okP) logLine(" Power OFF (vor Mega1 Selftest)");
   const ok = wsSend({ action: "m1SelftestStart" });
   if (ok) logLine(" Mega1 Selftest-Retry gesendet");
   else    logLine(" Mega1 Selftest-Retry NICHT gesendet (WS down?)");
+  
+  // Hinweis: "Power bleibt aus" wird nach Testende (falling edge) transient angezeigt.
 }
 
 
@@ -479,6 +514,40 @@ try {
     console.warn("[UI] selftest power-off hint failed:", e);
   }
 
+// ------------------------------------------------------------
+// One-shot UI hint after Mega1 selftest finished (power remains OFF)
+// ------------------------------------------------------------
+try {
+  const m1run = !!msg?.mega1?.diag?.selftestRunning;
+  const safety = msg?.safety;
+
+  // re-arm for next run
+  if (uiPrevM1SelftestRunning === false && m1run === true) {
+    uiM1SelftestPowerHintShown = false;
+  }
+
+  // detect falling edge: true -> false
+  if (
+    uiPrevM1SelftestRunning === true &&
+    m1run === false &&
+    safety?.powerOn === false &&
+    uiM1SelftestPowerHintShown === false
+  ) {
+    const t = window.SAFETY_UI_TEXTS?.fromKey?.("INFO_M1_SELFTEST_POWER_STAYS_OFF");
+    const line = (t?.lines && t.lines.length) ? String(t.lines[0]) : null;
+    if (line) {
+      uiTransientInfoText = line;
+      uiTransientInfoUntil = Date.now() + 12000;
+    }
+    uiM1SelftestPowerHintShown = true;
+  }
+
+  uiPrevM1SelftestRunning = m1run;
+} catch (e) {
+  console.warn("[UI] M1 selftest power-off hint failed:", e);
+}
+
+
    // Schritt 2: rechts "Meldungen" befuellen (Safety + SBHF Masken)
    renderPowerWarningsEmergencies(msg);
 
@@ -541,6 +610,20 @@ function getUiStateFromWs(msg, safety, mega2online) {
     text = [" Mega2 offline"];
     return { level, text, title, overlay, ackRequired, overlayMode, hasWarn };
   }
+
+  // --- Mega1 Selftest Overlay (WS-driven, analog zu SBHF) ---
+  const m1SelftestRunning = !!(msg?.mega1?.diag?.selftestRunning);
+  if (m1SelftestRunning && !inStartup) {
+    level = "WARN";
+    overlay = true;
+    ackRequired = false;
+    const t = window.SAFETY_UI_TEXTS?.fromKey?.("INFO_M1_SELFTEST_RUNNING");
+    title = t?.title || "Mega1 Weichentest läuft";
+    text  = t?.lines || ["Bitte warten …"];
+    overlayMode = "info";
+    return { level, text, title, overlay, ackRequired, overlayMode, hasWarn };
+  }
+
   // --- SBHF Selftest Overlay (WS-driven, independent of safety.lock) ---
   const selftestRunning = !!(msg?.mega2?.sbhf?.selftestRunning);
   // IMPORTANT: while startup checklist is active, do NOT switch away to a separate overlay.
@@ -1096,6 +1179,8 @@ function showOverlay(title, lines, requireChecked, options = {}) {
             const spinner = document.createElement("span");
             spinner.className = "ui-spinner";
             spinner.setAttribute("aria-hidden", "true");
+            // Fallback: if CSS spinner is missing, show an hourglass
+            spinner.textContent = "⏳";
 
             const text = document.createElement("span");
             text.id = "st-m2-text";
@@ -1158,9 +1243,37 @@ function showOverlay(title, lines, requireChecked, options = {}) {
     const m1state = document.getElementById("st-m1-state");
     if (m1box)   m1box.textContent = (m1Done ? "✅" : "⬜");
     if (m1state) {
-      if (!m1Needs) m1state.textContent = _uiText0("STARTUP_STATE_NOT_REQUIRED", "nicht erforderlich");
-      else if (m1Done) m1state.textContent = _uiText0("STARTUP_STATE_DONE", "erledigt");
-      else m1state.textContent = _uiText0("STARTUP_STATE_OPEN", "offen");
+      if (!m1Needs) {
+        m1state.textContent = _uiText0("STARTUP_STATE_NOT_REQUIRED", "nicht erforderlich");
+        delete m1state.dataset.spinner;
+      }
+      else if (m1Done) {
+        m1state.textContent = _uiText0("STARTUP_STATE_DONE", "erledigt");
+        delete m1state.dataset.spinner;
+      }
+      else if (m1SelftestRunning) {
+        // Spinner nur EINMAL erzeugen → Animation bleibt stabil
+        if (!m1state.dataset.spinner) {
+          m1state.textContent = "";
+          const spinner = document.createElement("span");
+          spinner.className = "ui-spinner";
+          spinner.setAttribute("aria-hidden", "true");
+          // Fallback: if CSS spinner is missing, show an hourglass
+          spinner.textContent = "⏳";
+          const textEl = document.createElement("span");
+          textEl.id = "st-m1-text";
+          m1state.appendChild(spinner);
+          m1state.appendChild(textEl);
+          m1state.dataset.spinner = "1";
+        }
+        const txt = _uiFmt0("STARTUP_STATE_RUNNING", "", "läuft…{x}").trim();
+        const textNode = m1state.querySelector("#st-m1-text");
+        if (textNode) textNode.textContent = txt;
+      }
+      else {
+        m1state.textContent = _uiText0("STARTUP_STATE_OPEN", "offen");
+        delete m1state.dataset.spinner;
+      }
     }
 
     // Enable rule for Mega1 Selftest button:
@@ -1227,6 +1340,23 @@ function showOverlay(title, lines, requireChecked, options = {}) {
   if (mode === "info") {
     // Spinner: nur per CSS-Klasse, damit die Animation nicht bei jedem Render neu startet
     overlay.classList.add("is-info-wait");
+ 
+     // Ensure a visible spinner inside the overlay text area (stable, no churn)
+     // We only wrap once; subsequent renders update only the innerHTML of the lines container.
+     try {
+       // If already wrapped, update inner lines container only
+       const linesCont = textEl?.querySelector?.(".ui-info-lines");
+       if (linesCont) {
+         linesCont.innerHTML = safeLines.join("<br>");
+       } else {
+         // first time in info mode -> wrap with spinner
+         textEl.innerHTML = safeLines.join("<br>");
+         ensureOverlaySpinner(textEl);
+       }
+     } catch (_) {
+       // fallback
+       textEl.innerHTML = safeLines.join("<br>");
+     }
 
     // Alles an Interaktion ausblenden
     if (ackBtn) ackBtn.style.display = "none";
@@ -1323,6 +1453,12 @@ function confirmAck() {
       else     logLine(" Startup: Mega2 Checklist NICHT quittiert (WS down?)");
     }
   }
+
+  // Komfort: Nach Abschluss der Startup-Checkliste automatisch auf Automatik schalten
+  if (inStartupChecklist && window.lastStateMsg?.mega1?.online === true) {
+    wsSend({ action: "m1SetMode", mode: 1 });
+  }
+
 
   // Safety ACK (may still be needed even after checklist is done)
   const ok = wsSend({ action: "safetyAck" });

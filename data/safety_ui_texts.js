@@ -16,6 +16,21 @@ window.safetyUiMap = {
             "Safety aktiv – Bedienung gesperrt."
         ]
     },
+ 
+     // ------------------------------------------------------------
+     // Startup-Checklist: Haupt-Overlay Text
+     // ------------------------------------------------------------
+     "INFO_STARTUP_CHECKLIST": {
+         level: "INFO",
+         color: "blue",
+         icon: "info",
+         overlay: true,
+         ackRequired: false,
+         title: "Systemstart – Checkliste",
+         text: [
+             "Bitte die folgenden Punkte abarbeiten, bevor Power eingeschaltet werden kann."
+         ]
+     },
 
     // ------------------------------------------------------------
     // Startup-Checklist: Abschluss / ACK innerhalb der Checklist
@@ -150,6 +165,32 @@ window.safetyUiMap = {
       "Selftest beendet – Power bleibt aus, bitte manuell einschalten."
     ]
   },
+  
+  "INFO_M1_SELFTEST_RUNNING": {
+    level: "INFO",
+    color: "blue",
+    icon: "info",
+    overlay: true,
+    ackRequired: false,
+    title: "Mega1 Weichentest läuft",
+    text: [
+      "Bitte warten …",
+      "Der Selbsttest läuft im Hintergrund",
+      "und wird automatisch abgeschlossen."
+    ]
+  },
+
+  "INFO_M1_SELFTEST_POWER_STAYS_OFF": {
+    level: "INFO",
+    color: "blue",
+    icon: "info",
+    overlay: false,
+    ackRequired: false,
+    title: "Mega1",
+    text: [
+      "Selftest beendet – Power bleibt aus, bitte manuell einschalten."
+    ]
+  },
 
     "EMERG_ESTOP_CHAIN_OPEN": {
         level: "EMERGENCY",
@@ -236,6 +277,23 @@ window.safetyUiMap = {
     // Mega1 Warning: Bahnhofsdurchfahrt trotz abgeschaltetem Stromgleis
     // Canonical key (new):
     // ------------------------------------------------------------
+
+    "WARN_BAHNHOFSDURCHFAHRT": {
+         level: "WARNING",
+         color: "yellow",
+         icon: "warning",
+         overlay: false,
+         ackRequired: false,
+         title: "Warnung",
+         text: [
+             "Bahnhofsdurchfahrt erkannt.",
+             "",
+             "Ein Zug ist über ein abgeschaltetes Bahnhofsgleis hinweg gefahren.",
+             "Bitte langsamer fahren."
+         ]
+     },
+
+
     "WARN_BAHNHOF_DURCHFAHRT": {
         level: "WARNING",
         color: "yellow",
@@ -316,7 +374,7 @@ window.safetyUiMap = {
         ackRequired: false,
         title: "Mega1",
         text: [
-            "Eine oder mehrere Weichen schalten nicht in die Sollstellung.",
+            "Mega1: Eine oder mehrere Weichen schalten nicht in die Sollstellung.",
             "Details: Defekte Weichen siehe Liste."
         ]
     },
