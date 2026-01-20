@@ -550,9 +550,9 @@ try {
 
    // Schritt 2: rechts "Meldungen" befuellen (Safety + SBHF Masken)
    renderPowerWarningsEmergencies(msg);
-
-  // Schritt 2: rechts "Meldungen" befuellen (Safety + SBHF Masken)
-  renderPowerWarningsEmergencies(msg);
+ 
+   // Right-side Trafo section
+   try { renderTrafoRight(msg); } catch (e) { console.warn('[UI] renderTrafoRight failed:', e); }
 
   // Schritt 3.5: links Betriebsuebersicht (SBHF/Bloecke/Weichen) + FROM->TO Signale
   renderOverviewLeft(msg);
@@ -576,6 +576,16 @@ function getSafetyOverlayTexts(safety) {
   } catch (e) {
     console.warn('SAFETY_UI_TEXTS error', e);
   }
+  
+  // If Mega2 reports blockReason==2 (NOTAUS), always present it as "Not-Aus"
+  // even if no numeric errType was provided (keeps UI unambiguous).
+  const br = Number(safety?.blockReason ?? safety?.block_reason);
+  if (br === 2) {
+    const t2 = window.SAFETY_UI_TEXTS?.fromKey?.("EMERG_ESTOP_CHAIN_OPEN");
+    if (t2) return { title: t2.title || "NOT-AUS – Anlage gestoppt", lines: t2.lines || [] };
+    return { title: "NOT-AUS – Anlage gestoppt", lines: ["Der Not-Aus wurde ausgelöst.", "Bitte Ursache prüfen und anschließend ACK."] };
+  }
+
   
   // Fallback ONLY via safety_ui_texts.js (no hardcoded strings here)
   const fb = window.SAFETY_UI_TEXTS?.fromKey?.("GENERIC_SAFETY_ACTIVE");
@@ -1748,6 +1758,24 @@ function bit(mask, i) {
   return ((mask >>> i) & 1) !== 0;
 }
 
+function renderTrafoRight(msg) {
+   const aEl = document.getElementById("trafo-a");
+   const bEl = document.getElementById("trafo-b");
+   if (!aEl && !bEl) return;
+ 
+   const an = msg?.mega2?.analog;
+ 
+   const fmtV = (v10) => {
+     const n = Number(v10);
+     if (!Number.isFinite(n)) return "– V";
+     if (n === 0xFFFF) return "– V";
+     return (n / 10).toFixed(1) + " V";
+   };
+ 
+   if (aEl) aEl.textContent = "Trafo A: " + (an && an.vA10 !== undefined ? fmtV(an.vA10) : "– V");
+   if (bEl) bEl.textContent = "Trafo B: " + (an && an.vB10 !== undefined ? fmtV(an.vB10) : "– V");
+ }
+ 
 function renderOverviewLeft(msg) {
   renderSbhfLeft(msg);
   renderTurnoutsLeft(msg);
@@ -2084,6 +2112,14 @@ function renderBlocksLeft(msg) {
   let html = `<div><b>Belegung:</b></div><div class="badge-wrap">`;
   for (let i = 0; i < 9; i++) {
     const occ = bit(occMask, i);
+    const iArr = msg?.mega2?.analog?.i_mA;
+    let iTxt = "";
+    if (Array.isArray(iArr) && iArr.length >= 9) {
+      const mA = Number(iArr[i]);
+      if (Number.isFinite(mA) && mA !== 0xFFFF) {
+        iTxt = ` (I=${Math.round(mA)} mA)`;
+      }
+    }
     html += `<span class="badge ${occ ? "badge-err" : "badge-ok"}">B${i + 1} ${occ ? "belegt" : "frei"}</span>`;
   }
   html += `</div>`;

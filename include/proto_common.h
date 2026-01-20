@@ -24,7 +24,8 @@ enum : uint8_t
     M2_CMD_GET_BLOCK_STATUS   = 0x21, // -> BlockStatus[M2_NUM_BLOCKS]
     M2_CMD_GET_SHADOW_STATUS  = 0x22, // -> ShadowYardStatus
     M2_CMD_GET_ENTRY_MATRIX  = 0x23, // -> uint16_t[9] (AllowedNow: FROM->TO)
-    M2_CMD_GET_ENTRY_PREVIEW_MATRIX = 0x24  // -> uint16_t[9] (Preview: FROM->TO)
+    M2_CMD_GET_ENTRY_PREVIEW_MATRIX = 0x24,  // -> uint16_t[9] (Preview: FROM->TO)
+    M2_CMD_GET_ANALOG = 0x25  // -> Mega2AnalogPayload
 };
 
 // =====================================================
@@ -46,7 +47,12 @@ enum SafetyBlockReason : uint8_t
 {
     SAFETY_BLOCK_NONE      = 0,
     SAFETY_BLOCK_BOOT      = 1,
-    SAFETY_BLOCK_EMERGENCY = 2
+    // 2 war historisch "EMERGENCY". Heute ist der präzise Grund: NOTAUS.
+    SAFETY_BLOCK_NOTAUS    = 2,
+    SAFETY_BLOCK_EMERGENCY = SAFETY_BLOCK_NOTAUS, // Alias nur für Kompatibilität
+
+    SAFETY_BLOCK_SHORT     = 3,
+    SAFETY_BLOCK_SSR_STUCK = 4
 };
 
 struct Mega2SafetyStatus
@@ -96,11 +102,28 @@ struct ShadowYardStatus
     uint8_t state;              // interner Automat (nur Anzeige)
 };
 
+// =====================================================
+// Mega2 Analog Payload (I2C) – fixed point
+// =====================================================
+
+struct __attribute__((packed)) Mega2AnalogPayload
+{
+    uint8_t  seq;
+    uint8_t  flags;      // bit0: currents-from-raw, bit1: voltages invalid
+    uint16_t vA10;       // Trafo A voltage *10 (0.1V) or 0xFFFF
+    uint16_t vB10;       // Trafo B voltage *10 (0.1V) or 0xFFFF
+    uint16_t i_mA[M2_NUM_BLOCKS];
+};
+
+static_assert(sizeof(Mega2AnalogPayload) == 24, "Mega2AnalogPayload size");
+
+
 enum Mega2Command : uint8_t {
     CMD_GET_M2_SAFETY = 0x20,
     CMD_GET_M2_BLOCKS = 0x21,
     CMD_GET_M2_SBH    = 0x22,
     CMD_GET_M2_ENTRY  = 0x23,
     CMD_GET_M2_ENTRY_PREVIEW = 0x24,
+    CMD_GET_M2_ANALOG = 0x25,
 };
 

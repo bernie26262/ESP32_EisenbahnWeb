@@ -4,6 +4,7 @@
 #include "system/system_status_payload.h"
 #include "system/mega1_diag_payload.h"
 #include "proto_common.h"   // Mega2SafetyStatus
+ 
 
 // =====================================================
 // Safety-Grund (Diagnose, keine Logik!)
@@ -96,6 +97,11 @@ namespace SystemRuntimeState
     void updateMega2EntryAllowed(const uint16_t* arr, uint8_t n);
     
     const uint16_t* mega2EntryPreview();
-    void updateMega2EntryPreview(const uint16_t* arr, uint8_t n);
-
+    void updateMega2EntryPreview(const uint16_t* arr, uint8_t n); 
+     // ----------------------------------------------------
+     // Mega2 Analog (Trafo + Blockströme)
+     // ----------------------------------------------------
+     void updateMega2Analog(const Mega2AnalogPayload& p);
+     const Mega2AnalogPayload& mega2Analog();
+     uint32_t mega2AnalogAgeMs();
 }

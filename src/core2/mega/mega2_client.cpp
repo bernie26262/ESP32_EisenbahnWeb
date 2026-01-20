@@ -9,8 +9,16 @@
 #include "system/system_status_payload.h"
 
 #include "debug.h"
+ 
+
 
 static constexpr uint8_t MEGA2_ADDR = 0x11;
+
+// ------------------------------------------------------------
+// Mega2 Analog cache / rate-limit
+// ------------------------------------------------------------
+static Mega2AnalogPayload s_m2Analog{};
+static uint32_t s_m2AnalogMs = 0;
 
 
 static I2CBus::Result writeReadRetry(uint8_t addr,
@@ -49,6 +57,33 @@ void Mega2Client::begin()
 {
     // aktuell nichts nötig
 }
+ 
+ 
+ bool Mega2Client::pollAnalog()
+ {
+     // rate-limit (~500ms)
+     const uint32_t now = millis();
+     if ((uint32_t)(now - s_m2AnalogMs) < 500)
+         return true;
+ 
+     const uint8_t cmd = CMD_GET_M2_ANALOG; // ESP nutzt CMD_GET_M2_*
+     Mega2AnalogPayload p{};
+ 
+     const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), &p, sizeof(p), 2000);
+     if (r != I2CBus::Result::OK)
+         return false;
+ 
+     s_m2Analog = p;
+     s_m2AnalogMs = now;
+ 
+     SystemRuntimeState::updateMega2Analog(p);
+     return true;
+ }
+ 
+ const Mega2AnalogPayload& Mega2Client::analog()
+ {
+     return s_m2Analog;
+ }
 
 I2CBus::Result Mega2Client::pollStatus()
 {
@@ -90,10 +125,15 @@ I2CBus::Result Mega2Client::pollStatus()
     }
 
     SystemRuntimeState::updateMega2Status(tmpStatus);
+
+    // Optional: Analogwerte (rate-limited internally)
+    Mega2Client::pollAnalog();
+ 
     return I2CBus::Result::OK;
 }
 
-bool Mega2Client::pollSafetyStatus()
+
+ bool Mega2Client::pollSafetyStatus()
 {
     const uint8_t cmd = M2_CMD_GET_SAFETY_STATUS;
 

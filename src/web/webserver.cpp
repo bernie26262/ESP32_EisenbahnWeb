@@ -185,6 +185,17 @@ static String buildWsStateJson()
         // Blocks (UI expects an object)
         JsonObject b = doc["mega2"]["blocks"].to<JsonObject>();
         b["occupiedMask"] = m2s.blockOccupiedMask;
+         
+        // Mega2 Analog (Trafo + Blockströme), falls vorhanden
+        const auto& an = SystemRuntimeState::mega2Analog();
+        JsonObject a = doc["mega2"]["analog"].to<JsonObject>();
+        a["seq"] = an.seq;
+        a["flags"] = an.flags;
+        a["vA10"] = an.vA10;
+        a["vB10"] = an.vB10;
+        JsonArray ia = a["i_mA"].to<JsonArray>();
+        for (uint8_t i = 0; i < M2_NUM_BLOCKS; i++)
+            ia.add(an.i_mA[i]);
 
         // Step 3.5: Entry-Matrix (FROM->TO)
         JsonArray entry = doc["mega2"]["entryAllowed"].to<JsonArray>();

@@ -8,6 +8,8 @@
 // Interner Zustand
 // ----------------------------------------------------
 static SystemStatus s_m2Status{};
+static Mega2AnalogPayload s_m2Analog{};
+static uint32_t s_m2AnalogTsMs = 0;
 
 static SystemStatus s_m1Status{};
 static Mega1DiagV1 s_m1Diag{};
@@ -479,3 +481,21 @@ void SystemRuntimeState::updateMega2EntryPreview(const uint16_t* arr, uint8_t n)
     s_lastEntryRxMs = millis();
     g_stateDirty = true;
 }
+ 
+ void SystemRuntimeState::updateMega2Analog(const Mega2AnalogPayload& p)
+ {
+     s_m2Analog = p;
+     s_m2AnalogTsMs = millis();
+     g_stateDirty = true;
+ }
+ 
+ const Mega2AnalogPayload& SystemRuntimeState::mega2Analog()
+ {
+     return s_m2Analog;
+ }
+ 
+ uint32_t SystemRuntimeState::mega2AnalogAgeMs()
+ {
+     if (s_m2AnalogTsMs == 0) return 0xFFFFFFFFu;
+     return (uint32_t)(millis() - s_m2AnalogTsMs);
+ }

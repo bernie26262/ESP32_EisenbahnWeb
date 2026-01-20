@@ -4,6 +4,7 @@
 
 #include "../bus/i2c_bus.h"
 #include "system/system_status_payload.h"
+#include "proto_common.h" // Mega2AnalogPayload + CMD_GET_M2_ANALOG
 
 namespace Mega2Client
 {
@@ -15,6 +16,10 @@ namespace Mega2Client
 
     bool pollEntryMatrix();
     bool pollEntryPreviewMatrix();
+     
+     // Analogwerte (Trafo + Blockströme)
+     bool pollAnalog();
+     const Mega2AnalogPayload& analog();
 
     bool safetyAck();
     bool sbhfSelftestRetry();
