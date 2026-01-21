@@ -217,7 +217,11 @@ let lastMega2Online = false;
 
 // letzter kompletter WS-State (fuer Button/Disable-Regeln)
 let lastStateMsg = null;
-
+// ------------------------------------------------------------
+// Startup session tracking (avoid "startup checklist" overlay on selftest retry)
+// ------------------------------------------------------------
+let g_startupSessionActive = false;
+let g_lastM1BootId = undefined, g_lastM2BootId = undefined;
 // ------------------------------------------------------------
 // UI one-shot hint: SBHF selftest finished, power remains OFF
 // (shown in right message list for a short time)
@@ -242,8 +246,26 @@ let uiTransientInfoUntil = 0;
    const sp = document.createElement("span");
    sp.className = "ui-spinner";
    sp.setAttribute("aria-hidden", "true");
-   // Fallback if CSS is missing:
-   sp.textContent = "⏳";
+   // Inject spinner CSS once (so we don't show the hourglass fallback)
+   if (!document.getElementById("ui-spinner-css")) {
+     const st = document.createElement("style");
+     st.id = "ui-spinner-css";
+     st.textContent = `
+       .ui-spinner{
+         display:inline-block;
+         width:1.05em;height:1.05em;
+         border:0.18em solid rgba(0,0,0,.25);
+         border-top-color: rgba(0,0,0,.65);
+         border-radius:999px;
+         animation: uiSpin .8s linear infinite;
+         vertical-align:-0.15em;
+         margin-right:0.45em;
+       }
+       @keyframes uiSpin { to { transform: rotate(360deg); } }
+     `;
+     document.head.appendChild(st);
+   }
+   sp.textContent = "";
  
    const cont = document.createElement("div");
    cont.className = "ui-info-lines";
@@ -608,12 +630,37 @@ function getUiStateFromWs(msg, safety, mega2online) {
 
   const startup = msg?.startup;
   // Startup-Overlay soll bleiben, bis der User explizit quittiert.
-  // "ready" kann bereits true sein, aber m1Needs/m2Needs bleiben true,
-  // bis markMegaXChecklistDone (bzw. das zugehörige ACK) erfolgt.
-  const inStartup = !!(startup && (
-    startup.m1Needs === true ||
-    startup.m2Needs === true
-  ));
+  // ABER: Selftest-Retry darf NICHT in das Startup-Checklist-Overlay springen.
+  // Lösung: Startup-Session nur dann aktivieren, wenn BootId neu ist.
+  const startupNeeds = !!(startup && (startup.m1Needs === true || startup.m2Needs === true));
+  let bootIdsPresent = false;
+  let bootChanged = false;
+  if (startup) {
+    const m1b = startup.m1BootId;
+    const m2b = startup.m2BootId;
+    bootIdsPresent = (m1b !== undefined) || (m2b !== undefined);
+    if (bootIdsPresent) {
+      // first-seen counts as "changed"
+      const m1chg = (m1b !== undefined) && (g_lastM1BootId === undefined || m1b !== g_lastM1BootId);
+      const m2chg = (m2b !== undefined) && (g_lastM2BootId === undefined || m2b !== g_lastM2BootId);
+      bootChanged = !!(m1chg || m2chg);
+
+      // update last seen boot ids
+      if (m1b !== undefined) g_lastM1BootId = m1b;
+      if (m2b !== undefined) g_lastM2BootId = m2b;
+
+      // latch session start on boot change; clear when checklist no longer needed
+      if (bootChanged) g_startupSessionActive = true;
+      if (!startupNeeds) g_startupSessionActive = false;
+    } else {
+      // No boot ids -> keep legacy behavior
+      g_startupSessionActive = startupNeeds;
+    }
+  } else {
+    g_startupSessionActive = false;
+  }
+
+  const inStartup = !!(startupNeeds && g_startupSessionActive);
 
   if (!mega2online) {
     level = "WARN";
@@ -1015,6 +1062,16 @@ function showOverlay(title, lines, requireChecked, options = {}) {
   // - "info": reine Info (z.B. Selftest läuft) -> keine Buttons/Checkbox
   // - "startup": Startup-Checklist (eigene Buttons)
   const mode = options.mode || (requireChecked === false ? "info" : "ack");
+  
+  // If we switch away from the startup checklist overlay, remove its DOM once.
+  // Otherwise the checklist would "stick" and appear in other overlay modes (e.g. retry/info).
+  if (mode !== "startup") {
+    const stWrap = document.getElementById("startup-checklist-wrap");
+    if (stWrap) {
+      stWrap.remove();
+      overlay.__startupUiBuilt = false;
+    }
+  }
 
   titleEl.textContent = title || "! Sicherheitsquittierung";
 
@@ -1028,7 +1085,29 @@ function showOverlay(title, lines, requireChecked, options = {}) {
     // ---------- STARTUP CHECKLIST ----------
   if (mode === "startup") {
     overlay.classList.remove("is-info-wait");
-  
+
+    // Ensure CSS spinner exists (otherwise fallback text would show)
+    const ensureSpinnerCss = () => {
+      if (document.getElementById("ui-spinner-css")) return;
+      const st = document.createElement("style");
+      st.id = "ui-spinner-css";
+      st.textContent = `
+        .ui-spinner{
+          display:inline-block;
+          width:1.05em;height:1.05em;
+          border:0.18em solid rgba(0,0,0,.25);
+          border-top-color: rgba(0,0,0,.65);
+          border-radius:999px;
+          animation: uiSpin .8s linear infinite;
+          vertical-align:-0.15em;
+          margin-right:0.45em;
+        }
+        @keyframes uiSpin { to { transform: rotate(360deg); } }
+      `;
+      document.head.appendChild(st);
+    };
+
+    ensureSpinnerCss();
 
     // Helper: fetch UI text from safety_ui_texts.js (fallbacks keep UI usable)
     const _uiText0 = (key, fallback) => {
@@ -1189,8 +1268,8 @@ function showOverlay(title, lines, requireChecked, options = {}) {
             const spinner = document.createElement("span");
             spinner.className = "ui-spinner";
             spinner.setAttribute("aria-hidden", "true");
-            // Fallback: if CSS spinner is missing, show an hourglass
-            spinner.textContent = "⏳";
+            ensureSpinnerCss();
+            spinner.textContent = "";
 
             const text = document.createElement("span");
             text.id = "st-m2-text";
@@ -1268,8 +1347,8 @@ function showOverlay(title, lines, requireChecked, options = {}) {
           const spinner = document.createElement("span");
           spinner.className = "ui-spinner";
           spinner.setAttribute("aria-hidden", "true");
-          // Fallback: if CSS spinner is missing, show an hourglass
-          spinner.textContent = "⏳";
+            ensureSpinnerCss();
+            spinner.textContent = "";
           const textEl = document.createElement("span");
           textEl.id = "st-m1-text";
           m1state.appendChild(spinner);
