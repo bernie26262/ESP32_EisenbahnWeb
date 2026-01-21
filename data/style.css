@@ -247,13 +247,39 @@ h2 {
 }
 
 .badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 0.2rem 0.45rem;
     border-radius: 999px;
     border: 1px solid var(--border);
     font-size: 0.85rem;
     background: #fff;
+    
+    /* --- ruhig & stabil --- */
+    box-sizing: border-box;
+    white-space: nowrap;
+    
+    /* alle Badges exakt gleich breit (kein Springen) */
+    flex: 0 0 9.6rem;   /* ggf. feinjustieren */
+    gap: 0.45rem;
 }
+
+/* linker Teil: Label */
+.badge .label {
+    flex: 1 1 auto;
+    min-width: 0;                 /* erlaubt flex-shrink sauber */
+    overflow: hidden;
+    text-overflow: ellipsis;      /* falls mal länger */
+}
+
+/* rechter Teil: Zahlenteil */
+.badge .num {
+    flex: 0 0 4.9rem;             /* reservierter Platz für "I=1234 mA" */
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
 
 .badge-green { border: 2px solid var(--ok) !important; background: rgba(45, 164, 78, 0.10) !important; }
 .badge-red   { border: 2px solid var(--err) !important; background: rgba(207, 34, 46, 0.10) !important; }

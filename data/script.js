@@ -1843,17 +1843,45 @@ function renderTrafoRight(msg) {
    if (!aEl && !bEl) return;
  
    const an = msg?.mega2?.analog;
+   const flags = Number(an?.flags ?? 0) >>> 0;
  
    const fmtV = (v10) => {
      const n = Number(v10);
      if (!Number.isFinite(n)) return "– V";
      if (n === 0xFFFF) return "– V";
+     // Plausibilität: Trafo-Spannungen sind im Modellbahn-Kontext typischerweise klein.
+     // Alles > 30.0V behandeln wir als ungültig (UI darf hier defensiv sein).
+     if (n < 0 || n > 300) return "– V";
      return (n / 10).toFixed(1) + " V";
    };
  
-   if (aEl) aEl.textContent = "Trafo A: " + (an && an.vA10 !== undefined ? fmtV(an.vA10) : "– V");
-   if (bEl) bEl.textContent = "Trafo B: " + (an && an.vB10 !== undefined ? fmtV(an.vB10) : "– V");
- }
+   // flags bit1: voltages invalid -> beide Spannungen unterdrücken
+   const voltagesInvalid = (flags & 0x02) !== 0;
+   
+   const aTxt = "Trafo A: " + (!an || voltagesInvalid ? "– V" : (an.vA10 !== undefined ? fmtV(an.vA10) : "– V"));
+   const bTxt = "Trafo B: " + (!an || voltagesInvalid ? "– V" : (an.vB10 !== undefined ? fmtV(an.vB10) : "– V"));
+
+   if (aEl) {
+     aEl.textContent = aTxt;
+     aEl.title = an
+       ? `m2.analog: seq=${an.seq ?? "?"} flags=0x${flags.toString(16)} raw=${an.vA10}`
+       : "m2.analog: (none)";
+   }
+   if (bEl) {
+     bEl.textContent = bTxt;
+     bEl.title = an
+       ? `m2.analog: seq=${an.seq ?? "?"} flags=0x${flags.toString(16)} raw=${an.vB10}`
+       : "m2.analog: (none)";
+   }
+}
+
+// ---------------------------------------------------------
+// Analog "Hold last good" (gegen Glitches / steigende Rohwerte)
+// ---------------------------------------------------------
+const m2AnalogHold = {
+  i_mA: Array(9).fill(null),
+};
+
  
 function renderOverviewLeft(msg) {
   renderSbhfLeft(msg);
@@ -2189,17 +2217,38 @@ function renderBlocksLeft(msg) {
 
   // 1) Occupancy
   let html = `<div><b>Belegung:</b></div><div class="badge-wrap">`;
+
+  const an = msg?.mega2?.analog;
+  const flags = Number(an?.flags ?? 0) >>> 0; // aktuell nicht für currents genutzt
+  const iArr = an?.i_mA;
+  
   for (let i = 0; i < 9; i++) {
     const occ = bit(occMask, i);
-    const iArr = msg?.mega2?.analog?.i_mA;
-    let iTxt = "";
+    const labelText = `B${i + 1} ${occ ? "belegt" : "frei"}`;
+
+    // Strom immer anzeigen (ruhig/stabil); bei unbekannt: "—"
+    let iText = "I=— mA";
+
+    // Ströme: defensiv + plausibel
+    // - 0xFFFF gilt als invalid
+    // - Werte > 5000mA sind im Normalbetrieb sehr wahrscheinlich invalid/glitch
+    // - hold last good bei Glitches / Zwischenwerten (UNABHÄNGIG von seq)
     if (Array.isArray(iArr) && iArr.length >= 9) {
-      const mA = Number(iArr[i]);
-      if (Number.isFinite(mA) && mA !== 0xFFFF) {
-        iTxt = ` (I=${Math.round(mA)} mA)`;
+      const raw = Number(iArr[i]);
+      const finite = Number.isFinite(raw);
+      const invalid = (!finite || raw === 0xFFFF || raw < 0 || raw > 5000);
+
+      if (!invalid) m2AnalogHold.i_mA[i] = raw;
+      const shown = invalid ? m2AnalogHold.i_mA[i] : raw;
+      if (Number.isFinite(shown)) {
+        iText = `I=${Math.round(shown)} mA`;
       }
     }
-    html += `<span class="badge ${occ ? "badge-err" : "badge-ok"}">B${i + 1} ${occ ? "belegt" : "frei"}</span>`;
+
+    html += `<span class="badge ${occ ? "badge-err" : "badge-ok"}">` +
+            `<span class="label">${labelText}</span>` +
+            `<span class="num">${iText}</span>` +
+            `</span>`;
   }
   html += `</div>`;
 
