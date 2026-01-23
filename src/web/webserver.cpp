@@ -137,7 +137,7 @@ static String buildWsStateJson()
         doc["mega2"]["blockOccupiedMask"] = m2s.blockOccupiedMask;
 
 
-        // DRDY-fast: prefer BlockStatus cache (if updated) over slow SystemStatus snapshot
+        // DRDY-fast: expose detailed blocks[] + a fast occupancy mask WITHOUT overriding legacy mask.
         {
             const BlockStatus* bs = SystemRuntimeState::mega2BlockStatus();
             uint16_t occFast = 0;
@@ -145,8 +145,24 @@ static String buildWsStateJson()
             {
                 if (bs[i].besetzt) occFast |= (uint16_t)(1u << i);
             }
-            doc["mega2"]["blockOccupiedMask"] = occFast;
-        }        
+            // Debug
+            doc["mega2"]["blockOccupiedMaskFast"] = occFast;
+
+            JsonObject b = doc["mega2"]["blocks"].to<JsonObject>();
+            b["occupiedMask"] = occFast;
+
+            JsonArray bst = b["status"].to<JsonArray>();
+            for (uint8_t i = 0; i < M2_NUM_BLOCKS; i++)
+            {
+                JsonObject o = bst.createNestedObject();
+                o["kontakt"]     = (uint8_t)bs[i].kontakt;
+                o["stromEin"]    = (uint8_t)bs[i].stromEin;
+                o["besetzt"]     = (uint8_t)bs[i].besetzt;
+                o["kurzschluss"] = (uint8_t)bs[i].kurzschluss;
+                o["nothalt"]     = (uint8_t)bs[i].nothalt;
+                o["stromRaw"]    = bs[i].stromRaw;
+            }
+        }     
 
         // reserved = (allowedMask<<8) | warningMask
         const uint8_t allowedMask = (uint8_t)((m2s.reserved >> 8) & 0xFF);
@@ -205,23 +221,7 @@ static String buildWsStateJson()
         t["sollMask"] = m2s.turnoutSollMask;
         t["istMask"]  = m2s.turnoutIstMask;
 
-        // Blocks (UI expects an object)
-        JsonObject b = doc["mega2"]["blocks"].to<JsonObject>();
-        b["occupiedMask"] = doc["mega2"]["blockOccupiedMask"].as<uint16_t>();
-
-        // Optional: detailed per-block status (DRDY-fast)
-        JsonArray bst = b["status"].to<JsonArray>();
-        const BlockStatus* bs2 = SystemRuntimeState::mega2BlockStatus();
-        for (uint8_t i = 0; i < M2_NUM_BLOCKS; i++)
-        {
-            JsonObject o = bst.createNestedObject();
-            o["kontakt"]     = (uint8_t)bs2[i].kontakt;
-            o["stromEin"]    = (uint8_t)bs2[i].stromEin;
-            o["besetzt"]     = (uint8_t)bs2[i].besetzt;
-            o["kurzschluss"] = (uint8_t)bs2[i].kurzschluss;
-            o["nothalt"]     = (uint8_t)bs2[i].nothalt;
-            o["stromRaw"]    = bs2[i].stromRaw;
-        }
+        // Blocks already populated above (occupiedMask + status[]) from DRDY-fast cache.
          
         // Mega2 Analog (Trafo + Blockströme), falls vorhanden
         const auto& an = SystemRuntimeState::mega2Analog();

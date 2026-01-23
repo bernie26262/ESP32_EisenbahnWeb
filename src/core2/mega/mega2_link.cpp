@@ -233,7 +233,7 @@ void update()
         s_lastDrdyPollMs = now;
 
         Mega2PendingMaskPayload pm{};
-        if (Mega2Client::pollPendingMask(pm))
+        if (Mega2Client::pollPendingMask(pm) == I2CBus::Result::OK)
         {
             s_m2PendMask = pm.mask;
             s_lastPendMaskMs = now;
@@ -255,27 +255,33 @@ void update()
             bool ok = false;
             if (s_m2PendMask & M2_PEND_SAFETY)
             {
-                ok = Mega2Client::pollSafetyStatus();
+                ok = (Mega2Client::pollSafetyStatus() == I2CBus::Result::OK);
             }
             else if (s_m2PendMask & M2_PEND_ENTRY)
             {
-                ok = Mega2Client::pollEntryMatrix();
+                ok = (Mega2Client::pollEntryMatrix() == I2CBus::Result::OK);
             }
             else if (s_m2PendMask & M2_PEND_ENTRY_PREV)
             {
-                ok = Mega2Client::pollEntryPreviewMatrix();
+                ok = (Mega2Client::pollEntryPreviewMatrix() == I2CBus::Result::OK);
             }
             else if (s_m2PendMask & M2_PEND_BLOCKS)
             {
-                ok = Mega2Client::pollBlocksStatus();
+                ok = (Mega2Client::pollBlocksStatus() == I2CBus::Result::OK);
             }
             else if (s_m2PendMask & M2_PEND_SHADOW)
             {
-                ok = Mega2Client::pollShadowStatus();
+                ok = (Mega2Client::pollShadowStatus() == I2CBus::Result::OK);
+            }
+            else if (s_m2PendMask & M2_PEND_TURNOUTS)
+            {
+                // Turnouts sind aktuell nur im SystemStatus enthalten -> gezielt Status ziehen (DRDY-getrieben),
+                // ohne den 8s FULL-PULL abzuwarten.
+                ok = (Mega2Client::pollStatus() == I2CBus::Result::OK);
             }
             else
             {
-                // nur Turnouts-bit (noch nicht implementiert) o.ä.
+                
                 ok = true;
             }
 

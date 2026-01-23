@@ -2211,7 +2211,7 @@ function renderBlocksLeft(msg) {
     return;
   }
 
-  const occMask = msg?.mega2?.blockOccupiedMask ?? 0;
+  const occMask = msg?.mega2?.blocks?.occupiedMask ?? msg?.mega2?.blockOccupiedMask ?? 0;
   const entryNow = msg?.mega2?.entryAllowed;
   const entryPrev = msg?.mega2?.entryPreview;
 
@@ -2221,9 +2221,13 @@ function renderBlocksLeft(msg) {
   const an = msg?.mega2?.analog;
   const flags = Number(an?.flags ?? 0) >>> 0; // aktuell nicht für currents genutzt
   const iArr = an?.i_mA;
+
+  const bs = msg?.mega2?.blocks?.status;
   
   for (let i = 0; i < 9; i++) {
-    const occ = bit(occMask, i);
+    const occ = (Array.isArray(bs) && bs.length >= 9)
+      ? !!(bs[i] && bs[i].besetzt)
+      : bit(occMask, i);
     const labelText = `B${i + 1} ${occ ? "belegt" : "frei"}`;
 
     // Strom immer anzeigen (ruhig/stabil); bei unbekannt: "—"

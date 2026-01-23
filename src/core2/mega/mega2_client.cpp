@@ -55,42 +55,35 @@ static I2CBus::Result writeReadRetry(uint8_t addr,
 
 
 
-bool Mega2Client::pollPendingMask(Mega2PendingMaskPayload& out)
+I2CBus::Result Mega2Client::pollPendingMask(Mega2PendingMaskPayload& out)
 {
     const uint8_t cmd = M2_CMD_GET_PENDING_MASK;
     Mega2PendingMaskPayload p{};
     const auto r = I2CBus::writeReadEx(MEGA2_ADDR, &cmd, sizeof(cmd), &p, sizeof(p), 1000);
-    if (r != I2CBus::Result::OK)
-        return false;
-
-    out = p;
-    return true;
+    if (r == I2CBus::Result::OK) out = p;
+    return r;
 }
 
-bool Mega2Client::pollBlocksStatus()
+I2CBus::Result Mega2Client::pollBlocksStatus()
 {
     const uint8_t cmd = M2_CMD_GET_BLOCK_STATUS;
 
     BlockStatus blocks[M2_NUM_BLOCKS]{};
     const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), blocks, sizeof(blocks), 3000);
-    if (r != I2CBus::Result::OK)
-        return false;
-
-    SystemRuntimeState::updateMega2BlockStatus(blocks, M2_NUM_BLOCKS);
-    return true;
+    if (r == I2CBus::Result::OK)
+        SystemRuntimeState::updateMega2BlockStatus(blocks, M2_NUM_BLOCKS);
+    return r;
 }
 
-bool Mega2Client::pollShadowStatus()
+I2CBus::Result Mega2Client::pollShadowStatus()
 {
     const uint8_t cmd = M2_CMD_GET_SHADOW_STATUS;
 
     ShadowYardStatus st{};
     const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), &st, sizeof(st), 3000);
-    if (r != I2CBus::Result::OK)
-        return false;
-
-    SystemRuntimeState::updateMega2ShadowStatus(st);
-    return true;
+    if (r == I2CBus::Result::OK)
+        SystemRuntimeState::updateMega2ShadowStatus(st);
+    return r;
 }
 
 void Mega2Client::begin()
@@ -99,25 +92,25 @@ void Mega2Client::begin()
 }
  
  
- bool Mega2Client::pollAnalog()
+ I2CBus::Result Mega2Client::pollAnalog()
  {
      // rate-limit (~500ms)
      const uint32_t now = millis();
      if ((uint32_t)(now - s_m2AnalogMs) < 500)
-         return true;
+         return I2CBus::Result::OK;
  
      const uint8_t cmd = CMD_GET_M2_ANALOG; // ESP nutzt CMD_GET_M2_*
      Mega2AnalogPayload p{};
  
      const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), &p, sizeof(p), 2000);
      if (r != I2CBus::Result::OK)
-         return false;
+         return r;
  
      s_m2Analog = p;
      s_m2AnalogMs = now;
  
      SystemRuntimeState::updateMega2Analog(p);
-     return true;
+     return I2CBus::Result::OK;
  }
  
  const Mega2AnalogPayload& Mega2Client::analog()
@@ -167,23 +160,21 @@ I2CBus::Result Mega2Client::pollStatus()
     SystemRuntimeState::updateMega2Status(tmpStatus);
 
     // Optional: Analogwerte (rate-limited internally)
-    Mega2Client::pollAnalog();
+    (void)Mega2Client::pollAnalog();
  
     return I2CBus::Result::OK;
 }
 
 
- bool Mega2Client::pollSafetyStatus()
+ I2CBus::Result Mega2Client::pollSafetyStatus()
 {
     const uint8_t cmd = M2_CMD_GET_SAFETY_STATUS;
 
     Mega2SafetyStatus st{};
     const auto r = I2CBus::writeReadEx(MEGA2_ADDR, &cmd, sizeof(cmd), &st, sizeof(st), 1000);
-    if (r != I2CBus::Result::OK)
-        return false;
-
-    SystemRuntimeState::updateMega2SafetyStatus(st);
-    return true;
+    if (r == I2CBus::Result::OK)
+        SystemRuntimeState::updateMega2SafetyStatus(st);
+    return r;
 }
 bool Mega2Client::safetyAck()
 {
@@ -268,27 +259,23 @@ bool Mega2Client::powerOff()
     return setSsr(SSR_MAIN_ENABLE, false);
 }
 
-bool Mega2Client::pollEntryMatrix()
+I2CBus::Result Mega2Client::pollEntryMatrix()
 {
     const uint8_t cmd = M2_CMD_GET_ENTRY_MATRIX;
 
     uint16_t entry[9] = {0};
     const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), entry, sizeof(entry), 15000);
-    if (r != I2CBus::Result::OK)
-        return false;
-
-    SystemRuntimeState::updateMega2EntryAllowed(entry, 9);
-    return true;
+    if (r == I2CBus::Result::OK)
+        SystemRuntimeState::updateMega2EntryAllowed(entry, 9);
+    return r;
 }
-bool Mega2Client::pollEntryPreviewMatrix()
+I2CBus::Result Mega2Client::pollEntryPreviewMatrix()
 {
     const uint8_t cmd = M2_CMD_GET_ENTRY_PREVIEW_MATRIX;
 
     uint16_t entry[9] = {0};
     const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), entry, sizeof(entry), 15000);
-    if (r != I2CBus::Result::OK)
-        return false;
-
-    SystemRuntimeState::updateMega2EntryPreview(entry, 9);
-    return true;
+    if (r == I2CBus::Result::OK)
+        SystemRuntimeState::updateMega2EntryPreview(entry, 9);
+    return r;
 }

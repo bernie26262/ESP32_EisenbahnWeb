@@ -12,21 +12,21 @@ namespace Mega2Client
 
     I2CBus::Result pollStatus();
 
-    bool pollSafetyStatus();
+    I2CBus::Result pollSafetyStatus();
 
-    bool pollEntryMatrix();
-    bool pollEntryPreviewMatrix();
+    I2CBus::Result pollEntryMatrix();
+    I2CBus::Result pollEntryPreviewMatrix();
 
     // PendingMask (digital DRDY-driven)
-    bool pollPendingMask(Mega2PendingMaskPayload& out);
+    I2CBus::Result pollPendingMask(Mega2PendingMaskPayload& out);
 
     // einzelne Statuspakete (digital DRDY-driven)
-    bool pollBlocksStatus();
-    bool pollShadowStatus();
+    I2CBus::Result pollBlocksStatus();
+    I2CBus::Result pollShadowStatus();
      
-     // Analogwerte (Trafo + Blockströme)
-     bool pollAnalog();
-     const Mega2AnalogPayload& analog();
+    // Analogwerte (Trafo + Blockströme)
+    I2CBus::Result pollAnalog();
+    const Mega2AnalogPayload& analog();
 
     bool safetyAck();
     bool sbhfSelftestRetry();
