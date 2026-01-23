@@ -98,6 +98,15 @@ namespace SystemRuntimeState
     
     const uint16_t* mega2EntryPreview();
     void updateMega2EntryPreview(const uint16_t* arr, uint8_t n); 
+
+    // ----------------------------------------------------
+    // Mega2 Blocks / Shadow (digital DRDY-driven)
+    // ----------------------------------------------------
+    const BlockStatus* mega2BlockStatus();
+    void updateMega2BlockStatus(const BlockStatus* arr, uint8_t n);
+
+    const ShadowYardStatus& mega2ShadowStatus();
+    void updateMega2ShadowStatus(const ShadowYardStatus& st);
      // ----------------------------------------------------
      // Mega2 Analog (Trafo + Blockströme)
      // ----------------------------------------------------

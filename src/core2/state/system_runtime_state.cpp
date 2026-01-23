@@ -22,6 +22,13 @@ static uint16_t     s_m2EntryPreview[9]  = {0};
 static uint32_t     s_lastEntryRxMs = 0;
 static uint32_t     s_lastRxMs = 0;
 
+
+// Mega2 Blocks / Shadow caches (digital, DRDY-driven)
+static BlockStatus      s_m2Blocks[M2_NUM_BLOCKS]{};
+static ShadowYardStatus s_m2Shadow{};
+static uint32_t         s_lastBlocksRxMs = 0;
+static uint32_t         s_lastShadowRxMs = 0;
+
 static uint32_t     s_lastRxMsM1 = 0;
 uint8_t SystemRuntimeState::errorType  = 0;
 uint8_t SystemRuntimeState::errorIndex = 0;
@@ -456,6 +463,35 @@ const uint16_t* SystemRuntimeState::mega2EntryAllowed()
 const uint16_t* SystemRuntimeState::mega2EntryPreview()
 {
     return s_m2EntryPreview;
+}
+
+const BlockStatus* SystemRuntimeState::mega2BlockStatus()
+{
+    return s_m2Blocks;
+}
+
+void SystemRuntimeState::updateMega2BlockStatus(const BlockStatus* arr, uint8_t n)
+{
+    if (!arr) return;
+    if (n > M2_NUM_BLOCKS) n = M2_NUM_BLOCKS;
+
+    for (uint8_t i = 0; i < n; i++)
+        s_m2Blocks[i] = arr[i];
+
+    s_lastBlocksRxMs = millis();
+    g_stateDirty = true;
+}
+
+const ShadowYardStatus& SystemRuntimeState::mega2ShadowStatus()
+{
+    return s_m2Shadow;
+}
+
+void SystemRuntimeState::updateMega2ShadowStatus(const ShadowYardStatus& st)
+{
+    s_m2Shadow = st;
+    s_lastShadowRxMs = millis();
+    g_stateDirty = true;
 }
 
 void SystemRuntimeState::updateMega2EntryAllowed(const uint16_t* arr, uint8_t n)

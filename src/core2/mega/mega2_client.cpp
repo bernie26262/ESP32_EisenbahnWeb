@@ -53,6 +53,46 @@ static I2CBus::Result writeReadRetry(uint8_t addr,
     return r;
 }
 
+
+
+bool Mega2Client::pollPendingMask(Mega2PendingMaskPayload& out)
+{
+    const uint8_t cmd = M2_CMD_GET_PENDING_MASK;
+    Mega2PendingMaskPayload p{};
+    const auto r = I2CBus::writeReadEx(MEGA2_ADDR, &cmd, sizeof(cmd), &p, sizeof(p), 1000);
+    if (r != I2CBus::Result::OK)
+        return false;
+
+    out = p;
+    return true;
+}
+
+bool Mega2Client::pollBlocksStatus()
+{
+    const uint8_t cmd = M2_CMD_GET_BLOCK_STATUS;
+
+    BlockStatus blocks[M2_NUM_BLOCKS]{};
+    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), blocks, sizeof(blocks), 3000);
+    if (r != I2CBus::Result::OK)
+        return false;
+
+    SystemRuntimeState::updateMega2BlockStatus(blocks, M2_NUM_BLOCKS);
+    return true;
+}
+
+bool Mega2Client::pollShadowStatus()
+{
+    const uint8_t cmd = M2_CMD_GET_SHADOW_STATUS;
+
+    ShadowYardStatus st{};
+    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), &st, sizeof(st), 3000);
+    if (r != I2CBus::Result::OK)
+        return false;
+
+    SystemRuntimeState::updateMega2ShadowStatus(st);
+    return true;
+}
+
 void Mega2Client::begin()
 {
     // aktuell nichts nötig

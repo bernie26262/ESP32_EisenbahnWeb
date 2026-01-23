@@ -16,6 +16,13 @@ namespace Mega2Client
 
     bool pollEntryMatrix();
     bool pollEntryPreviewMatrix();
+
+    // PendingMask (digital DRDY-driven)
+    bool pollPendingMask(Mega2PendingMaskPayload& out);
+
+    // einzelne Statuspakete (digital DRDY-driven)
+    bool pollBlocksStatus();
+    bool pollShadowStatus();
      
      // Analogwerte (Trafo + Blockströme)
      bool pollAnalog();

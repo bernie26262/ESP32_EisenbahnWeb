@@ -25,7 +25,8 @@ enum : uint8_t
     M2_CMD_GET_SHADOW_STATUS  = 0x22, // -> ShadowYardStatus
     M2_CMD_GET_ENTRY_MATRIX  = 0x23, // -> uint16_t[9] (AllowedNow: FROM->TO)
     M2_CMD_GET_ENTRY_PREVIEW_MATRIX = 0x24,  // -> uint16_t[9] (Preview: FROM->TO)
-    M2_CMD_GET_ANALOG = 0x25  // -> Mega2AnalogPayload
+    M2_CMD_GET_ANALOG = 0x25,  // -> Mega2AnalogPayload
+    M2_CMD_GET_PENDING_MASK = 0x26 // -> Mega2PendingMaskPayload
 };
 
 // =====================================================
@@ -117,6 +118,33 @@ struct __attribute__((packed)) Mega2AnalogPayload
 
 static_assert(sizeof(Mega2AnalogPayload) == 24, "Mega2AnalogPayload size");
 
+// =====================================================
+//  Mega2 Pending-Mask (I2C) – digitale Änderungen (DRDY-getrieben)
+//  - Bitmask tells the master which logical payloads have changed since last read.
+//  - DRDY (active LOW) should stay asserted until pendingMask==0.
+//  - Analog is intentionally NOT part of this mask (noise).
+// =====================================================
+enum : uint16_t {
+    M2_PEND_SAFETY      = 1u << 0,
+    M2_PEND_ENTRY       = 1u << 1,
+    M2_PEND_ENTRY_PREV  = 1u << 2,
+    M2_PEND_BLOCKS      = 1u << 3,
+    M2_PEND_SHADOW      = 1u << 4,
+    M2_PEND_TURNOUTS    = 1u << 5,  // reserved (future)
+
+    M2_PEND_ALL_DIGITAL = M2_PEND_SAFETY | M2_PEND_ENTRY | M2_PEND_ENTRY_PREV | M2_PEND_BLOCKS | M2_PEND_SHADOW | M2_PEND_TURNOUTS,
+};
+
+struct __attribute__((packed)) Mega2PendingMaskPayload
+{
+    uint8_t  seq;   // increments per response (debug / deglitch)
+    uint8_t  rsv0;
+    uint16_t mask;  // M2_PEND_* bits
+};
+
+static_assert(sizeof(Mega2PendingMaskPayload) == 4, "Mega2PendingMaskPayload size");
+
+
 
 enum Mega2Command : uint8_t {
     CMD_GET_M2_SAFETY = 0x20,
@@ -125,5 +153,6 @@ enum Mega2Command : uint8_t {
     CMD_GET_M2_ENTRY  = 0x23,
     CMD_GET_M2_ENTRY_PREVIEW = 0x24,
     CMD_GET_M2_ANALOG = 0x25,
+    CMD_GET_M2_PENDING_MASK = 0x26,
 };
 

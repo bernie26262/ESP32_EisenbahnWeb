@@ -136,6 +136,18 @@ static String buildWsStateJson()
         doc["mega2"]["flags"]             = m2s.flags;
         doc["mega2"]["blockOccupiedMask"] = m2s.blockOccupiedMask;
 
+
+        // DRDY-fast: prefer BlockStatus cache (if updated) over slow SystemStatus snapshot
+        {
+            const BlockStatus* bs = SystemRuntimeState::mega2BlockStatus();
+            uint16_t occFast = 0;
+            for (uint8_t i = 0; i < M2_NUM_BLOCKS; i++)
+            {
+                if (bs[i].besetzt) occFast |= (uint16_t)(1u << i);
+            }
+            doc["mega2"]["blockOccupiedMask"] = occFast;
+        }        
+
         // reserved = (allowedMask<<8) | warningMask
         const uint8_t allowedMask = (uint8_t)((m2s.reserved >> 8) & 0xFF);
         const uint8_t warningMask = (uint8_t)(m2s.reserved & 0xFF);
@@ -177,6 +189,17 @@ static String buildWsStateJson()
 
         sbhf["restricted"] = restricted;
 
+        // ShadowYardStatus (DRDY-fast, detaillierter SBHF-Status)
+        const ShadowYardStatus& sh = SystemRuntimeState::mega2ShadowStatus();
+        JsonObject shj = doc["mega2"]["shadow"].to<JsonObject>();
+        shj["gleisBesetztMask"] = sh.gleisBesetztMask;
+        shj["kontaktMask"]      = sh.kontaktMask;
+        shj["stromMask"]        = sh.stromMask;
+        shj["einfahrGleis"]     = sh.einfahrGleis;
+        shj["ausfahrGleis"]     = sh.ausfahrGleis;
+        shj["modus"]            = sh.modus;
+        shj["state"]            = sh.state;
+
 
         JsonObject t = doc["mega2"]["turnouts"].to<JsonObject>();
         t["sollMask"] = m2s.turnoutSollMask;
@@ -184,7 +207,21 @@ static String buildWsStateJson()
 
         // Blocks (UI expects an object)
         JsonObject b = doc["mega2"]["blocks"].to<JsonObject>();
-        b["occupiedMask"] = m2s.blockOccupiedMask;
+        b["occupiedMask"] = doc["mega2"]["blockOccupiedMask"].as<uint16_t>();
+
+        // Optional: detailed per-block status (DRDY-fast)
+        JsonArray bst = b["status"].to<JsonArray>();
+        const BlockStatus* bs2 = SystemRuntimeState::mega2BlockStatus();
+        for (uint8_t i = 0; i < M2_NUM_BLOCKS; i++)
+        {
+            JsonObject o = bst.createNestedObject();
+            o["kontakt"]     = (uint8_t)bs2[i].kontakt;
+            o["stromEin"]    = (uint8_t)bs2[i].stromEin;
+            o["besetzt"]     = (uint8_t)bs2[i].besetzt;
+            o["kurzschluss"] = (uint8_t)bs2[i].kurzschluss;
+            o["nothalt"]     = (uint8_t)bs2[i].nothalt;
+            o["stromRaw"]    = bs2[i].stromRaw;
+        }
          
         // Mega2 Analog (Trafo + Blockströme), falls vorhanden
         const auto& an = SystemRuntimeState::mega2Analog();

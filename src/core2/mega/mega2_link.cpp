@@ -1,6 +1,7 @@
 #include "mega2_link.h"
 
 #include <Arduino.h>
+#include "config/pins.h"
 
 #include "core2/mega/mega2_client.h"
 #include "core2/bus/i2c_bus.h"
@@ -63,6 +64,28 @@ static bool     s_mega2Online     = false;
 static uint32_t s_lastOkMsLink    = 0;
 static uint32_t s_lastFailMsLink  = 0;
 
+// ------------------------------------------------------------
+// DRDY (Mega2 DataReady) – active LOW, latched via ISR
+// ------------------------------------------------------------
+static volatile uint32_t s_drdyIrqCount = 0;
+static volatile bool     s_drdyLatched  = false;
+static uint32_t          s_lastDrdyPollMs = 0;
+static constexpr uint32_t DRDY_COOLDOWN_MS = 50;
+
+static void IRAM_ATTR isr_drdy_m2()
+{
+    s_drdyIrqCount++;
+    s_drdyLatched = true;
+}
+
+// Pending mask cache (local) – we fetch max 1 payload per DRDY tick
+static uint16_t s_m2PendMask = 0;
+static uint32_t s_lastPendMaskMs = 0;
+
+// Full pull ground-truth interval (slow on purpose for DRDY test)
+static constexpr uint32_t FULL_PULL_MS = 8000;
+static uint32_t s_lastFullPullMs = 0;
+
 static constexpr uint32_t POLL_STATUS_MS   = 200;
 static constexpr uint32_t POLL_SAFETY_MS   = 400;   // Safety halb so oft wie Status
 static constexpr uint32_t POLL_MATRIX_MS   = 800;
@@ -93,6 +116,16 @@ void begin()
     s_mega2Online    = false;
     s_lastOkMsLink   = 0;
     s_lastFailMsLink = 0;
+
+    // DRDY pin (active LOW)
+    pinMode(PIN_DATAREADY_2, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(PIN_DATAREADY_2), isr_drdy_m2, FALLING);
+
+    s_lastDrdyPollMs = 0;
+    s_lastPendMaskMs = 0;
+    s_m2PendMask = 0;
+    s_lastFullPullMs = 0;
+
 
     DBG_PRINTLN("[M2LINK] begin()");
 }
@@ -146,97 +179,123 @@ void update()
         }
     }
 
-    // 1) Status poll (BUSY getrennt von ERROR)
-    if (s_pollIntervalMs == 0) s_pollIntervalMs = POLL_STATUS_MS;
+    // 1) Analog (immer rate-limited intern; bleibt bewusst NICHT DRDY-getrieben)
+    (void)Mega2Client::pollAnalog();
 
-    if (now >= s_nextPollMs)
+    // 2) Full Pull (Ground Truth, absichtlich langsam – A/B Test für DRDY)
+    if (s_lastFullPullMs == 0 || (uint32_t)(now - s_lastFullPullMs) >= FULL_PULL_MS)
     {
-        const I2CBus::Result r = Mega2Client::pollStatus();
+        s_lastFullPullMs = now;
 
+        const I2CBus::Result r = Mega2Client::pollStatus();
         if (r == I2CBus::Result::OK)
         {
             s_lastStatusOk   = true;
             s_pollFailCount  = 0;
-            s_pollIntervalMs = POLL_STATUS_MS;
 
-            // Link-Online: wir hatten gerade eine erfolgreiche I2C-Transaktion.
             const bool wasOnline = s_mega2Online;
-            s_mega2Online   = true;
-            s_lastOkMsLink  = now;
+            s_mega2Online  = true;
+            s_lastOkMsLink = now;
             if (!wasOnline) DBG_PRINTLN("[M2LINK] online=1");
+
+            DBG_PRINTF("[M2LINK][FULL] status=OK (every %ums)\n", (unsigned)FULL_PULL_MS);
         }
         else if (r == I2CBus::Result::BUSY)
         {
-            s_lastStatusOk   = false;
-            s_pollIntervalMs = BUSY_RETRY_MS;
-
-            // BUSY ist kein Offline-Indikator. Online-Flag unverändert lassen.
-
-            static uint32_t s_lastBusyLog = 0;
-            if (now - s_lastBusyLog > 5000)
-            {
-                s_lastBusyLog = now;
-                DBG_PRINTLN("[M2LINK] bus busy");
-            }
+            s_lastStatusOk = false;
+            DBG_PRINTLN("[M2LINK][FULL] status=BUSY");
         }
-        else // ERROR
+        else
         {
             s_lastStatusOk = false;
 
-            // Poll-Fail = Kommunikationsproblem. NICHT als Safety-Fehler interpretieren!
-            // -> Nur Mega2 online=false setzen; den zuletzt gültigen Mega2-Status unangetastet lassen.
             const bool wasOnline = s_mega2Online;
-            s_mega2Online    = false;
+            s_mega2Online   = false;
             s_lastFailMsLink = now;
             if (wasOnline) DBG_PRINTLN("[M2LINK] online=0");
 
             if (s_pollFailCount < 6) s_pollFailCount++;
-            const uint32_t backoff = POLL_STATUS_MS << s_pollFailCount; // 200,400,800,...
+            const uint32_t backoff = 200u << s_pollFailCount; // 200,400,800,...
             s_pollIntervalMs = (backoff > 5000) ? 5000 : backoff;
 
-            static uint8_t s_lastLoggedFail = 0xFF;
-            if (s_lastLoggedFail != s_pollFailCount)
+            DBG_PRINTF("[M2LINK][FULL] status=ERROR backoff=%ums (level %u)\n",
+                       (unsigned)s_pollIntervalMs,
+                       (unsigned)s_pollFailCount);
+        }
+    }
+
+    // 3) DRDY-driven: PendingMask lesen + pro Tick max. 1 Payload holen
+    const bool drdyLevelLow = (digitalRead(PIN_DATAREADY_2) == LOW);
+    const bool drdyActive = drdyLevelLow || s_drdyLatched;
+
+    if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
+    {
+        s_lastDrdyPollMs = now;
+
+        Mega2PendingMaskPayload pm{};
+        if (Mega2Client::pollPendingMask(pm))
+        {
+            s_m2PendMask = pm.mask;
+            s_lastPendMaskMs = now;
+
+            DBG_PRINTF("[M2LINK][DRDY] irq=%u pin=%u mask=0x%04X seq=%u\n",
+                       (unsigned)s_drdyIrqCount,
+                       (unsigned)(drdyLevelLow ? 0 : 1),
+                       (unsigned)s_m2PendMask,
+                       (unsigned)pm.seq);
+
+            // Wenn mask=0 und Pin wieder HIGH -> latch löschen
+            if (s_m2PendMask == 0 && !drdyLevelLow)
             {
-                s_lastLoggedFail = s_pollFailCount;
-                DBG_PRINTF("[M2LINK] poll ERROR -> backoff %ums (level %u)\n",
-                           (unsigned)s_pollIntervalMs,
-                           (unsigned)s_pollFailCount);
+                s_drdyLatched = false;
+                return;
+            }
+
+            // pro Tick maximal EIN größeres Read (Burst vermeiden)
+            bool ok = false;
+            if (s_m2PendMask & M2_PEND_SAFETY)
+            {
+                ok = Mega2Client::pollSafetyStatus();
+            }
+            else if (s_m2PendMask & M2_PEND_ENTRY)
+            {
+                ok = Mega2Client::pollEntryMatrix();
+            }
+            else if (s_m2PendMask & M2_PEND_ENTRY_PREV)
+            {
+                ok = Mega2Client::pollEntryPreviewMatrix();
+            }
+            else if (s_m2PendMask & M2_PEND_BLOCKS)
+            {
+                ok = Mega2Client::pollBlocksStatus();
+            }
+            else if (s_m2PendMask & M2_PEND_SHADOW)
+            {
+                ok = Mega2Client::pollShadowStatus();
+            }
+            else
+            {
+                // nur Turnouts-bit (noch nicht implementiert) o.ä.
+                ok = true;
+            }
+
+            if (ok)
+            {
+                // Erfolg -> online, und latch ggf. später löschen wenn Pin HIGH & mask leer
+                const bool wasOnline = s_mega2Online;
+                s_mega2Online  = true;
+                s_lastOkMsLink = now;
+                if (!wasOnline) DBG_PRINTLN("[M2LINK] online=1");
+            }
+            else
+            {
+                DBG_PRINTLN("[M2LINK][DRDY] payload read FAILED");
             }
         }
-
-        // DEBUG: 1Hz poll result log (OK/BUSY/ERROR)
-        static uint32_t s_lastPollLogMs = 0;
-        if (now - s_lastPollLogMs >= 1000)
+        else
         {
-            s_lastPollLogMs = now;
-            const char* rs =
-                (r == I2CBus::Result::OK)   ? "OK" :
-                (r == I2CBus::Result::BUSY) ? "BUSY" : "ERROR";
-            DBG_PRINTF("[M2LINK] poll=%s online=%u\n", rs, (unsigned)s_mega2Online);
+            DBG_PRINTLN("[M2LINK][DRDY] pendingMask read FAILED");
         }
-
-
-        s_nextPollMs = now + s_pollIntervalMs;
-    }
-
-    // 1b) SafetyStatus poll (nur wenn Status OK)
-    if (s_lastStatusOk && (now - s_lastSafetyMs >= POLL_SAFETY_MS))
-    {
-        s_lastSafetyMs = now;
-        (void)Mega2Client::pollSafetyStatus();
-    }
-
-    // 2) Matrices
-    if (s_lastStatusOk && (now - s_lastMatrixMs >= POLL_MATRIX_MS))
-    {
-        s_lastMatrixMs = now;
-        (void)Mega2Client::pollEntryMatrix();
-    }
-
-    if (s_lastStatusOk && (now - s_lastPreviewMs >= POLL_PREVIEW_MS))
-    {
-        s_lastPreviewMs = now;
-        (void)Mega2Client::pollEntryPreviewMatrix();
     }
 }
 
