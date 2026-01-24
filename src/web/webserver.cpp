@@ -140,11 +140,9 @@ static String buildWsStateJson()
         // DRDY-fast: expose detailed blocks[] + a fast occupancy mask WITHOUT overriding legacy mask.
         {
             const BlockStatus* bs = SystemRuntimeState::mega2BlockStatus();
-            uint16_t occFast = 0;
-            for (uint8_t i = 0; i < M2_NUM_BLOCKS; i++)
-            {
-                if (bs[i].besetzt) occFast |= (uint16_t)(1u << i);
-            }
+            // IMPORTANT: Use SystemStatus.blockOccupiedMask as single source of truth for occupancy.
+            // BlockStatus[].besetzt may be derived/temporary and can mismatch the final occupiedMask.
+            const uint16_t occFast = m2s.blockOccupiedMask;
             // Debug
             doc["mega2"]["blockOccupiedMaskFast"] = occFast;
 
@@ -157,7 +155,7 @@ static String buildWsStateJson()
                 JsonObject o = bst.createNestedObject();
                 o["kontakt"]     = (uint8_t)bs[i].kontakt;
                 o["stromEin"]    = (uint8_t)bs[i].stromEin;
-                o["besetzt"]     = (uint8_t)bs[i].besetzt;
+                o["besetzt"]     = (uint8_t)((occFast & (uint16_t)(1u << i)) != 0);
                 o["kurzschluss"] = (uint8_t)bs[i].kurzschluss;
                 o["nothalt"]     = (uint8_t)bs[i].nothalt;
                 o["stromRaw"]    = bs[i].stromRaw;

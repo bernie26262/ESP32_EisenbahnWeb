@@ -405,6 +405,11 @@ function sendPollNow() {
 function sendSbhfSelftestRetry() {
   // Always log locally so we can see whether the click happened at all.
   logLine(" SBHF Selftest start/retry (WS action) ...");
+  // Komfort/UX wie bei Mega1: vor dem Selftest Power ausschalten.
+  // (Viele SBHF-Selftests setzen voraus, dass Leistung aus ist.)
+  const okP = wsSend({ action: "powerOff" });
+  if (okP) logLine(" Power OFF (vor SBHF Selftest)");
+
   const ok = wsSend({ action: "sbhfSelftestRetry" });
   if (ok) logLine(" SBHF Selftest-Retry gesendet");
   else    logLine(" SBHF Selftest-Retry NICHT gesendet (WS down?)");
@@ -1081,6 +1086,36 @@ function showOverlay(title, lines, requireChecked, options = {}) {
 
   // Default: ohne Spinner
   textEl.innerHTML = safeLines.join("<br>");
+
+  // --- Special case: SBHF Weichenfehler -> Selftest erforderlich ---
+  // Wenn Mega2 den ACK blockt, weil ein Selftest nötig ist, muss die UI den Selftest anbieten,
+  // sonst entsteht eine nicht lösbare Situation.
+  try {
+    const st = options?.state;
+    const lock = !!st?.safety?.lock;
+    const sbhfPresent = !!st?.mega2?.sbhf;
+    const selftestRunning = !!st?.mega2?.sbhf?.selftestRunning;
+
+    const fullText = (String(title || "") + " " + safeLines.join(" ")).toLowerCase();
+    const looksLikeSbhfWeicheError =
+      fullText.includes("weichenfehler") &&
+      (fullText.includes("schattenbahnhof") || fullText.includes("sbhf"));
+
+    if (lock && sbhfPresent && !selftestRunning && looksLikeSbhfWeicheError) {
+      const hint = `
+        <div style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(0,0,0,0.08);">
+          <div style="opacity:.9; margin-bottom:8px;">
+            Für diesen Fehler ist ein <b>SBHF Selftest</b> erforderlich. Bitte starten und abwarten.
+          </div>
+          <button class="btn-mini" type="button" onclick="sendSbhfSelftestRetry()">
+            SBHF Selftest starten
+          </button>
+        </div>`;
+      textEl.innerHTML += hint;
+    }
+  } catch (e) {
+    console.warn("[UI] SBHF selftest action insert failed:", e);
+  }
 
     // ---------- STARTUP CHECKLIST ----------
   if (mode === "startup") {
