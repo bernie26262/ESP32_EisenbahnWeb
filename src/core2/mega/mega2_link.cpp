@@ -80,6 +80,7 @@ static void IRAM_ATTR isr_drdy_m2()
 
 // Pending mask cache (local) – we fetch max 1 payload per DRDY tick
 static uint16_t s_m2PendMask = 0;
+static uint8_t  s_drdyRr = 0; // round-robin index for DRDY payload reads
 static uint32_t s_lastPendMaskMs = 0;
 
 // Full pull ground-truth interval (slow on purpose for DRDY test)
@@ -198,6 +199,19 @@ void update()
             s_lastOkMsLink = now;
             if (!wasOnline) DBG_PRINTLN("[M2LINK] online=1");
 
+            // ----------------------------------------------------------------
+            // IMPORTANT:
+            // Ohne DRDY müssen die "digital caches" (Entry/Preview/Blocks/Shadow/Turnouts/Safety)
+            // ebenfalls periodisch aktualisiert werden, sonst bleibt die UI stehen.
+            // Das ist bewusst EINMAL pro FULL pull (8s) – kein Burst im DRDY-Mode.
+            // ----------------------------------------------------------------
+            (void)Mega2Client::pollSafetyStatus();
+            (void)Mega2Client::pollEntryMatrix();
+            (void)Mega2Client::pollEntryPreviewMatrix();
+            (void)Mega2Client::pollBlocksStatus();
+            (void)Mega2Client::pollTurnoutsStatus();
+            (void)Mega2Client::pollShadowStatus();
+
             DBG_PRINTF("[M2LINK][FULL] status=OK (every %ums)\n", (unsigned)FULL_PULL_MS);
         }
         else if (r == I2CBus::Result::BUSY)
@@ -251,38 +265,51 @@ void update()
                 return;
             }
 
-            // pro Tick maximal EIN größeres Read (Burst vermeiden)
-            bool ok = false;
-            if (s_m2PendMask & M2_PEND_SAFETY)
+            // pro Tick maximal EIN größeres Read (Burst vermeiden) – fair via Round-Robin
+            bool ok = true;
+
+            // Order matters (UI first), but RR prevents starvation if one bit is "chatty".
+            const uint16_t rrBits[] = {
+                M2_PEND_SAFETY,
+                M2_PEND_ENTRY,
+                M2_PEND_ENTRY_PREV,
+                M2_PEND_BLOCKS,
+                M2_PEND_TURNOUTS,
+                M2_PEND_SHADOW,
+            };
+            constexpr uint8_t RR_N = sizeof(rrBits) / sizeof(rrBits[0]);
+
+            uint8_t chosen = 0xFF;
+            for (uint8_t k = 0; k < RR_N; k++)
             {
-                ok = (Mega2Client::pollSafetyStatus() == I2CBus::Result::OK);
+                const uint8_t idx = (uint8_t)((s_drdyRr + k) % RR_N);
+                if (s_m2PendMask & rrBits[idx]) { chosen = idx; break; }
             }
-            else if (s_m2PendMask & M2_PEND_ENTRY)
-            {
-                ok = (Mega2Client::pollEntryMatrix() == I2CBus::Result::OK);
-            }
-            else if (s_m2PendMask & M2_PEND_ENTRY_PREV)
-            {
-                ok = (Mega2Client::pollEntryPreviewMatrix() == I2CBus::Result::OK);
-            }
-            else if (s_m2PendMask & M2_PEND_BLOCKS)
-            {
-                ok = (Mega2Client::pollBlocksStatus() == I2CBus::Result::OK);
-            }
-            else if (s_m2PendMask & M2_PEND_SHADOW)
-            {
-                ok = (Mega2Client::pollShadowStatus() == I2CBus::Result::OK);
-            }
-            else if (s_m2PendMask & M2_PEND_TURNOUTS)
-            {
-                // Turnouts sind aktuell nur im SystemStatus enthalten -> gezielt Status ziehen (DRDY-getrieben),
-                // ohne den 8s FULL-PULL abzuwarten.
-                ok = (Mega2Client::pollStatus() == I2CBus::Result::OK);
-            }
-            else
-            {
-                
-                ok = true;
+
+            if (chosen != 0xFF)
+           {
+                s_drdyRr = (uint8_t)((chosen + 1) % RR_N);
+                switch (rrBits[chosen])
+                {
+                    case M2_PEND_SAFETY:
+                        ok = (Mega2Client::pollSafetyStatus() == I2CBus::Result::OK);
+                        // UI "ACK nötig"/Warnings hängen bei uns an SystemStatus flags/warningMask.
+                        // Daher bei Safety-Änderung zusätzlich Status ziehen, damit das Overlay sofort verschwindet.
+                        if (ok) (void)Mega2Client::pollStatus();
+                        break;
+                    case M2_PEND_ENTRY:       ok = (Mega2Client::pollEntryMatrix() == I2CBus::Result::OK); break;
+                    case M2_PEND_ENTRY_PREV:  ok = (Mega2Client::pollEntryPreviewMatrix() == I2CBus::Result::OK); break;
+                    case M2_PEND_BLOCKS:
+                        ok = (Mega2Client::pollBlocksStatus() == I2CBus::Result::OK);
+                        // Belegung (blockOccupiedMask) sitzt im SystemStatus.
+                        // Damit Blocks instant werden (auch wenn UI noch legacy-Feld nutzt),
+                        // ziehen wir bei Blocks-Änderung einmal Status nach.
+                        if (ok) (void)Mega2Client::pollStatus();
+                        break;
+                    case M2_PEND_SHADOW:      ok = (Mega2Client::pollShadowStatus() == I2CBus::Result::OK); break;
+                    case M2_PEND_TURNOUTS:    ok = (Mega2Client::pollTurnoutsStatus() == I2CBus::Result::OK); break;
+                    default: break;
+                }
             }
 
             if (ok)

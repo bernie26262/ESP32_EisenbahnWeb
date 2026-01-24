@@ -23,6 +23,7 @@ namespace Mega2Client
     // einzelne Statuspakete (digital DRDY-driven)
     I2CBus::Result pollBlocksStatus();
     I2CBus::Result pollShadowStatus();
+    I2CBus::Result pollTurnoutsStatus();
      
     // Analogwerte (Trafo + Blockströme)
     I2CBus::Result pollAnalog();

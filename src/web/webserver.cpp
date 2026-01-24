@@ -218,8 +218,12 @@ static String buildWsStateJson()
 
 
         JsonObject t = doc["mega2"]["turnouts"].to<JsonObject>();
-        t["sollMask"] = m2s.turnoutSollMask;
-        t["istMask"]  = m2s.turnoutIstMask;
+        // DRDY-fast: prefer dedicated Turnouts payload (CMD 0x27). Fallback to SystemStatus if not yet available.
+        const auto& tt = SystemRuntimeState::mega2Turnouts();
+        const uint32_t ttAge = SystemRuntimeState::mega2TurnoutsAgeMs();
+        const bool ttValid = (ttAge != 0xFFFFFFFFu);
+        t["sollMask"] = ttValid ? tt.sollMask : m2s.turnoutSollMask;
+        t["istMask"]  = ttValid ? tt.istMask  : m2s.turnoutIstMask;
 
         // Blocks already populated above (occupiedMask + status[]) from DRDY-fast cache.
          

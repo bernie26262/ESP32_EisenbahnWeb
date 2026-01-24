@@ -86,6 +86,18 @@ I2CBus::Result Mega2Client::pollShadowStatus()
     return r;
 }
 
+I2CBus::Result Mega2Client::pollTurnoutsStatus()
+{
+    const uint8_t cmd = M2_CMD_GET_TURNOUTS;
+
+    Mega2TurnoutsPayload t{};
+    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), &t, sizeof(t), 2000);
+    if (r == I2CBus::Result::OK)
+        SystemRuntimeState::updateMega2Turnouts(t);
+    return r;
+}
+
+
 void Mega2Client::begin()
 {
     // aktuell nichts nötig

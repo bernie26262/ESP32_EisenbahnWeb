@@ -107,6 +107,12 @@ namespace SystemRuntimeState
 
     const ShadowYardStatus& mega2ShadowStatus();
     void updateMega2ShadowStatus(const ShadowYardStatus& st);
+
+    // Mega2 Turnouts (digital DRDY-driven, SBHF IST/SOLL)
+    const Mega2TurnoutsPayload& mega2Turnouts();
+    uint32_t mega2TurnoutsAgeMs();
+    void updateMega2Turnouts(const Mega2TurnoutsPayload& t);
+
      // ----------------------------------------------------
      // Mega2 Analog (Trafo + Blockströme)
      // ----------------------------------------------------

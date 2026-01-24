@@ -26,6 +26,8 @@ static uint32_t     s_lastRxMs = 0;
 // Mega2 Blocks / Shadow caches (digital, DRDY-driven)
 static BlockStatus      s_m2Blocks[M2_NUM_BLOCKS]{};
 static ShadowYardStatus s_m2Shadow{};
+static Mega2TurnoutsPayload s_m2Turnouts{};
+static uint32_t         s_lastTurnoutsRxMs = 0;
 static uint32_t         s_lastBlocksRxMs = 0;
 static uint32_t         s_lastShadowRxMs = 0;
 
@@ -491,6 +493,24 @@ void SystemRuntimeState::updateMega2ShadowStatus(const ShadowYardStatus& st)
 {
     s_m2Shadow = st;
     s_lastShadowRxMs = millis();
+    g_stateDirty = true;
+}
+
+const Mega2TurnoutsPayload& SystemRuntimeState::mega2Turnouts()
+{
+    return s_m2Turnouts;
+}
+
+uint32_t SystemRuntimeState::mega2TurnoutsAgeMs()
+{
+    if (s_lastTurnoutsRxMs == 0) return 0xFFFFFFFFu;
+    return (uint32_t)(millis() - s_lastTurnoutsRxMs);
+}
+
+void SystemRuntimeState::updateMega2Turnouts(const Mega2TurnoutsPayload& t)
+{
+    s_m2Turnouts = t;
+    s_lastTurnoutsRxMs = millis();
     g_stateDirty = true;
 }
 
