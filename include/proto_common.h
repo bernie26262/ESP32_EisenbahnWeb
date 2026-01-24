@@ -145,6 +145,11 @@ struct __attribute__((packed)) Mega2PendingMaskPayload
 static_assert(sizeof(Mega2PendingMaskPayload) == 4, "Mega2PendingMaskPayload size");
 
 
+struct __attribute__((packed)) Mega2TurnoutsPayload
+{
+    uint16_t sollMask;
+    uint16_t istMask;
+};
 
 enum Mega2Command : uint8_t {
     CMD_GET_M2_SAFETY = 0x20,
@@ -154,5 +159,6 @@ enum Mega2Command : uint8_t {
     CMD_GET_M2_ENTRY_PREVIEW = 0x24,
     CMD_GET_M2_ANALOG = 0x25,
     CMD_GET_M2_PENDING_MASK = 0x26,
+    CMD_GET_M2_TURNOUTS     = 0x27,
 };
 
