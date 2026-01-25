@@ -4,16 +4,16 @@
 // ========================================================
 // I2C – ESP32-S3 als MASTER (frei wählbar, konfliktfrei)
 // ========================================================
-#define PIN_I2C_SDA      17
-#define PIN_I2C_SCL      18
+#define PIN_I2C_SDA      41
+#define PIN_I2C_SCL      42
 
 // ========================================================
 // DataReady von den Mega2560-Slaves (freie Pins!)
 // ========================================================
-#define PIN_DATAREADY_1  21
-#define PIN_DATAREADY_2  2
-#define PIN_DATAREADY_3  15
-#define PIN_DATAREADY_4  16
+#define PIN_DATAREADY_1  36
+#define PIN_DATAREADY_2  37
+#define PIN_DATAREADY_3  38
+#define PIN_DATAREADY_4  39
 
 // ========================================================
 // Status LED (frei verfügbar)

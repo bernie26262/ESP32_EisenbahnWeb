@@ -12,10 +12,10 @@
 
 // Pins are fixed in your project
 #ifndef PIN_I2C_SDA
-  #define PIN_I2C_SDA 17
+  #define PIN_I2C_SDA 41
 #endif
 #ifndef PIN_I2C_SCL
-  #define PIN_I2C_SCL 18
+  #define PIN_I2C_SCL 42
 #endif
 
 namespace Ui
