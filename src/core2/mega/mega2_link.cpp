@@ -1,6 +1,7 @@
 #include "mega2_link.h"
 
 #include <Arduino.h>
+#include <Wire.h>
 #include "config/pins.h"
 
 #include "core2/mega/mega2_client.h"
@@ -65,6 +66,22 @@ static uint32_t s_lastOkMsLink    = 0;
 static uint32_t s_lastFailMsLink  = 0;
 
 // ------------------------------------------------------------
+// I2C Start-Gate: starte Polling erst, wenn Mega2 wirklich am Bus antwortet
+// ------------------------------------------------------------
+static bool     s_gateOk = false;
+static uint32_t s_nextGateProbeMs = 0;
+static constexpr uint32_t GATE_PROBE_MS = 250;
+
+static bool probeI2CAddr(uint8_t addr)
+{
+    // Achtung: sehr billig, nur "ACK?" (keine Reads)
+    Wire.beginTransmission(addr);
+    const uint8_t e = Wire.endTransmission(true);
+    return (e == 0);
+}
+
+
+// ------------------------------------------------------------
 // DRDY (Mega2 DataReady) – active LOW, latched via ISR
 // ------------------------------------------------------------
 static volatile uint32_t s_drdyIrqCount = 0;
@@ -117,10 +134,16 @@ void begin()
     s_mega2Online    = false;
     s_lastOkMsLink   = 0;
     s_lastFailMsLink = 0;
+    s_gateOk         = false;
+    s_nextGateProbeMs = 0;
 
     // DRDY pin (active LOW)
+#if !TEST_DISABLE_M2_DRDY
     pinMode(PIN_DATAREADY_2, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(PIN_DATAREADY_2), isr_drdy_m2, FALLING);
+#else
+    DBG_PRINTLN("[M2LINK] DRDY disabled by TEST_DISABLE_M2_DRDY");
+#endif
 
     s_lastDrdyPollMs = 0;
     s_lastPendMaskMs = 0;
@@ -137,6 +160,28 @@ uint32_t lastOkMs() { return s_lastOkMsLink; }
 void update()
 {
     const uint32_t now = millis();
+    
+    // --------------------------------------------------------
+    // Gate: solange Mega2 (0x11) nicht sauber ACKt -> keine I2C Reads/Commands
+    // (verhindert requestFrom Error -1 direkt nach ESP Boot / Mega Reboot)
+    // --------------------------------------------------------
+    if (!s_gateOk)
+    {
+        if (s_nextGateProbeMs == 0 || (uint32_t)(now - s_nextGateProbeMs) >= GATE_PROBE_MS)
+        {
+            s_nextGateProbeMs = now;
+            if (probeI2CAddr(0x11))
+            {
+                s_gateOk = true;
+                s_nextPollMs = now + 10;
+                s_pollIntervalMs = POLL_STATUS_MS;
+                s_pollFailCount = 0;
+                s_lastStatusOk = false;
+                DBG_PRINTLN("[M2LINK] gate OK (addr 0x11)");
+            }
+        }
+        return;
+    }
 
     // 0) Pending Actions (nur hier -> keine I2C Calls aus WS/ISR Kontext)
     const uint8_t act = takeActions();

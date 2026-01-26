@@ -10,15 +10,26 @@
 static constexpr uint8_t MEGA1_ADDR = 0x10;
 
 // Mega1 I2CProtocol.h (Mirror)
-static constexpr uint8_t CMD_GET_DIAG     = 0xD1; // CMD_GET_DIAG (see Mega1/include/I2CProtocol.h)
-static constexpr uint8_t CMD_SET_MODE     = 0x02;
-static constexpr uint8_t CMD_SET_WEICHE   = 0x03;
-static constexpr uint8_t CMD_SET_BHF_PWR  = 0x06; // neu in Mega1 (Power/Signal)
-static constexpr uint8_t CMD_SELFTEST_START = 0x07;
+static constexpr uint8_t CMD_GET_PENDING_MASK = 0xE0; // neu: DRDY pending mask (uint16)
+static constexpr uint8_t CMD_GET_DIAG         = 0xD1; // CMD_GET_DIAG (see Mega1/include/I2CProtocol.h)
+static constexpr uint8_t CMD_SET_MODE         = 0x02;
+static constexpr uint8_t CMD_SET_WEICHE       = 0x03;
+static constexpr uint8_t CMD_SET_BHF_PWR      = 0x06; // neu in Mega1 (Power/Signal)
+static constexpr uint8_t CMD_SELFTEST_START   = 0x07;
 
 void Mega1Client::begin()
 {
     // aktuell nichts nötig
+}
+
+I2CBus::Result Mega1Client::pollPendingMask(uint16_t& outMask)
+{
+    const uint8_t cmd = CMD_GET_PENDING_MASK;
+    uint16_t tmp = 0;
+   const auto r = I2CBus::writeReadEx(MEGA1_ADDR, &cmd, 1, &tmp, sizeof(tmp), 0);
+    if (r != I2CBus::Result::OK) return r;
+    outMask = tmp;
+    return I2CBus::Result::OK;
 }
 
 I2CBus::Result Mega1Client::pollStatus()

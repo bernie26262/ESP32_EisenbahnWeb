@@ -1,10 +1,12 @@
 #include "mega1_link.h"
 
 #include <Arduino.h>
+#include <Wire.h>
 
 #include "core2/mega/mega1_client.h"
 #include "core2/state/system_runtime_state.h"
 #include "core2/bus/i2c_bus.h"
+#include "config/pins.h"
 #include "debug.h"
 
 #if defined(ESP32)
@@ -106,6 +108,32 @@ static constexpr uint32_t POLL_STATUS_MS = 200;
 static constexpr uint32_t POLL_DIAG_MS   = 500;
 static constexpr uint32_t BUSY_RETRY_MS  = 30;
 
+// ------------------------------------------------------------
+// I2C Start-Gate: starte Polling erst, wenn Mega1 wirklich am Bus antwortet
+// ------------------------------------------------------------
+static bool     s_gateOk = false;
+static uint32_t s_nextGateProbeMs = 0;
+static constexpr uint32_t GATE_PROBE_MS = 250;
+
+static bool probeI2CAddr(uint8_t addr)
+{
+    Wire.beginTransmission(addr);
+    const uint8_t e = Wire.endTransmission(true);
+    return (e == 0);
+}
+
+
+// ------------------------------------------------------------
+// Mega1 DRDY (GPIO36): latch IRQ
+// ------------------------------------------------------------
+static volatile uint32_t s_drdyIrqCount = 0;
+static volatile bool     s_drdyLatched  = false;
+static void IRAM_ATTR onMega1DrdyIsr()
+{
+    s_drdyIrqCount++;
+    s_drdyLatched = true;
+}
+
 void Mega1Link::begin()
 {
     Mega1Client::begin();
@@ -113,6 +141,16 @@ void Mega1Link::begin()
     s_nextPollMs     = millis() + 25;
     s_pollIntervalMs = POLL_STATUS_MS;
     s_pollFailCount  = 0;
+    s_gateOk         = false;
+    s_nextGateProbeMs = 0;
+    s_hadOk          = false;
+
+    // DRDY input (idle HIGH, active LOW)
+    pinMode(PIN_DATAREADY_1, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(PIN_DATAREADY_1), onMega1DrdyIsr, FALLING);
+    s_drdyIrqCount = 0;
+    s_drdyLatched  = false;
+
 
     DBG_PRINTLN("[M1LINK] begin()");
 }
@@ -127,7 +165,53 @@ void Mega1Link::update()
 {
     const uint32_t now = millis();
 
+    // --------------------------------------------------------
+    // Gate: solange Mega1 (0x10) nicht sauber ACKt -> keine I2C Reads/Commands
+    // --------------------------------------------------------
+    if (!s_gateOk)
+    {
+        if (s_nextGateProbeMs == 0 || (uint32_t)(now - s_nextGateProbeMs) >= GATE_PROBE_MS)
+        {
+            s_nextGateProbeMs = now;
+            if (probeI2CAddr(0x10))
+            {
+                s_gateOk = true;
+                s_nextPollMs = now + 25;
+                s_pollIntervalMs = POLL_STATUS_MS;
+                s_pollFailCount = 0;
+                DBG_PRINTLN("[M1LINK] gate OK (addr 0x10)");
+            }
+        }
+        return;
+    }
+
     if (s_pollIntervalMs == 0) s_pollIntervalMs = POLL_STATUS_MS;
+
+    // --------------------------------------------------
+    // DRDY quick-path (nur pendingMask lesen)
+    // (Aktiv wird das erst sinnvoll, wenn Mega1-FW CMD_GET_PENDING_MASK unterstützt)
+    // --------------------------------------------------
+    if (s_drdyLatched || digitalRead(PIN_DATAREADY_1) == LOW)
+    {
+        s_drdyLatched = false;
+
+        uint16_t pm = 0;
+        const auto pr = Mega1Client::pollPendingMask(pm);
+        if (pr == I2CBus::Result::OK)
+        {
+            // Wenn FW korrekt ist: hier später RR-Reads (Status/Diag) machen.
+            // Für jetzt nur selten loggen, um Spam zu vermeiden.
+            static uint32_t s_lastPmLog = 0;
+            if (now - s_lastPmLog > 1000)
+            {
+                s_lastPmLog = now;
+                DBG_PRINTF("[M1LINK][DRDY] irq=%lu pin=%d pending=0x%04X\n",
+                           (unsigned long)s_drdyIrqCount,
+                           (int)digitalRead(PIN_DATAREADY_1),
+                           (unsigned)pm);
+            }
+        }
+    }
 
     if (now >= s_nextPollMs)
     {
