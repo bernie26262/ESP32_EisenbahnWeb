@@ -6,12 +6,14 @@
 #include "core2/mega/mega1_client.h"
 #include "core2/state/system_runtime_state.h"
 #include "core2/bus/i2c_bus.h"
+#include "core2/bus/gpio_isr_once.h"
 #include "config/pins.h"
 #include "debug.h"
 
 #if defined(ESP32)
   #include "freertos/FreeRTOS.h"
   #include "freertos/portmacro.h"
+  #include "driver/gpio.h"
   static portMUX_TYPE s_cmdMux = portMUX_INITIALIZER_UNLOCKED;
 #endif
 
@@ -103,6 +105,7 @@ static uint32_t s_nextDiagPollMs  = 0;
 static uint32_t s_pollIntervalMs  = 0;
 static uint8_t  s_pollFailCount   = 0;
 static bool     s_hadOk          = false;
+static uint8_t  s_drdyRr         = 0; // 0=status first, 1=diag first
 
 static constexpr uint32_t POLL_STATUS_MS = 200;
 static constexpr uint32_t POLL_DIAG_MS   = 500;
@@ -134,6 +137,14 @@ static void IRAM_ATTR onMega1DrdyIsr()
     s_drdyLatched = true;
 }
 
+#if defined(ESP32)
+static void IRAM_ATTR onMega1DrdyIsr_idf(void* arg)
+{
+    (void)arg;
+    onMega1DrdyIsr();
+}
+#endif
+
 void Mega1Link::begin()
 {
     Mega1Client::begin();
@@ -147,7 +158,15 @@ void Mega1Link::begin()
 
     // DRDY input (idle HIGH, active LOW)
     pinMode(PIN_DATAREADY_1, INPUT_PULLUP);
+#if defined(ESP32)
+    // Log-free install: install ISR service only if needed
+    (void)gpioIsrAddHandlerAutoInstall((gpio_num_t)PIN_DATAREADY_1,
+                                       onMega1DrdyIsr_idf,
+                                       nullptr,
+                                       GPIO_INTR_NEGEDGE);
+#else
     attachInterrupt(digitalPinToInterrupt(PIN_DATAREADY_1), onMega1DrdyIsr, FALLING);
+#endif
     s_drdyIrqCount = 0;
     s_drdyLatched  = false;
 
@@ -196,20 +215,47 @@ void Mega1Link::update()
         s_drdyLatched = false;
 
         uint16_t pm = 0;
-        const auto pr = Mega1Client::pollPendingMask(pm);
+        const auto pr = Mega1Client::getPendingMask(pm);
         if (pr == I2CBus::Result::OK)
         {
-            // Wenn FW korrekt ist: hier später RR-Reads (Status/Diag) machen.
-            // Für jetzt nur selten loggen, um Spam zu vermeiden.
-            static uint32_t s_lastPmLog = 0;
-            if (now - s_lastPmLog > 1000)
+            // 1 Read per tick max (RR): Status/Diag je nach pending bits
+            I2CBus::Result rr = I2CBus::Result::OK;
+            bool didRead = false;
+
+            auto tryStatus = [&]()
             {
-                s_lastPmLog = now;
-                DBG_PRINTF("[M1LINK][DRDY] irq=%lu pin=%d pending=0x%04X\n",
+                if (pm & Mega1Client::M1_PEND_STATUS)
+                {
+                    rr = Mega1Client::pollStatus();
+                    didRead = true;
+                }
+            };
+            auto tryDiag = [&]()
+            {
+                if (pm & Mega1Client::M1_PEND_DIAG)
+                {
+                    rr = Mega1Client::pollDiag();
+                    didRead = true;
+                }
+            };
+
+            if (s_drdyRr == 0) { tryStatus(); if (!didRead) tryDiag(); }
+            else               { tryDiag();   if (!didRead) tryStatus(); }
+            s_drdyRr ^= 1;
+
+            // ruhiges Log: nur wenn wirklich etwas pending war oder Read scheiterte
+            if (pm != 0 || rr != I2CBus::Result::OK)
+            {
+                DBG_PRINTF("[M1LINK][DRDY] irq=%lu pin=%d pm=0x%04X rr=%s r=%d\n",
                            (unsigned long)s_drdyIrqCount,
                            (int)digitalRead(PIN_DATAREADY_1),
-                           (unsigned)pm);
+                           (unsigned)pm,
+                           didRead ? "1" : "0",
+                           (int)rr);
             }
+
+            // nach DRDY-Read: nächsten Poll nicht “sofort” erzwingen
+            // (FULL-Poll bleibt ohnehin aktiv)
         }
     }
 

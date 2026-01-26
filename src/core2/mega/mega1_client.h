@@ -22,6 +22,8 @@ namespace Mega1Client
     
     // DRDY: pending mask lesen (read-only)
     I2CBus::Result pollPendingMask(uint16_t& outMask);
+    // Alias (lesbarer in Link-Code)
+    inline I2CBus::Result getPendingMask(uint16_t& outMask) { return pollPendingMask(outMask); }
 
 // Commands (Master -> Mega1)
 I2CBus::Result cmdSetMode(uint8_t mode);                 // 0=MANUELL,1=AUTO

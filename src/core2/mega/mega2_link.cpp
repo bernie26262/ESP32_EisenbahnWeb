@@ -6,11 +6,13 @@
 
 #include "core2/mega/mega2_client.h"
 #include "core2/bus/i2c_bus.h"
+#include "core2/bus/gpio_isr_once.h"
 #include "debug.h"
 
 #if defined(ESP32)
   #include "freertos/FreeRTOS.h"
   #include "freertos/portmacro.h"
+  #include "driver/gpio.h"
   static portMUX_TYPE s_actionMux = portMUX_INITIALIZER_UNLOCKED;
 #endif
 
@@ -95,6 +97,14 @@ static void IRAM_ATTR isr_drdy_m2()
     s_drdyLatched = true;
 }
 
+#if defined(ESP32)
+static void IRAM_ATTR isr_drdy_m2_idf(void* arg)
+{
+    (void)arg;
+    isr_drdy_m2();
+}
+#endif
+
 // Pending mask cache (local) – we fetch max 1 payload per DRDY tick
 static uint16_t s_m2PendMask = 0;
 static uint8_t  s_drdyRr = 0; // round-robin index for DRDY payload reads
@@ -110,6 +120,7 @@ static constexpr uint32_t POLL_MATRIX_MS   = 800;
 static constexpr uint32_t POLL_PREVIEW_MS  = 2000;
 
 static constexpr uint32_t BUSY_RETRY_MS    = 30;
+
 
 namespace Mega2Link
 {
@@ -140,7 +151,15 @@ void begin()
     // DRDY pin (active LOW)
 #if !TEST_DISABLE_M2_DRDY
     pinMode(PIN_DATAREADY_2, INPUT_PULLUP);
+#if defined(ESP32)
+    // Avoid Arduino attachInterrupt() -> prevents "gpio_install_isr_service already installed"
+    (void)gpioIsrAddHandlerAutoInstall((gpio_num_t)PIN_DATAREADY_2,
+                                       isr_drdy_m2_idf,
+                                       nullptr,
+                                       GPIO_INTR_NEGEDGE);
+#else
     attachInterrupt(digitalPinToInterrupt(PIN_DATAREADY_2), isr_drdy_m2, FALLING);
+#endif
 #else
     DBG_PRINTLN("[M2LINK] DRDY disabled by TEST_DISABLE_M2_DRDY");
 #endif
