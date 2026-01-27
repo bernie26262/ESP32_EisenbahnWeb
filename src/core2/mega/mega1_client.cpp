@@ -26,7 +26,7 @@ I2CBus::Result Mega1Client::pollPendingMask(uint16_t& outMask)
 {
     const uint8_t cmd = CMD_GET_PENDING_MASK;
     uint16_t tmp = 0;
-   const auto r = I2CBus::writeReadEx(MEGA1_ADDR, &cmd, 1, &tmp, sizeof(tmp), 0);
+    const auto r = I2CBus::writeReadEx(MEGA1_ADDR, &cmd, 1, &tmp, sizeof(tmp), 0);
     if (r != I2CBus::Result::OK) return r;
     outMask = tmp;
     return I2CBus::Result::OK;

@@ -268,7 +268,8 @@ bool SystemRuntimeState::mega1Online()
 {
     // I2C polls can temporarily fail (e.g. bus contention). Treat Mega1 as online
     // for a longer grace period to avoid UI flapping.
-    const bool on = (millis() - s_lastRxMsM1) < 3000;
+    // NOTE: Full-poll interval is 8000ms, so timeout must be > 8000ms.
+    const bool on = (millis() - s_lastRxMsM1) < 12000;
     if (!on)
     {
         // Mark link as offline, but keep selftest markers.
@@ -288,6 +289,10 @@ const SystemStatus& SystemRuntimeState::mega1Status()
 void SystemRuntimeState::updateMega1Diag(const Mega1DiagV1& d)
 {
     s_m1Diag     = d;
+
+    // Treat any valid Mega1 diag packet as link activity (prevents online flaps
+    // when STATUS is polled slowly and DIAG is read more often).
+    s_lastRxMsM1 = millis();
 
     const bool running  = ((d.selftestFlags & 0x01u) != 0);
     if (running) s_m1SelftestEverRunning = true;
@@ -335,7 +340,8 @@ const Mega2SafetyStatus& SystemRuntimeState::mega2SafetyStatus()
 // ----------------------------------------------------
 bool SystemRuntimeState::mega2Online()
 {
-    const bool on = (millis() - s_lastRxMs) < 3000;
+    // NOTE: Full-poll interval is 8000ms, so timeout must be > 8000ms.
+    const bool on = (millis() - s_lastRxMs) < 12000;
     if (!on) { s_m2OnlinePrev = false; s_m2SelftestRunningPrev = false; }
     return on;
 }
