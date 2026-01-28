@@ -38,6 +38,10 @@ namespace SystemRuntimeState
     // Mega1 (minimal)
     // ----------------------------------------------------
     void updateMega1Status(const SystemStatus& st);
+
+    // Heartbeat: count any successful Mega1 I2C transaction as link activity (updates online timeout)
+    void noteMega1LinkActivity();
+
     bool mega1Online();
     const SystemStatus& mega1Status();
 

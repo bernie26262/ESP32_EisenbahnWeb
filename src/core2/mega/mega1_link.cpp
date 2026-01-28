@@ -27,6 +27,11 @@ namespace
 {
     enum : uint8_t { CMDQ_SET_MODE = 1, CMDQ_SET_WEICHE = 2, CMDQ_SET_BHF_POWER = 3, CMDQ_START_SELFTEST = 4 };
 
+    // Mega1 I2C protocol (see Mega1 include/I2CProtocol.h):
+    // CMD_START_SELFTEST = 0x07, Mega1 addr = 0x10
+    static constexpr uint8_t M1_CMD_START_SELFTEST = 0x07;
+
+
     struct CmdQItem
     {
         uint8_t type = 0;
@@ -143,7 +148,10 @@ static uint32_t s_lastPendReadMs    = 0;
 static bool     s_havePendingMask   = false;
 static bool     s_rrPreferStatus    = true;
 static constexpr uint32_t PEND_POLL_MIN_MS = 20; // debounce/limit I2C reads
+static constexpr uint32_t PEND_POLL_IDLE_MS = 250; // baseline heartbeat poll when DRDY is HIGH
 static uint32_t s_nextFastMs       = 0; // RR-Read Termin nach DRDY (entkoppelt von FullPoll)
+static constexpr uint32_t DRDY_COOLDOWN_MS = PEND_POLL_MIN_MS; // limit DRDY burst while pin stays LOW
+static uint32_t s_lastDrdyPollMs   = 0; // last DRDY-driven poll (pending + one payload)
 
 static void IRAM_ATTR onMega1DrdyIsr()
 {
@@ -170,6 +178,7 @@ void Mega1Link::begin()
     s_nextGateProbeMs = 0;
     s_hadOk          = false;
 
+
     // DRDY input (idle HIGH, active LOW)
     pinMode(PIN_DATAREADY_1, INPUT_PULLUP);
 #if defined(ESP32)
@@ -185,6 +194,7 @@ void Mega1Link::begin()
     s_drdyLatched  = false;
     s_cachedPendingMask = 0;
     s_lastPendReadMs    = 0;
+    s_lastDrdyPollMs     = 0;
     s_havePendingMask   = false;
     s_rrPreferStatus    = true;
 
@@ -225,55 +235,109 @@ void Mega1Link::update()
     if (s_pollIntervalMs == 0) s_pollIntervalMs = POLL_STATUS_MS;
 
     // --------------------------------------------------
-    // DRDY quick-path:
-    // 1) bei IRQ/pin-low: pendingMask lesen (1 I2C-Read pro Tick)
-    //    ABER: wenn pending bereits cached !=0 ist, NICHT dauernd neu lesen,
-    //    sonst verhungert der RR-Read.
-    // 2) im nächsten Tick: RR-Reads (Status/Diag) anhand cached pendingMask
+    // DRDY quick-path (Mega2-like):
+    // - If DRDY is active (IRQ latched or pin LOW), do:
+    //   1) read pendingMask
+    //   2) fetch max ONE payload (Status/Diag) via simple RR
+    // This avoids the "needs next click" symptom when the main loop is busy.
     // --------------------------------------------------
 
     bool didI2cRead = false;
 
-    const bool drdyActive = (s_drdyLatched || digitalRead(PIN_DATAREADY_1) == LOW);
-    if (drdyActive)
+    const bool drdyLevelLow = (digitalRead(PIN_DATAREADY_1) == LOW);
+    const bool drdyActive   = drdyLevelLow || s_drdyLatched;
+
+    if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
     {
-        s_drdyLatched = false;
+        s_lastDrdyPollMs = now;
+        s_drdyLatched    = false;
 
-        // pendingMask nur lesen, wenn wir keine cached pending haben ODER cached pending == 0.
-        // Wenn cached pending != 0, RR-Read priorisieren (sonst starvation, weil DRDY low bleibt).
-        const bool needPendingRead = (!s_havePendingMask) || (s_cachedPendingMask == 0);
+        uint16_t pm = 0;
+        const auto pr = Mega1Client::pollPendingMask(pm);
+        didI2cRead = true; // we did at least one I2C transaction in this tick
 
-        if (needPendingRead && (uint32_t)(now - s_lastPendReadMs) >= PEND_POLL_MIN_MS)
+        if (pr == I2CBus::Result::OK)
         {
-            uint16_t pm = 0;
-            const auto pr = Mega1Client::pollPendingMask(pm);
-            didI2cRead = true; // verhindert RR-Read im selben update()-Tick
-            if (pr == I2CBus::Result::OK)
-            {
-                s_cachedPendingMask = pm;
-                s_havePendingMask   = true;
-                s_lastPendReadMs    = now;
+            s_cachedPendingMask = pm;
+            s_havePendingMask   = true;
+            s_lastPendReadMs    = now;
 
-                // optional: sehr selten loggen (nur für Felddebug)
-                static uint32_t s_lastPmLog = 0;
-                if (now - s_lastPmLog > 1500)
+            // Heartbeat: pending-mask OK means Mega1 is alive (update online timeout)
+            SystemRuntimeState::noteMega1LinkActivity();
+
+            // If mask==0 and pin is HIGH again -> nothing to do.
+            if (s_cachedPendingMask == 0 && !drdyLevelLow)
+            {
+                s_nextFastMs = 0;
+            }
+            else if (s_cachedPendingMask != 0)
+            {
+                // One RR payload read per DRDY tick
+                I2CBus::Result rr = I2CBus::Result::ERROR;
+
+                const bool hasStatus = (s_cachedPendingMask & Mega1Client::M1_PEND_STATUS) != 0;
+                const bool hasDiag   = (s_cachedPendingMask & Mega1Client::M1_PEND_DIAG)   != 0;
+
+                if ((s_rrPreferStatus && hasStatus) || (!hasDiag && hasStatus))
                 {
-                    s_lastPmLog = now;
-                    DBG_PRINTF("[M1LINK][DRDY] irq=%lu pin=%d pending=0x%04X\n",
-                               (unsigned long)s_drdyIrqCount,
-                               (int)digitalRead(PIN_DATAREADY_1),
-                               (unsigned)s_cachedPendingMask);
+                    rr = Mega1Client::pollStatus();
+                    if (rr == I2CBus::Result::OK) s_cachedPendingMask &= ~Mega1Client::M1_PEND_STATUS;
+                }
+                else if (hasDiag)
+                {
+                    rr = Mega1Client::pollDiag();
+                    if (rr == I2CBus::Result::OK) s_cachedPendingMask &= ~Mega1Client::M1_PEND_DIAG;
                 }
 
-                // schneller Folgetick, um RR-Read zu machen (nicht vom FullPoll abhängig)
-                if (s_cachedPendingMask != 0) s_nextFastMs = now + 2;
-                else s_nextFastMs = 0;
+                s_rrPreferStatus = !s_rrPreferStatus;
+
+                if (rr == I2CBus::Result::OK)
+                {
+                    s_pollFailCount  = 0;
+                    s_pollIntervalMs = POLL_STATUS_MS;
+                    s_nextFastMs     = 0;
+                    s_nextPollMs     = now + POLL_STATUS_MS;
+                    g_stateDirty     = true; // immediate WS push after RR
+                }
+                else if (rr == I2CBus::Result::BUSY)
+                {
+                    // retry soon (but don't block full poll)
+                    s_nextFastMs = now + BUSY_RETRY_MS;
+                    s_nextPollMs = now + POLL_STATUS_MS;
+                }
+                else
+                {
+                    // Payload reject/ERROR: drop cached mask so we re-sync on next DRDY tick
+                    // (matches Mega2 behavior: always refresh pendingMask before next payload read)
+                    s_havePendingMask   = false;
+                    s_cachedPendingMask = 0;
+                    s_nextFastMs        = now + BUSY_RETRY_MS;
+                }
             }
         }
-        else
+    }
+
+    // --------------------------------------------------
+    // Idle pendingMask poll (Heartbeat baseline)
+    // When DRDY is HIGH (pending==0), we still want periodic "alive" confirmation.
+    // This is cheap (1 byte) and avoids going offline after ~8s of silence.
+    // --------------------------------------------------
+    if (!didI2cRead && !drdyActive && (uint32_t)(now - s_lastPendReadMs) >= PEND_POLL_IDLE_MS)
+    {
+        uint16_t pm = 0;
+        const auto pr = Mega1Client::pollPendingMask(pm);
+        didI2cRead = true;
+        if (pr == I2CBus::Result::OK)
         {
-            // DRDY ist aktiv und wir haben pending cached -> RR-Read asap sicherstellen
-            if (s_cachedPendingMask != 0 && s_nextFastMs == 0) s_nextFastMs = now + 2;
+            s_cachedPendingMask = pm;
+            s_havePendingMask   = true;
+            s_lastPendReadMs    = now;
+
+            // Heartbeat: pending-mask OK means Mega1 is alive
+            SystemRuntimeState::noteMega1LinkActivity();
+
+            // If something became pending while DRDY didn't fire (or we missed it), do RR quickly.
+            if (s_cachedPendingMask != 0) s_nextFastMs = now + 2;
         }
     }
 
@@ -329,8 +393,11 @@ void Mega1Link::update()
         }
         else
         {
-            // ERROR: fall back to periodic full poll
-            s_havePendingMask = false;
+            // ERROR (z.B. Status/Diag reject): Pending NICHT verwerfen.
+            // Stattdessen zeitnah erneut versuchen, damit UI ohne nächsten Klick nachzieht.
+            didI2cRead = true;
+            s_nextFastMs = now + BUSY_RETRY_MS;
+            // s_havePendingMask / s_cachedPendingMask bleiben bewusst unverändert
         }
     }
 
@@ -340,6 +407,7 @@ void Mega1Link::update()
 
         if (r == I2CBus::Result::OK)
         {
+            
             s_pollFailCount  = 0;
             s_pollIntervalMs = POLL_STATUS_MS;
 
@@ -347,11 +415,13 @@ void Mega1Link::update()
             if (now - s_lastOkLog > 5000)
             {
                 s_lastOkLog = now;
-                if (!s_hadOk || s_pollFailCount != 0) {
-                s_hadOk = true;
-                DBG_PRINTLN("[M1LINK] poll OK (recovered)");
+                if (!s_hadOk)
+                {
+                    s_hadOk = true;
+                    DBG_PRINTLN("[M1LINK] poll OK");
+                }
             }
-            }
+            
         }
         else if (r == I2CBus::Result::BUSY)
         {
@@ -386,9 +456,9 @@ void Mega1Link::update()
             s_nextDiagPollMs = now + POLL_DIAG_MS;
             (void)Mega1Client::pollDiag();
         }
+    }
 
     // --------------------------------------------------
-    } // end full-poll block (pollStatus + optional diag)
     // Pending Commands (serialisiert über I2C)
     // --------------------------------------------------
     CmdQItem cmd{};
@@ -408,10 +478,12 @@ void Mega1Link::update()
                 cr = Mega1Client::cmdSetBhfPower(cmd.a, cmd.b != 0);
                 break;
             case CMDQ_START_SELFTEST:
-                // Mega1 selftest command is optional; avoid blocking the queue if not implemented.
-                DBG_PRINTLN("[M1LINK] cmd: START_SELFTEST (noop)");
-                cr = I2CBus::Result::OK;
-                break;
+            {
+                // Mega1: CMD_START_SELFTEST = 0x07 (siehe Mega1 include/I2CProtocol.h)
+                const uint8_t b = 0x07;
+                DBG_PRINTLN("[M1LINK] cmd: START_SELFTEST -> send 0x07");
+                cr = I2CBus::writeEx(0x10, &b, 1);
+            } break;
             default:
                 cr = I2CBus::Result::ERROR;
                 break;
@@ -445,6 +517,7 @@ void Mega1Link::update()
         s_prevOnline = online;
         DBG_PRINTF("[M1LINK] online=%d\n", online ? 1 : 0);
     }
+
         
 }
 

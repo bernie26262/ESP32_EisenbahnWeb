@@ -333,6 +333,7 @@ window.addEventListener("load", () => {
   const v = document.getElementById("ui-version");
   if (v) v.textContent = UI_VERSION;
   console.log("[UI] version", UI_VERSION);
+  bindMega1DelegatedClicks();
   connectWebSocket();
 });
 
@@ -1197,7 +1198,7 @@ function showOverlay(title, lines, requireChecked, options = {}) {
               <div style="font-weight:700;">${escapeHtml(_uiText0("STARTUP_M1_TITLE", "Weichen Selftest (Mega1)"))}</div>
               <div id="st-m1-state" style="opacity:.85; margin-top:2px;">${escapeHtml(_uiText0("STARTUP_STATE_NOT_REQUIRED", "nicht erforderlich"))}</div>
               <div style="margin-top:8px;">
-                <button id="st-m1-btn" class="btn-mini" type="button">${escapeHtml(_uiText0("STARTUP_M1_BTN_DISABLED", "Mega1 Selftest starten"))}</button>
+                <button id="st-m1-btn" class="btn-mini" type="button">${escapeHtml(_uiText0("STARTUP_M1_SELFTEST_LABEL", "Mega1 Selftest starten"))}</button>
               </div>
             </div>
           </div>
@@ -1969,7 +1970,7 @@ function renderMega1StationsLeft(msg) {
     const st = mkPill(on ? "AN" : "aus", on ? "pill-on" : "pill-off");
     const dis = canCmd ? "" : "disabled";
     bhfBtns.push(
-      `<button class="${cls}" ${dis} onclick="sendM1BhfToggle(${i + 1})">
+      `<button class="${cls}" ${dis} data-m1cmd="bhfToggle" data-bhf="${i}">
         <div class="toggle-title">BHF ${i + 1}</div>
         <div class="toggle-state">${st}</div>
       </button>`
@@ -2030,7 +2031,7 @@ function renderMega1TurnoutsLeft(msg) {
     const slowLine = isSlow ? `<div class="toggle-sub">${mkPill("Slow aktiv", "pill-info")}</div>` : "";
 
     wBtns.push(
-      `<button class="${cls}" ${dis} onclick="sendM1WeicheToggle(${i})">
+      `<button class="${cls}" ${dis} data-m1cmd="weicheToggle" data-idx="${i}">
         <div class="toggle-title">W ${i}</div>
         ${istSollLine}
         ${okLine}
@@ -2051,6 +2052,46 @@ function renderMega1TurnoutsLeft(msg) {
     </div>
     ${lockHint}
   `;
+}
+
+// ------------------------------------------------------------
+// Mega1 UI: delegated click binding (works with innerHTML rerenders)
+// ------------------------------------------------------------
+function bindMega1DelegatedClicks() {
+  const stations = document.getElementById("ov-m1-stations");
+  if (stations && !stations.__m1Bound) {
+    stations.__m1Bound = true;
+    stations.addEventListener("click", (ev) => {
+      const btn = ev.target && ev.target.closest ? ev.target.closest("button[data-m1cmd]") : null;
+      if (!btn) return;
+      if (btn.disabled) return;
+
+      const cmd = btn.getAttribute("data-m1cmd");
+      if (cmd === "bhfToggle") {
+        const bhf = Number(btn.getAttribute("data-bhf"));
+        if (!Number.isFinite(bhf)) return;
+        // sendM1BhfToggle expects 1..4
+        sendM1BhfToggle(bhf + 1);
+      }
+    });
+  }
+
+  const turnouts = document.getElementById("ov-m1-turnouts");
+  if (turnouts && !turnouts.__m1Bound) {
+    turnouts.__m1Bound = true;
+    turnouts.addEventListener("click", (ev) => {
+      const btn = ev.target && ev.target.closest ? ev.target.closest("button[data-m1cmd]") : null;
+      if (!btn) return;
+      if (btn.disabled) return;
+
+      const cmd = btn.getAttribute("data-m1cmd");
+      if (cmd === "weicheToggle") {
+        const idx = Number(btn.getAttribute("data-idx"));
+        if (!Number.isFinite(idx)) return;
+        sendM1WeicheToggle(idx);
+      }
+    });
+  }
 }
 
 
@@ -2124,7 +2165,7 @@ function renderStationsLeft(msg) {
     const slowTag = isSlow ? mkPill("Slow", "pill-info") : "";
 
     wBtns.push(
-      `<button class="${cls}" ${dis} onclick="sendM1WeicheToggle(${i})">
+      `<button class="${cls}" ${dis} data-m1cmd="weicheToggle" data-idx="${i}">
         <div class="toggle-title">W ${i}</div>
         <div class="toggle-state">${st}</div>
         <div class="toggle-sub">${stSoll}${slowTag}</div>

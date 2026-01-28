@@ -284,6 +284,12 @@ const SystemStatus& SystemRuntimeState::mega1Status()
     return s_m1Status;
 }
 
+void SystemRuntimeState::noteMega1LinkActivity()
+{
+    // Count any successful Mega1 transaction (e.g. CMD_GET_PENDING_MASK OK) as link activity.
+    // Do NOT touch boot-tracking markers here; those belong to real payload updates (status/diag).
+    s_lastRxMsM1 = millis();
+}
 
 
 void SystemRuntimeState::updateMega1Diag(const Mega1DiagV1& d)

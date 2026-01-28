@@ -135,7 +135,17 @@ window.safetyUiMap = {
         overlay: true,
         ackRequired: false,
         title: "",
-        text: ["Mega1 Selftest (kommt später)"]
+        text: ["Mega1 Selftest nicht verfügbar"]
+    },
+
+    "STARTUP_M1_SELFTEST_LABEL": {
+        level: "INFO",
+        color: "blue",
+        icon: "info",
+        overlay: true,
+        ackRequired: false,
+        title: "",
+        text: ["Mega1 Selftest starten"]
     },
    
 
