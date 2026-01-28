@@ -479,10 +479,8 @@ void Mega1Link::update()
                 break;
             case CMDQ_START_SELFTEST:
             {
-                // Mega1: CMD_START_SELFTEST = 0x07 (siehe Mega1 include/I2CProtocol.h)
-                const uint8_t b = 0x07;
-                DBG_PRINTLN("[M1LINK] cmd: START_SELFTEST -> send 0x07");
-                cr = I2CBus::writeEx(0x10, &b, 1);
+                // Use Mega1Client helper so we always consume the 1-byte ACK
+                cr = Mega1Client::cmdStartSelftest();
             } break;
             default:
                 cr = I2CBus::Result::ERROR;
