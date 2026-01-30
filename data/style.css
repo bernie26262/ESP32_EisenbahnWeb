@@ -792,3 +792,17 @@ button, .toggle-btn {
   align-items: center;
   gap: 6px;
 }
+
+/* Mega1 Weichen: Soll fett wie bei Mega2 */
+.m1-w-soll{
+  font-weight: 900;
+}
+
+/* Redukt: Platz reservieren -> kein Springen der Button-Höhe */
+.m1-w-red{
+  display: inline-flex;   /* immer im Layout */
+  min-height: 1.35em;     /* stabile Zeilenhöhe */
+}
+.m1-w-red.is-hidden{
+  visibility: hidden;     /* unsichtbar, aber nimmt Platz ein */
+}

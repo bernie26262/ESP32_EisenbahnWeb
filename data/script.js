@@ -2028,7 +2028,7 @@ function renderMega1StationsLeft(msg) {
       b.setAttribute("data-m1cmd", "bhfToggle");
       b.setAttribute("data-bhf", String(i));
       b.innerHTML = `
-        <div class="m1-sig-title">BHF ${i + 1}</div>
+        <div class="m1-sig-title">BHF${i + 1}</div>
         <div class="m1-sig-row">
           <img class="signal-img" alt="">
           <span class="m1-sig-text"></span>
@@ -2102,13 +2102,13 @@ function renderMega1TurnoutsLeft(msg) {
       b.setAttribute("data-m1cmd", "weicheToggle");
       b.setAttribute("data-idx", String(i));
       b.innerHTML = `
-        <div class="toggle-title">W ${i}</div>
+        <div class="toggle-title">W${i}</div>
         <div class="toggle-sub turnout-col">
           <img class="turnout-img" alt="">
           <span class="m1-w-soll"></span>
         </div>
         <div class="toggle-sub">
-          <span class="pill pill-info m1-w-red" style="display:none;">Redukt.</span>
+          <span class="pill pill-info m1-w-red is-hidden">Redukt.</span>
         </div>`;
       grid.appendChild(b);
     }
@@ -2146,7 +2146,7 @@ function renderMega1TurnoutsLeft(msg) {
       const sollEl = btn.querySelector(".m1-w-soll");
       if (sollEl) sollEl.textContent = "Soll: —";
       const red = btn.querySelector(".m1-w-red");
-      if (red) red.style.display = "none";
+      if (red) red.classList.add("is-hidden");
       continue;
     }
 
@@ -2174,7 +2174,7 @@ function renderMega1TurnoutsLeft(msg) {
     if (sollEl && sollEl.textContent !== wantSoll) sollEl.textContent = wantSoll;
 
     const red = btn.querySelector(".m1-w-red");
-    if (red) red.style.display = isSlow ? "" : "none";
+    if (red) red.classList.toggle("is-hidden", !isSlow);
   }
 }
 
