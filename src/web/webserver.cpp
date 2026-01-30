@@ -244,6 +244,17 @@ static String buildWsStateJson(bool includeAnalog)
         shj["ausfahrGleis"]     = sh.ausfahrGleis;
         shj["modus"]            = sh.modus;
         shj["state"]            = sh.state;
+        
+        // Startup-Checklist Flags (Mega2): prefer ShadowYardStatus.selftestFlags.
+        // Fallback to META bits in sbhfOccupiedMask (0x80 running, 0x40 done).
+        const uint8_t stf = sh.selftestFlags;
+        const bool stRunning = ((stf & 0x01) != 0) || ((m2s.sbhfOccupiedMask & 0x80) != 0);
+        const bool stDone    = ((stf & 0x02) != 0) || ((m2s.sbhfOccupiedMask & 0x40) != 0);
+        sbhf["selftestRunning"] = stRunning;
+        sbhf["selftestDone"]    = stDone;
+
+        // optional: diagnostics
+        shj["selftestFlags"] = stf;
 
 
         JsonObject t = doc["mega2"]["turnouts"].to<JsonObject>();
