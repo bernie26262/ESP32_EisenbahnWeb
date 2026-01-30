@@ -501,6 +501,18 @@ h2 {
   cursor: not-allowed;
 }
 .toggle-btn.is-on{ background: rgba(0,180,90,0.12); }
+/* Weichen: Farbe nach OK/ABW (nicht nach Richtung) */
+.toggle-btn.is-ok{ background: rgba(0,180,90,0.12); }
+.toggle-btn.is-bad{
+  background: rgba(200, 0, 0, 0.12);
+  border-color: rgba(200, 0, 0, 0.55);
+}
+.toggle-btn.is-bad .toggle-title,
+.toggle-btn.is-bad .toggle-state,
+.toggle-btn.is-bad .toggle-sub{
+  color: rgba(160, 0, 0, 0.95);
+}
+
 /* AUS = rot (Signal) */
 .toggle-btn.is-off{
   background: rgba(200, 0, 0, 0.12);

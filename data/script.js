@@ -442,8 +442,36 @@ function wsSendAction(action, okMsg) {
  * ========================================================= */
 
 function handleWsMessage(msg) {
-  if (DEBUG_WS) console.log("[WS MSG json]", JSON.stringify(msg));
-  if (!msg || msg.type !== "state") return;
+  // NOTE: We throttle analog logs further down (every 10th frame),
+  // so keep the generic DEBUG_WS log disabled for analog to avoid console spam.
+  // (State logs remain as before.)
+  // if (DEBUG_WS) console.log("[WS MSG json]", JSON.stringify(msg));
+  if (!msg) return;
+
+  // Fast-path: analog stream (periodic, small)
+  if (msg.type === "analog") {
+    // Log only every 10th analog frame to keep console readable
+    if (DEBUG_WS) {
+      window.__wsAnalogLogN = (window.__wsAnalogLogN || 0) + 1;
+      if ((window.__wsAnalogLogN % 10) === 0) {
+        console.log("[WS MSG json][analog x10]", JSON.stringify(msg));
+      }
+    }
+
+    window.lastStateMsg = window.lastStateMsg || {};
+    window.lastStateMsg.mega2 = window.lastStateMsg.mega2 || {};
+    window.lastStateMsg.mega2.analog = msg.analog || {};
+
+    // Update only analog-related UI parts (cheap, avoids full re-render)
+    try { renderTrafoRight(window.lastStateMsg); } catch (e) { console.warn("[UI] renderTrafoRight(analog) failed:", e); }
+    try { renderBlocksLeft(window.lastStateMsg); } catch (e) { console.warn("[UI] renderBlocksLeft(analog) failed:", e); }
+    return;
+  }
+
+  if (msg.type !== "state") return;
+  
+  // Keep state logging as-is (full state frames are infrequent now)
+  if (DEBUG_WS) console.log("[WS MSG json][state]", JSON.stringify(msg));
 
   // Backwards compatible shape for renderers (flat vs nested)
   msg = normalizeWsState(msg);
@@ -2008,7 +2036,7 @@ function renderMega1TurnoutsLeft(msg) {
 
   const ist = Number(diag.weicheIstBits ?? 0);
   const soll = Number(diag.weicheSollBits ?? 0);
-  const slow = Number(diag.weicheSlowBits ?? 0);
+  const slow = Number(diag.weicheSlowSelectedBits ?? 0);
 
   const mkPill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
 
@@ -2020,23 +2048,27 @@ function renderMega1TurnoutsLeft(msg) {
 
     const dis = canCmd ? "" : "disabled";
 
-    // Trennung der Infos:
-    // - Button-Farbe nach IST (G/A)
-    // - Abweichung (IST!=SOLL) als separate Zeile
-    // - Slow als separate Zeile
-    const cls = ["toggle-btn", curG ? "is-on" : "is-off", isSlow ? "is-slow" : ""].join(" ").trim();
+    const isMatch = (sG === curG);
+
+
+
+    // Button-Farbe nur nach Abweichung (IST!=SOLL), NICHT nach Richtung (G/A)
+    const cls = ["toggle-btn", isMatch ? "is-ok" : "is-bad", isSlow ? "is-slow" : ""].join(" ").trim();
 
     const istSollLine = `<div class="toggle-sub">Ist: ${curG ? "G" : "A"}&nbsp;&nbsp;Soll: ${sG ? "G" : "A"}</div>`;
-    const okLine = `<div class="toggle-sub">${mkPill((sG === curG) ? "OK" : "ABW.", (sG === curG) ? "pill-ok" : "pill-warn")}</div>`;
-    const slowLine = isSlow ? `<div class="toggle-sub">${mkPill("Slow aktiv", "pill-info")}</div>` : "";
+    
+    const okPill   = mkPill(isMatch ? "OK" : "ABW.", isMatch ? "pill-ok" : "pill-warn");
+    // "Redukt." ist ein Zustand aus weicheSlowSelectedBits -> nur anzeigen wenn aktiv
+    const redPill  = isSlow ? mkPill("Redukt.", "pill-info") : "";
+    const okLine = `<div class="toggle-sub">${okPill}${redPill}</div>`;
+
 
     wBtns.push(
       `<button class="${cls}" ${dis} data-m1cmd="weicheToggle" data-idx="${i}">
         <div class="toggle-title">W ${i}</div>
         ${istSollLine}
         ${okLine}
-        ${slowLine}
-      </button>`
+              </button>`
     );
   }
 
@@ -2125,7 +2157,8 @@ function renderStationsLeft(msg) {
   const powerMask = Number(diag.powerMask ?? 0);
   const ist = Number(diag.weicheIstBits ?? 0);
   const soll = Number(diag.weicheSollBits ?? 0);
-  const slow = Number(diag.weicheSlowBits ?? 0);
+  // STRICT: show Redukt only if transmitted bit is set
+  const slow = Number(diag.weicheSlowSelectedBits ?? 0);
 
   // Enable rules for CMD buttons
   const canCmd = wsOk && mega1online && !lock && !notausActive;

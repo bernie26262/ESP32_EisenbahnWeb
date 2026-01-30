@@ -164,8 +164,24 @@ static uint8_t deriveUiBlockReason(const SystemStatus& st)
 // ----------------------------------------------------
 void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
 {
+    const SystemStatus prev = s_m2Status;
     s_m2Status = st;
     s_lastRxMs = millis();
+
+    // Change detection (digital fields only). IMPORTANT: ignore uptimeMs/seq to avoid periodic WS spam.
+    bool changed = false;
+    if (prev.flags             != st.flags)             changed = true;
+    if (prev.blockOccupiedMask != st.blockOccupiedMask) changed = true;
+    if (prev.reserved          != st.reserved)          changed = true;
+    if (prev.sbhfState         != st.sbhfState)         changed = true;
+    if (prev.sbhfOccupiedMask  != st.sbhfOccupiedMask)  changed = true;
+    if (prev.sbhfCurrentGleis  != st.sbhfCurrentGleis)  changed = true;
+    if (prev.turnoutSollMask   != st.turnoutSollMask)   changed = true;
+    if (prev.turnoutIstMask    != st.turnoutIstMask)    changed = true;
+    if (prev.safetyErrorType   != st.safetyErrorType)   changed = true;
+    if (prev.safetyErrorIndex  != st.safetyErrorIndex)  changed = true;
+
+    const bool wasOnlinePrev = s_m2OnlinePrev;
 
     // selftestRunning is encoded as META bit 0x80 in sbhfOccupiedMask.
     const bool selftestRunning = ((st.sbhfOccupiedMask & 0x80u) != 0);
@@ -184,9 +200,15 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     if (!s_m2OnlinePrev)
         s_m2Boot.seen = false;
     s_m2OnlinePrev = true;
-    const bool rebootDetected = updateBootTrack(s_m2Boot, st);
+    
+    if (!wasOnlinePrev)
+        g_stateDirty = true;const bool rebootDetected = updateBootTrack(s_m2Boot, st);
     if (rebootDetected)
+    { 
         s_m2SelftestDone = false;
+        // boot-related UI fields changed (bootId/uptime/checklist)
+        g_stateDirty = true;
+    }
 
     s_safetyLock =
         (st.flags & SYS_NOTAUS_ACTIVE) ||
@@ -227,7 +249,9 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
             errorIndex
         );
     }
-    g_stateDirty = true;
+    // WS: only mark dirty if something relevant changed.
+    if (changed)
+        g_stateDirty = true;
 }
 
 void SystemRuntimeState::updateMega1Status(const SystemStatus& st)
@@ -308,16 +332,13 @@ void SystemRuntimeState::updateMega1Diag(const Mega1DiagV1& d)
     // - Der Step-Marker s_m1SelftestDone schliesst NICHT automatisch die Checklist.
     // - "Done" gilt, sobald der Selbsttest als DONE gemeldet wird, unabhängig von PASS/FAIL.
     //   PASS/FAIL wird ueber selftestFailMask als Warning/Diag dargestellt.
-    if (s_m1Boot.needsChecklist)
+    const bool doneFlag = ((d.selftestFlags & 0x02u) != 0);
+    // robust/sticky: sobald DONE einmal gesehen wurde, bleibt der Step gesetzt
+    // (Reset nur bei Bootwechsel, nicht bei Poll-Flaps und nicht bei FailMask!=0)
+    if (doneFlag && !s_m1SelftestDone)
     {
-        const bool doneFlag = ((d.selftestFlags & 0x02u) != 0);
-        // robust/sticky: sobald DONE einmal gesehen wurde, bleibt der Step gesetzt
-        // (Reset nur bei Bootwechsel, nicht bei Poll-Flaps und nicht bei FailMask!=0)
-        if (doneFlag && !s_m1SelftestDone)
-        {
-            s_m1SelftestDone = true;
-            g_stateDirty = true;
-        }
+        s_m1SelftestDone = true;
+        g_stateDirty = true;
     }
     s_m1SelftestRunningPrev = running;
     g_stateDirty = true;
@@ -552,9 +573,10 @@ void SystemRuntimeState::updateMega2EntryPreview(const uint16_t* arr, uint8_t n)
  
  void SystemRuntimeState::updateMega2Analog(const Mega2AnalogPayload& p)
  {
-     s_m2Analog = p;
-     s_m2AnalogTsMs = millis();
-     g_stateDirty = true;
+    s_m2Analog = p;
+    s_m2AnalogTsMs = millis();
+    // IMPORTANT: analog is streamed separately (periodic WS message),
+    // so it must not trigger the full digital WS "state" push.
  }
  
  const Mega2AnalogPayload& SystemRuntimeState::mega2Analog()

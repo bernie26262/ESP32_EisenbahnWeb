@@ -153,6 +153,26 @@ static uint32_t s_nextFastMs       = 0; // RR-Read Termin nach DRDY (entkoppelt 
 static constexpr uint32_t DRDY_COOLDOWN_MS = PEND_POLL_MIN_MS; // limit DRDY burst while pin stays LOW
 static uint32_t s_lastDrdyPollMs   = 0; // last DRDY-driven poll (pending + one payload)
 
+// ------------------------------------------------------------
+// Startup bootstrap poll (robust against missed DRDY edges)
+// During the first seconds after gate OK, we actively pull STATUS+DIAG.
+// This ensures UI does not get stuck in "selftest running" until first external toggle.
+// ------------------------------------------------------------
+static bool     s_bootstrapActive     = false;
+static uint32_t s_bootstrapUntilMs    = 0;
+static uint32_t s_lastBootstrapPollMs = 0;
+static constexpr uint32_t BOOTSTRAP_MS       = 2500;
+static constexpr uint32_t BOOTSTRAP_POLL_MS  = 100;
+
+// ------------------------------------------------------------
+// Selftest/Startup watchdog:
+// While Mega1 selftest is running (or checklist still needs it),
+// do NOT rely on DRDY edges only. Poll DIAG periodically.
+// ------------------------------------------------------------
+static uint32_t s_nextFastDiagMs = 0;
+static constexpr uint32_t FAST_DIAG_MS = 100;
+
+
 static void IRAM_ATTR onMega1DrdyIsr()
 {
     s_drdyIrqCount++;
@@ -177,6 +197,11 @@ void Mega1Link::begin()
     s_gateOk         = false;
     s_nextGateProbeMs = 0;
     s_hadOk          = false;
+
+
+    s_bootstrapActive     = false;
+    s_bootstrapUntilMs    = 0;
+    s_lastBootstrapPollMs = 0;
 
 
     // DRDY input (idle HIGH, active LOW)
@@ -227,12 +252,69 @@ void Mega1Link::update()
                 s_pollIntervalMs = POLL_STATUS_MS;
                 s_pollFailCount = 0;
                 DBG_PRINTLN("[M1LINK] gate OK (addr 0x10)");
+                s_nextFastDiagMs = now + 25;
             }
         }
         return;
     }
 
+    // Start bootstrap exactly once after gate becomes OK
+    if (!s_hadOk)
+    {
+        s_hadOk = true;
+        s_bootstrapActive     = true;
+        s_bootstrapUntilMs    = now + BOOTSTRAP_MS;
+        s_lastBootstrapPollMs = 0;
+    }
+
+    // --------------------------------------------------
+    // Bootstrap polling: do not rely on DRDY edges during startup.
+    // Some Mega1 transitions (boot/selftest-end) may not produce a new DRDY falling edge
+    // while the pin is already LOW. This guarantees we observe selftestRunning->false.
+    // --------------------------------------------------
+    if (s_bootstrapActive)
+    {
+        if (now >= s_bootstrapUntilMs)
+        {
+            s_bootstrapActive = false;
+        }
+        else if (s_lastBootstrapPollMs == 0 || (uint32_t)(now - s_lastBootstrapPollMs) >= BOOTSTRAP_POLL_MS)
+        {
+            s_lastBootstrapPollMs = now;
+            (void)Mega1Client::pollStatusAndDiag();
+            SystemRuntimeState::noteMega1LinkActivity();
+            g_stateDirty = true;
+        }
+    }
+
     if (s_pollIntervalMs == 0) s_pollIntervalMs = POLL_STATUS_MS;
+
+    // --------------------------------------------------
+    // Selftest/Startup watchdog: poll DIAG periodically while needed
+    // --------------------------------------------------
+    {
+        const auto& d = SystemRuntimeState::mega1Diag();
+        const bool running = ((d.selftestFlags & 0x01u) != 0);
+        const bool needs   = SystemRuntimeState::mega1NeedsStartupChecklist();
+        const bool done    = SystemRuntimeState::mega1SelftestDone();
+        const bool needFastDiag = running || (needs && !done);
+
+        if (needFastDiag)
+        {
+            if (s_nextFastDiagMs == 0 || (uint32_t)(now - s_nextFastDiagMs) >= FAST_DIAG_MS)
+            {
+                s_nextFastDiagMs = now;
+                (void)Mega1Client::pollDiag(); // force fresh diag even without DRDY edge
+                SystemRuntimeState::noteMega1LinkActivity();
+                g_stateDirty = true;
+            }
+        }
+        else
+        {
+            s_nextFastDiagMs = 0;
+        }
+    }
+
 
     // --------------------------------------------------
     // DRDY quick-path (Mega2-like):
@@ -246,6 +328,7 @@ void Mega1Link::update()
 
     const bool drdyLevelLow = (digitalRead(PIN_DATAREADY_1) == LOW);
     const bool drdyActive   = drdyLevelLow || s_drdyLatched;
+    const bool wasLatched   = s_drdyLatched;
 
     if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
     {
@@ -258,6 +341,18 @@ void Mega1Link::update()
 
         if (pr == I2CBus::Result::OK)
         {
+            // Log inkl. Mask (sonst sieht man im DRDY-Log nicht, *was* ansteht)
+            DBG_PRINTF("[M1LINK][DRDY] irq=%lu pin=%u latched=%u mask=0x%04X\n",
+                       (unsigned long)s_drdyIrqCount,
+                       drdyLevelLow ? 0u : 1u,
+                       wasLatched ? 1u : 0u,
+                        (unsigned)pm);
+
+            if (pm)
+            {
+                DBG_PRINTF("[M1LINK] pending=0x%04X\n", (unsigned)pm);
+            }
+
             s_cachedPendingMask = pm;
             s_havePendingMask   = true;
             s_lastPendReadMs    = now;
@@ -271,7 +366,7 @@ void Mega1Link::update()
                 s_nextFastMs = 0;
             }
             else if (s_cachedPendingMask != 0)
-            {
+            {   
                 // One RR payload read per DRDY tick
                 I2CBus::Result rr = I2CBus::Result::ERROR;
 
@@ -280,12 +375,16 @@ void Mega1Link::update()
 
                 if ((s_rrPreferStatus && hasStatus) || (!hasDiag && hasStatus))
                 {
+                    DBG_PRINTLN("[M1LINK] read STATUS...");
                     rr = Mega1Client::pollStatus();
+                    if (rr == I2CBus::Result::OK) DBG_PRINTLN("[M1LINK] read STATUS ok");
                     if (rr == I2CBus::Result::OK) s_cachedPendingMask &= ~Mega1Client::M1_PEND_STATUS;
                 }
                 else if (hasDiag)
                 {
+                    DBG_PRINTLN("[M1LINK] read DIAG...");
                     rr = Mega1Client::pollDiag();
+                    if (rr == I2CBus::Result::OK) DBG_PRINTLN("[M1LINK] read DIAG ok");
                     if (rr == I2CBus::Result::OK) s_cachedPendingMask &= ~Mega1Client::M1_PEND_DIAG;
                 }
 

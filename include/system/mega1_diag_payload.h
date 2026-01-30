@@ -8,7 +8,7 @@
 //
 // Bits: Weiche i (0..11)
 //  - istGeradeBits:   1 = Rückmelder sagt "gerade"
-//  - slowActiveBits:  1 = Reduktions-Relais aktiv (pinRed LOW)
+//  - slowSelectedBits: 1 = Slow/Reduktion ausgewählt (typisch Abbiegen => Relais auf Slow-Kreis)
 //  - sollGeradeBits:  1 = letzter Sollzustand "gerade"
 //
 // powerMask Bits: Bahnhof i (0..3)
@@ -26,7 +26,7 @@ struct Mega1DiagV1
     uint16_t warnings;       // bitfield (frei)
 
     uint16_t weicheIstGeradeBits;   // Bit i
-    uint16_t weicheSlowActiveBits;  // Bit i
+    uint16_t weicheSlowSelectedBits;  // Bit i
     uint16_t weicheSollGeradeBits;  // Bit i
 
     uint8_t  powerMask;      // Bit i (0..3)

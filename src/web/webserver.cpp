@@ -3,7 +3,9 @@
 #include <ArduinoJson.h>
 #include <AsyncWebServer_ESP32_SC_W5500.h>
 #include <AsyncTCP.h>
-
+#if defined(ESP32)
+  #include "esp_heap_caps.h"
+#endif
 #include "network/eth_manager.h"
 #include "core2/state/system_runtime_state.h"
 #include "core2/mega/mega2_link.h"
@@ -11,7 +13,20 @@
 
 #include <LittleFS.h>
 
-
+// ---------------------------------------------------------
+// Heap debug (helps diagnose [AWS] _ack malloc failed)
+// Enable by defining DEBUG_AWS_HEAP in platformio.ini build_flags.
+// ---------------------------------------------------------
+static void dbgHeap(const char* tag)
+{
+#if defined(ESP32)
+    const uint32_t free8    = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    const uint32_t largest8 = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    Serial.printf("[HEAP] %s free8=%lu largest8=%lu\n", tag, (unsigned long)free8, (unsigned long)largest8);
+#else
+    (void)tag;
+#endif
+}
 
 // ---------------------------------------------------------
 // Globale Objekte
@@ -25,7 +40,7 @@ volatile bool g_stateDirty = true;
 // ---------------------------------------------------------
 // WebSocket State JSON
 // ---------------------------------------------------------
-static String buildWsStateJson()
+static String buildWsStateJson(bool includeAnalog)
 {
     // NOTE: This payload grew over time (mega1 diag, startup, entry matrices, sim flags, ...).
     // Keep this generously sized to avoid ArduinoJson overflow (which would silently drop fields
@@ -33,6 +48,7 @@ static String buildWsStateJson()
     StaticJsonDocument<3072> doc;
 
     doc["type"] = "state";
+    doc["full"] = includeAnalog;
     doc["ts"]   = (uint32_t)millis();
 
     doc["eth"]["connected"] = Net::EthManager::isConnected();
@@ -61,6 +77,7 @@ static String buildWsStateJson()
     // -----------------------------
     const bool m1Needs = SystemRuntimeState::mega1NeedsStartupChecklist();
     const bool m2Needs = SystemRuntimeState::mega2NeedsStartupChecklist();
+    const bool startupNeeds = (m1Needs || m2Needs);
 
     // "ready" bedeutet erstmal: aus ESP-Sicht keine offenen Boot-Checklist-Punkte.
     // (Spaeter ersetzen wir das durch "Selftests PASS".)
@@ -115,7 +132,8 @@ static String buildWsStateJson()
     s["powerOn"] = (m2.flags & SYS_POWER_ON) != 0;
 
     // NOTAUS-Status (aus Flags)
-    s["notausActive"] = (m2.flags & SYS_NOTAUS_ACTIVE) != 0;
+    const bool notausActive = (m2.flags & SYS_NOTAUS_ACTIVE) != 0;
+    s["notausActive"] = notausActive;
 
     // Klartext (ESP-seitig)
     s["text"] = SystemRuntimeState::safetyErrorText(
@@ -124,7 +142,20 @@ static String buildWsStateJson()
     );
 
     // Optional: UI kann das direkt nutzen, statt lock/reason zu heuristiken
-    s["ackRequired"] = (SystemRuntimeState::safetyLock() && (s["notausActive"] || (SystemRuntimeState::safetyBlockReason() != 0)));
+    bool ackReq = (SystemRuntimeState::safetyLock() &&
+                   (notausActive || (SystemRuntimeState::safetyBlockReason() != 0)));
+
+    // Gate "Systemstart – Quittierung erforderlich" until startup checklist is done.
+    // Startup-Checklist Overlay soll zuerst laufen; erst danach kommt die Systemstart-Quittierung.
+    // (NOTAUS bleibt immer ackRequired, unabhängig vom Startup.)
+    if (startupNeeds && !notausActive && (SystemRuntimeState::safetyBlockReason() == 1))
+    {
+        ackReq = false;
+        // Optional: Text unterdrücken, damit UI nicht verwirrt (kannst du auch weglassen)
+        s["text"] = "";
+    }
+
+    s["ackRequired"] = ackReq;
 
     // -----------------------------
     // Mega2 Details (nur wenn online)
@@ -224,17 +255,22 @@ static String buildWsStateJson()
         t["istMask"]  = ttValid ? tt.istMask  : m2s.turnoutIstMask;
 
         // Blocks already populated above (occupiedMask + status[]) from DRDY-fast cache.
+        // Mega2 Analog (Trafo + Blockströme)
+        // IMPORTANT: Analog is streamed separately every 500ms; we include it only
+        // in ground-truth full states (every few seconds) to keep payload small.
          
-        // Mega2 Analog (Trafo + Blockströme), falls vorhanden
-        const auto& an = SystemRuntimeState::mega2Analog();
-        JsonObject a = doc["mega2"]["analog"].to<JsonObject>();
-        a["seq"] = an.seq;
-        a["flags"] = an.flags;
-        a["vA10"] = an.vA10;
-        a["vB10"] = an.vB10;
-        JsonArray ia = a["i_mA"].to<JsonArray>();
-        for (uint8_t i = 0; i < M2_NUM_BLOCKS; i++)
-            ia.add(an.i_mA[i]);
+        if (includeAnalog)
+        {
+            // Mega2 Analog (Trafo + Blockströme) – only for ground-truth "full" state
+            const auto& an = SystemRuntimeState::mega2Analog();
+            JsonObject a = doc["mega2"]["analog"].to<JsonObject>();
+            a["seq"] = an.seq;
+            a["flags"] = an.flags;
+            a["vA10"] = an.vA10;
+            a["vB10"] = an.vB10;
+            JsonArray ia = a["i_mA"].to<JsonArray>();
+            for (uint8_t i = 0; i < M2_NUM_BLOCKS; ++i) ia.add(an.i_mA[i]);
+        }
 
         // Step 3.5: Entry-Matrix (FROM->TO)
         JsonArray entry = doc["mega2"]["entryAllowed"].to<JsonArray>();
@@ -261,10 +297,10 @@ static String buildWsStateJson()
         d["mode"]      = m1d.mode;
         d["powerMask"] = m1d.powerMask;
 
-        // NOTE: Mega1DiagV1 field names
+        // NOTE: Mega1DiagV1 field names (v1)
         d["weicheIstBits"]  = m1d.weicheIstGeradeBits;
         d["weicheSollBits"] = m1d.weicheSollGeradeBits;
-        d["weicheSlowBits"] = m1d.weicheSlowActiveBits;
+        d["weicheSlowSelectedBits"] = m1d.weicheSlowSelectedBits;
         
         // Mega1 Selftest (Startup-Checklist)
         d["selftestRunning"]    = ((m1d.selftestFlags & 0x01u) != 0);
@@ -276,15 +312,98 @@ static String buildWsStateJson()
     }
 
 
+    // Avoid heap fragmentation by reserving a reasonable buffer.
+    // (WS payload can grow; adjust if overflow log appears.)
     String out;
+    out.reserve(4096);
     if (doc.overflowed())
     {
         // If you ever see this, increase the document size above.
         Serial.println("[WS] buildWsStateJson: JSON document overflow (fields may be missing!)");
     }
     serializeJson(doc, out);
+
+    
+
+#if defined(DEBUG_WS_SIZE)
+    // Throttled debug: payload size + overflow
+    {
+        static uint32_t s_lastLogMs = 0;
+        static uint32_t s_lastLen   = 0;
+        const uint32_t now = (uint32_t)millis();
+        const uint32_t len = (uint32_t)out.length();
+        const bool overflow = doc.overflowed();
+
+        const bool timeOk = (now - s_lastLogMs) >= 5000;
+        const uint32_t diff = (len > s_lastLen) ? (len - s_lastLen) : (s_lastLen - len);
+        const bool changed = diff >= 256;
+
+        if (overflow || timeOk || changed)
+        {
+            s_lastLogMs = now;
+            s_lastLen   = len;
+            Serial.printf("[WS] state json len=%lu overflow=%d\n",
+                          (unsigned long)len, overflow ? 1 : 0);
+        }
+    }
+#endif
+
     return out;
 }
+
+// ---------------------------------------------------------
+// WS Analog JSON (small, periodic)
+// ---------------------------------------------------------
+static String buildWsAnalogJson()
+{
+    // Only a small payload -> keep this tight to reduce heap pressure.
+    StaticJsonDocument<512> doc;
+
+    doc["type"] = "analog";
+    doc["ts"]   = (uint32_t)millis();
+
+    const auto& an = SystemRuntimeState::mega2Analog();
+
+    JsonObject a = doc["analog"].to<JsonObject>();
+    a["seq"]   = an.seq;
+    a["flags"] = an.flags;
+    a["vA10"]  = an.vA10;
+    a["vB10"]  = an.vB10;
+
+    JsonArray ia = a["i_mA"].to<JsonArray>();
+    for (uint8_t i = 0; i < M2_NUM_BLOCKS; i++)
+        ia.add(an.i_mA[i]);
+
+    String out;
+    out.reserve(512);
+    serializeJson(doc, out);
+
+#if defined(DEBUG_WS_SIZE)
+    // Throttled debug: payload size + overflow
+    {
+        static uint32_t s_lastLogMs = 0;
+        static uint32_t s_lastLen   = 0;
+        const uint32_t now = (uint32_t)millis();
+        const uint32_t len = (uint32_t)out.length();
+        const bool overflow = doc.overflowed();
+
+        const bool timeOk = (now - s_lastLogMs) >= 5000;
+        const uint32_t diff = (len > s_lastLen) ? (len - s_lastLen) : (s_lastLen - len);
+        const bool changed = diff >= 256;
+
+        if (overflow || timeOk || changed)
+        {
+            s_lastLogMs = now;
+            s_lastLen   = len;
+            Serial.printf("[WS] analog json len=%lu overflow=%d\n",
+                          (unsigned long)len, overflow ? 1 : 0);
+        }
+    }
+#endif
+
+    return out;
+}
+
 
 // ---------------------------------------------------------
 // WS Event Handler
@@ -299,7 +418,11 @@ static void onWsEvent(AsyncWebSocket* server,
     if (type == WS_EVT_CONNECT)
     {
         Serial.printf("[WS] client connected id=%u\n", client ? client->id() : 0);
-        client->text(buildWsStateJson());
+#if defined(DEBUG_AWS_HEAP)
+        dbgHeap("ws connect");
+#endif
+        client->text(buildWsStateJson(true));
+        client->text(buildWsAnalogJson());
         return;
     }
 
@@ -505,6 +628,10 @@ void Web::begin()
 
     server.begin();
 
+#if defined(DEBUG_AWS_HEAP)
+    dbgHeap("web.begin");
+#endif
+
     Serial.println("[WEB] HTTP server started");
 }
 
@@ -513,8 +640,21 @@ void Web::begin()
 // ---------------------------------------------------------
 void Web::loop()
 {
+#if defined(DEBUG_AWS_HEAP)
+    static uint32_t s_lastHeapMs = 0;
+    const uint32_t nowMs = (uint32_t)millis();
+    if ((uint32_t)(nowMs - s_lastHeapMs) >= 10000u)
+    {
+        s_lastHeapMs = nowMs;
+        dbgHeap("loop");
+    }
+#endif
     ws.cleanupClients();
+    // Digital state: on-change (throttled) + periodic ground-truth full push.
     Web::pushStateIfDirty();
+
+    // Analog stream: small periodic payload (every 500ms).
+    Web::pushAnalogTick();
     
 }
 
@@ -523,9 +663,75 @@ void Web::loop()
 // ---------------------------------------------------------
 void Web::pushStateIfDirty()
 {
-    if (!g_stateDirty)
+    // WS policy:
+    // - On-change push, but throttled to avoid bursts that can fragment heap.
+    // - Ground-truth full push every WS_FULL_MS even without changes.
+    //   (Client can recover from missed frames / reconnects.)
+    static uint32_t s_lastSendMs = 0;
+    static uint32_t s_nextFullMs = 0;
+
+    const uint32_t now = (uint32_t)millis();
+
+    // No clients => nothing to send (also avoids allocating JSON Strings).
+    if (ws.count() == 0)
+    {
+        // Still clear dirty if nothing is connected to prevent "burst" right after connect.
+        // The CONNECT handler sends a full state anyway.
+        g_stateDirty = false;
+        return;
+    }
+
+    constexpr uint32_t WS_MIN_SEND_MS = 120;   // throttle on-change frames
+    constexpr uint32_t WS_FULL_MS     = 5000;  // ground-truth interval (start value)
+
+    const bool wantFull  = (s_nextFullMs == 0) || ((int32_t)(now - s_nextFullMs) >= 0);
+    const bool wantDirty = g_stateDirty;
+
+    // Nothing to do.
+    if (!wantFull && !wantDirty)
         return;
 
-    ws.textAll(buildWsStateJson());
+    // Throttle bursts (but do NOT delay the periodic ground-truth indefinitely).
+    if (!wantFull && (now - s_lastSendMs) < WS_MIN_SEND_MS)
+        return;
+
+    // Full (ground truth) includes analog, on-change does not.
+    // Full (ground truth) includes analog, on-change does not.
+    const bool includeAnalog = wantFull;
+#if defined(DEBUG_WS_PUSH)
+    Serial.printf("[WS] push state full=%d dirty=%d clients=%u\n", includeAnalog?1:0, wantDirty?1:0, (unsigned)ws.count());
+#endif
+    const String payload = buildWsStateJson(includeAnalog);
+#if defined(DEBUG_WS_PUSH)
+    Serial.printf("[WS] push state full=%d dirty=%d len=%u\n",
+                  includeAnalog ? 1 : 0, wantDirty ? 1 : 0, (unsigned)payload.length());
+#endif
+    ws.textAll(payload);
+
+    s_lastSendMs = now;
+    s_nextFullMs = now + WS_FULL_MS;
     g_stateDirty = false;
+}
+
+
+// ---------------------------------------------------------
+// Web::pushAnalogTick
+// ---------------------------------------------------------
+void Web::pushAnalogTick()
+{
+    // Small periodic analog payload (independent from g_stateDirty).
+    // Keep this lightweight to avoid heap pressure.
+    static uint32_t s_lastAnalogMs = 0;
+    const uint32_t now = (uint32_t)millis();
+
+    // No clients => nothing to send (also avoids allocating JSON Strings).
+    if (ws.count() == 0)
+        return;
+
+    constexpr uint32_t WS_ANALOG_MS = 500;
+    if ((uint32_t)(now - s_lastAnalogMs) < WS_ANALOG_MS)
+        return;
+    s_lastAnalogMs = now;
+
+    ws.textAll(buildWsAnalogJson());
 }

@@ -19,6 +19,9 @@ namespace Mega1Client
     void begin();
     I2CBus::Result pollStatus();
     I2CBus::Result pollDiag();
+    // Convenience (startup bootstrap): poll STATUS then DIAG
+    I2CBus::Result pollStatusAndDiag();
+
     
     // DRDY: pending mask lesen (read-only)
     I2CBus::Result pollPendingMask(uint16_t& outMask);
