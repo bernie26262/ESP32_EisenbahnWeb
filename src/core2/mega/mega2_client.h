@@ -31,6 +31,7 @@ namespace Mega2Client
 
     bool safetyAck();
     bool sbhfSelftestRetry();
+    bool sbhfSelftestStartup();
     bool setNotaus(bool on);
     bool powerOn();
 

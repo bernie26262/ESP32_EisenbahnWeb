@@ -214,6 +214,16 @@ bool Mega2Client::sbhfSelftestRetry()
     return (resp == 1);
 }
 
+bool Mega2Client::sbhfSelftestStartup()
+{
+    const uint8_t cmd = M2_CMD_SBH_SELFTEST_STARTUP;
+    uint8_t resp = 0;
+    const auto r = I2CBus::writeReadEx(MEGA2_ADDR, &cmd, sizeof(cmd), &resp, sizeof(resp), 1000);
+    if (r != I2CBus::Result::OK)
+        return false;
+    return (resp == 1);
+}
+
 bool Mega2Client::setNotaus(bool on)
 {
     uint8_t buf[2];

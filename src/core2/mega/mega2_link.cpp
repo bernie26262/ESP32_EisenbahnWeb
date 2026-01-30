@@ -7,6 +7,7 @@
 #include "core2/mega/mega2_client.h"
 #include "core2/bus/i2c_bus.h"
 #include "core2/bus/gpio_isr_once.h"
+#include "core2/state/system_runtime_state.h"
 #include "debug.h"
 
 #if defined(ESP32)
@@ -121,6 +122,20 @@ static constexpr uint32_t POLL_PREVIEW_MS  = 2000;
 
 static constexpr uint32_t BUSY_RETRY_MS    = 30;
 
+// ------------------------------------------------------------
+// Startup burst/backoff (robust against missed DRDY edges)
+// ------------------------------------------------------------
+static bool     s_startupBurstActive   = false;
+static uint32_t s_startupBurstUntilMs  = 0;
+static uint32_t s_lastStartupPollMs    = 0;
+static constexpr uint32_t STARTUP_BURST_MS      = 1200;
+static constexpr uint32_t STARTUP_BURST_POLL_MS = 50;
+
+static uint32_t s_nextBackoffMs        = 0;
+static uint32_t s_backoffMs            = 250;
+static constexpr uint32_t BACKOFF_MIN_MS = 250;
+static constexpr uint32_t BACKOFF_MAX_MS = 1000;
+
 
 namespace Mega2Link
 {
@@ -170,6 +185,13 @@ void begin()
     s_lastFullPullMs = 0;
 
 
+    // If DRDY already LOW at boot, there may be no IRQ edge. Treat as active immediately.
+    if (digitalRead(PIN_DATAREADY_2) == LOW)
+    {
+        s_drdyLatched = true;
+        DBG_PRINTLN("[M2LINK] DRDY already LOW at begin -> latch active");
+    }
+
     DBG_PRINTLN("[M2LINK] begin()");
 }
 
@@ -197,9 +219,54 @@ void update()
                 s_pollFailCount = 0;
                 s_lastStatusOk = false;
                 DBG_PRINTLN("[M2LINK] gate OK (addr 0x11)");
+                
+                // start short burst to quickly populate status/shadow even if DRDY edge was missed
+                s_startupBurstActive  = true;
+                s_startupBurstUntilMs = now + STARTUP_BURST_MS;
+                s_lastStartupPollMs   = 0;
+                s_nextBackoffMs       = 0;
+                s_backoffMs           = BACKOFF_MIN_MS;
             }
         }
         return;
+    }
+    
+    // --------------------------------------------------------
+    // Startup: short burst + backoff polling while checklist still needs SBHF selftest
+    // --------------------------------------------------------
+    const bool needsChecklist = SystemRuntimeState::mega2NeedsStartupChecklist();
+    const bool sbhfDone       = SystemRuntimeState::mega2SelftestDone();
+    const bool needStartupNet = needsChecklist && !sbhfDone;
+
+    if (s_startupBurstActive)
+    {
+        if (now >= s_startupBurstUntilMs) s_startupBurstActive = false;
+        else if (s_lastStartupPollMs == 0 || (uint32_t)(now - s_lastStartupPollMs) >= STARTUP_BURST_POLL_MS)
+        {
+            s_lastStartupPollMs = now;
+            (void)Mega2Client::pollStatus();
+            (void)Mega2Client::pollShadowStatus();
+        }
+    }
+    else if (needStartupNet)
+    {
+        // calm backoff net: ensures "done" arrives even if DRDY edge is missed
+        if (s_nextBackoffMs == 0 || (uint32_t)(now - s_nextBackoffMs) >= s_backoffMs)
+        {
+            s_nextBackoffMs = now;
+            (void)Mega2Client::pollShadowStatus(); // selftestFlags live here
+
+            if (s_backoffMs < BACKOFF_MAX_MS)
+            {
+                s_backoffMs <<= 1;
+                if (s_backoffMs > BACKOFF_MAX_MS) s_backoffMs = BACKOFF_MAX_MS;
+            }
+        }
+    }
+    else
+    {
+        s_nextBackoffMs = 0;
+        s_backoffMs     = BACKOFF_MIN_MS;
     }
 
     // 0) Pending Actions (nur hier -> keine I2C Calls aus WS/ISR Kontext)
@@ -214,8 +281,8 @@ void update()
         }
         if (act & ACT_STRETRY)
         {
-            DBG_PRINTLN("[M2LINK] sending cmd: SBHF_SELFTEST_RETRY");
-            (void)Mega2Client::sbhfSelftestRetry();
+            DBG_PRINTLN("[M2LINK] sending cmd: SBHF_SELFTEST_STARTUP");
+            (void)Mega2Client::sbhfSelftestStartup();
             requestPollNow();
         }
         if (act & ACT_NOTHALT)
