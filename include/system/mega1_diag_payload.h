@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <stddef.h> // offsetof
 
 // =====================================================
 // Mega1 Diagnosepaket (read-only, <= 32 Bytes, V1)
@@ -8,8 +9,8 @@
 //
 // Bits: Weiche i (0..11)
 //  - istGeradeBits:   1 = Rückmelder sagt "gerade"
-//  - slowSelectedBits: 1 = Slow/Reduktion ausgewählt (typisch Abbiegen => Relais auf Slow-Kreis)
 //  - sollGeradeBits:  1 = letzter Sollzustand "gerade"
+//  - slowSelectedBits: 1 = Slow/Reduktion (wie im Mega1 berechnet und gesendet)
 //
 // powerMask Bits: Bahnhof i (0..3)
 //  - 1 = Stromgleis AN (Signal grün), 0 = AUS (Signal rot)
@@ -26,8 +27,10 @@ struct Mega1DiagV1
     uint16_t warnings;       // bitfield (frei)
 
     uint16_t weicheIstGeradeBits;   // Bit i
-    uint16_t weicheSlowSelectedBits;  // Bit i
-    uint16_t weicheSollGeradeBits;  // Bit i
+    // WICHTIG: Reihenfolge muss 1:1 zum Mega1 passen (IST -> SOLL -> SLOW)
+    uint16_t weicheSollGeradeBits;      // Bit i
+    uint16_t weicheSlowSelectedBits;    // Bit i
+    
 
     uint8_t  powerMask;      // Bit i (0..3)
     uint16_t uptime16;       // uptime/100ms (wrap ok)
@@ -46,3 +49,7 @@ struct Mega1DiagV1
 #pragma pack(pop)
 
 static_assert(sizeof(Mega1DiagV1) <= 32, "Mega1DiagV1 must fit into a single I2C frame (<=32B).");
+static_assert(offsetof(Mega1DiagV1, weicheIstGeradeBits) + 2 == offsetof(Mega1DiagV1, weicheSollGeradeBits),
+              "Mega1DiagV1 layout mismatch: SOLL must follow IST");
+static_assert(offsetof(Mega1DiagV1, weicheSollGeradeBits) + 2 == offsetof(Mega1DiagV1, weicheSlowSelectedBits),
+              "Mega1DiagV1 layout mismatch: SLOW must follow SOLL");
