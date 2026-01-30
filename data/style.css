@@ -706,3 +706,89 @@ button, .toggle-btn {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+
+/* =========================================================
+ *  PNG Assets (Weichen/Signale)
+ * ========================================================= */
+.turnout-img{
+  width: 96px;      /* ~2x (vorher typ. ~48) */
+  height: auto;
+  display: block;
+}
+.signal-img{
+  width: 26px;
+  height: auto;
+  display: block;
+}
+
+/* =========================================================
+ *  Mega2 Turnouts (W12..W15): Bild zentriert, Soll darunter
+ * ========================================================= */
+.m2-turnout-grid{
+  display:grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 900px){
+  .m2-turnout-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.m2-turnout-tile{
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+}
+.m2-turnout-tile.is-ok{ background: rgba(0,180,90,0.10); }
+.m2-turnout-tile.is-bad{
+  background: rgba(200,0,0,0.10);
+  border-color: rgba(200,0,0,0.55);
+}
+.m2-turnout-title{ font-weight: 900; margin-bottom: 8px; }
+.m2-turnout-row{
+  display:flex;
+  flex-direction: column;   /* <- Zeilenumbruch vor "Soll:" */
+  align-items: center;      /* <- PNG zentriert */
+  gap: 6px;
+}
+.m2-turnout-meta{ font-weight: 900; opacity: .9; text-align:center; }
+
+/* =========================================================
+ *  Mega1 Stations: wie Signal-Pills (FROM->TO), aber Button
+ * ========================================================= */
+.m1-sig-btn{
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;          /* kein grün/rot */
+  padding: 10px 10px;
+  text-align: left;
+  cursor: pointer;
+  min-height: 72px;
+  transition: box-shadow .12s ease, transform .06s ease;
+}
+.m1-sig-btn:hover{ box-shadow: 0 8px 18px rgba(0,0,0,0.08); }
+.m1-sig-btn:active{ transform: translateY(1px); }
+.m1-sig-btn:disabled{ opacity: .55; cursor: not-allowed; box-shadow:none; transform:none; }
+
+.m1-sig-title{ font-weight: 900; margin-bottom: 6px; }
+.m1-sig-row{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+}
+.m1-sig-text{ font-weight: 900; }
+
+/* dezente Status-Kodierung ohne Hintergrund */
+.m1-sig-btn.state-g{ border-color: rgba(45,164,78,0.45); }
+.m1-sig-btn.state-r{ border-color: rgba(207,34,46,0.45); }
+.m1-sig-btn.state-u{ border-color: rgba(0,0,0,0.20); }
+
+/* =========================================================
+ *  Mega1 Turnouts: PNG zentriert + Soll darunter
+ * ========================================================= */
+.toggle-sub.turnout-col{
+  display:flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}

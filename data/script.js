@@ -1897,6 +1897,39 @@ const actionsHtml = (retryBtn || retryBtnM1)
  *  Schritt 3.5: Links - Betriebsuebersicht + Block-Signale
  * ========================================================= */
 
+
+// ------------------------------------------------------------
+// UI Assets: Weichen & Signale (PNG only, no logic)
+// ------------------------------------------------------------
+const TURNOUT_UI = {
+  0:{type:"L",rot:180}, 1:{type:"R",rot:180}, 2:{type:"X",rot:0},
+  3:{type:"X",rot:0},   4:{type:"X",rot:0},   5:{type:"R",rot:0},
+  6:{type:"L",rot:90},  7:{type:"R",rot:0},   8:{type:"L",rot:0},
+  9:{type:"R",rot:0},  10:{type:"R",rot:180},11:{type:"R",rot:180},
+  // Mega2 SBHF (W12..W15) – Mapping aus README_ASSETS.md
+  12:{type:"L",rot:0},
+  13:{type:"L",rot:0},
+  14:{type:"L",rot:180},
+  15:{type:"L",rot:180},
+};
+
+function resolveTurnoutImg(idx, state) {
+  const cfg = TURNOUT_UI[idx];
+  const s = (state === "G" || state === "A") ? state : "U";
+  if (!cfg) return { src:`img/turnout_L_U.png`, rot:0 };
+  return {
+    src: `img/turnout_${cfg.type}_${s}.png`,
+    rot: cfg.rot || 0
+  };
+}
+
+function resolveSignalImg(state) {
+  const s = (state === true || state === "G") ? "G"
+          : (state === false || state === "R") ? "R" : "U";
+  return `img/sig_${s}.png`;
+}
+
+
 function bit(mask, i) {
   return ((mask >>> i) & 1) !== 0;
 }
@@ -1978,45 +2011,72 @@ function renderMega1StationsLeft(msg) {
 
   const { mega1online, hasDiag, diag, canCmd, wsOk, lock, notausActive } = getMega1DiagContext(msg);
 
-  if (!mega1online) {
-    el.innerHTML = "<em>keine Daten</em>";
-    return;
-  }
-  if (!hasDiag || !diag) {
-    el.innerHTML = "<em>keine Daten</em>";
-    return;
+ // Build stable DOM once -> no flicker on each WS state
+  if (!el.__built) {
+    el.__built = true;
+    el.innerHTML = `
+      <div class="m1-section">
+        <div class="toggle-grid grid-4" id="m1-bhf-grid"></div>
+        <div class="hint" id="m1-bhf-hint" style="margin-top:.5rem; display:none;"></div>
+      </div>`;
+    const grid = el.querySelector("#m1-bhf-grid");
+    if (!grid) return;
+    for (let i = 0; i < 4; i++) {
+      const b = document.createElement("button");
+      b.id = `m1-bhf-${i}`;
+      b.className = "m1-sig-btn";
+      b.setAttribute("data-m1cmd", "bhfToggle");
+      b.setAttribute("data-bhf", String(i));
+      b.innerHTML = `
+        <div class="m1-sig-title">BHF ${i + 1}</div>
+        <div class="m1-sig-row">
+          <img class="signal-img" alt="">
+          <span class="m1-sig-text"></span>
+        </div>`;
+      grid.appendChild(b);
+    }
   }
 
-  const powerMask = Number(diag.powerMask ?? 0);
-  const mkPill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
+  const grid = el.querySelector("#m1-bhf-grid");
+  const hint = el.querySelector("#m1-bhf-hint");
+  if (!grid || !hint) return;
 
-  // Bahnhoefe 1..4 (powerMask bit0..3)
-  const bhfBtns = [];
+  const showHint = (!canCmd);
+  if (showHint) {
+    hint.style.display = "";
+    hint.textContent = `CMD gesperrt: ${!wsOk ? "WS down" : (lock ? "Safety-Lock" : (notausActive ? "HW-NOT-AUS" : ""))}`;
+  } else {
+    hint.style.display = "none";
+    hint.textContent = "";
+  }
+
+  // Offline/NoData: U anzeigen, Buttons disabled (aber gleiche DOM)
+  const haveData = (mega1online && hasDiag && !!diag);
+  const powerMask = haveData ? Number(diag.powerMask ?? 0) : 0;
+
   for (let i = 0; i < 4; i++) {
-    const on = ((powerMask >> i) & 1) === 1;
-    const cls = "toggle-btn " + (on ? "is-on" : "is-off");
-    const st = mkPill(on ? "AN" : "aus", on ? "pill-on" : "pill-off");
-    const dis = canCmd ? "" : "disabled";
-    bhfBtns.push(
-      `<button class="${cls}" ${dis} data-m1cmd="bhfToggle" data-bhf="${i}">
-        <div class="toggle-title">BHF ${i + 1}</div>
-        <div class="toggle-state">${st}</div>
-      </button>`
-    );
+    const btn = grid.querySelector(`#m1-bhf-${i}`);
+    if (!btn) continue;
+
+    const on = haveData ? (((powerMask >> i) & 1) === 1) : null; // null => U
+    const sig = (on === true) ? resolveSignalImg("G") : (on === false) ? resolveSignalImg("R") : resolveSignalImg("U");
+
+    // "wie FROM->TO": kein farbiger Hintergrund, nur dezenter Rand + Hover
+    btn.classList.toggle("state-g", on === true);
+    btn.classList.toggle("state-r", on === false);
+    btn.classList.toggle("state-u", on === null);
+
+    // Buttons bleiben erkennbar: Hover/Focus kommt aus CSS
+    btn.disabled = !(canCmd && haveData);
+
+    const img = btn.querySelector("img");
+    if (img && img.getAttribute("src") !== sig) img.setAttribute("src", sig);
+    if (img) img.setAttribute("alt", `BHF ${i + 1} ${(on === true) ? "G" : (on === false) ? "R" : "U"}`);
+
+    const t = btn.querySelector(".m1-sig-text");
+    const label = (on === true) ? "AN" : (on === false) ? "aus" : "—";
+    if (t && t.textContent !== label) t.textContent = label;
   }
-
-  const lockHint = (!canCmd)
-    ? `<div class="hint" style="margin-top:.5rem;">CMD gesperrt: ${!wsOk ? "WS down" : (lock ? "Safety-Lock" : (notausActive ? "HW-NOT-AUS" : ""))}</div>`
-    : "";
-
-  el.innerHTML = `
-    <div class="m1-section">
-      <div class="toggle-grid grid-4">
-        ${bhfBtns.join("")}
-      </div>
-    </div>
-    ${lockHint}
-  `;
 }
 
 function renderMega1TurnoutsLeft(msg) {
@@ -2025,65 +2085,97 @@ function renderMega1TurnoutsLeft(msg) {
 
   const { mega1online, hasDiag, diag, canCmd, wsOk, lock, notausActive } = getMega1DiagContext(msg);
 
-  if (!mega1online) {
-    el.innerHTML = "<em>keine Daten</em>";
-    return;
+  // Build stable DOM once -> no flicker on each WS state
+  if (!el.__built) {
+    el.__built = true;
+    el.innerHTML = `
+      <div class="m1-section">
+        <div class="toggle-grid grid-6" id="m1-w-grid"></div>
+        <div class="hint" id="m1-w-hint" style="margin-top:.5rem; display:none;"></div>
+      </div>`;
+    const grid = el.querySelector("#m1-w-grid");
+    if (!grid) return;
+    for (let i = 0; i < 12; i++) {
+      const b = document.createElement("button");
+      b.id = `m1-w-${i}`;
+      b.className = "toggle-btn";
+      b.setAttribute("data-m1cmd", "weicheToggle");
+      b.setAttribute("data-idx", String(i));
+      b.innerHTML = `
+        <div class="toggle-title">W ${i}</div>
+        <div class="toggle-sub turnout-col">
+          <img class="turnout-img" alt="">
+          <span class="m1-w-soll"></span>
+        </div>
+        <div class="toggle-sub">
+          <span class="pill pill-info m1-w-red" style="display:none;">Redukt.</span>
+        </div>`;
+      grid.appendChild(b);
+    }
   }
-  if (!hasDiag || !diag) {
-    el.innerHTML = "<em>keine Daten</em>";
-    return;
+
+  const grid = el.querySelector("#m1-w-grid");
+  const hint = el.querySelector("#m1-w-hint");
+  if (!grid || !hint) return;
+
+  const showHint = (!canCmd);
+  if (showHint) {
+    hint.style.display = "";
+    hint.textContent = `CMD gesperrt: ${!wsOk ? "WS down" : (lock ? "Safety-Lock" : (notausActive ? "HW-NOT-AUS" : ""))}`;
+  } else {
+    hint.style.display = "none";
+    hint.textContent = "";
   }
 
-  const ist = Number(diag.weicheIstBits ?? 0);
-  const soll = Number(diag.weicheSollBits ?? 0);
-  const slow = Number(diag.weicheSlowSelectedBits ?? 0);
+  const haveData = (mega1online && hasDiag && !!diag);
+  const ist  = haveData ? Number(diag.weicheIstBits ?? 0) : 0;
+  const soll = haveData ? Number(diag.weicheSollBits ?? 0) : 0;
+  const slow = haveData ? Number(diag.weicheSlowSelectedBits ?? 0) : 0;
 
-  const mkPill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
-
-  const wBtns = [];
   for (let i = 0; i < 12; i++) {
+    const btn = grid.querySelector(`#m1-w-${i}`);
+    if (!btn) continue;
+
+    if (!haveData) {
+      btn.disabled = true;
+      btn.classList.remove("is-ok", "is-bad", "is-slow");
+      const img = resolveTurnoutImg(i, "U");
+      const imgEl = btn.querySelector("img");
+      if (imgEl && imgEl.getAttribute("src") !== img.src) imgEl.setAttribute("src", img.src);
+      if (imgEl) imgEl.style.transform = `rotate(${img.rot}deg)`;
+      const sollEl = btn.querySelector(".m1-w-soll");
+      if (sollEl) sollEl.textContent = "Soll: —";
+      const red = btn.querySelector(".m1-w-red");
+      if (red) red.style.display = "none";
+      continue;
+    }
+
     const curG = ((ist >> i) & 1) === 1;
     const sG   = ((soll >> i) & 1) === 1;
     const isSlow = ((slow >> i) & 1) === 1;
-
-    const dis = canCmd ? "" : "disabled";
-
     const isMatch = (sG === curG);
 
-
-
     // Button-Farbe nur nach Abweichung (IST!=SOLL), NICHT nach Richtung (G/A)
-    const cls = ["toggle-btn", isMatch ? "is-ok" : "is-bad", isSlow ? "is-slow" : ""].join(" ").trim();
+    btn.classList.toggle("is-ok", isMatch);
+    btn.classList.toggle("is-bad", !isMatch);
+    btn.classList.toggle("is-slow", isSlow);
 
-    const istSollLine = `<div class="toggle-sub">Ist: ${curG ? "G" : "A"}&nbsp;&nbsp;Soll: ${sG ? "G" : "A"}</div>`;
-    
-    const okPill   = mkPill(isMatch ? "OK" : "ABW.", isMatch ? "pill-ok" : "pill-warn");
-    // "Redukt." ist ein Zustand aus weicheSlowSelectedBits -> nur anzeigen wenn aktiv
-    const redPill  = isSlow ? mkPill("Redukt.", "pill-info") : "";
-    const okLine = `<div class="toggle-sub">${okPill}${redPill}</div>`;
+    btn.disabled = !canCmd;
 
+    const istState = curG ? "G" : "A";
+    const img = resolveTurnoutImg(i, istState);
+    const imgEl = btn.querySelector("img");
+    if (imgEl && imgEl.getAttribute("src") !== img.src) imgEl.setAttribute("src", img.src);
+    if (imgEl) imgEl.style.transform = `rotate(${img.rot}deg)`;
+    if (imgEl) imgEl.setAttribute("alt", `W${i} ${istState}`);
 
-    wBtns.push(
-      `<button class="${cls}" ${dis} data-m1cmd="weicheToggle" data-idx="${i}">
-        <div class="toggle-title">W ${i}</div>
-        ${istSollLine}
-        ${okLine}
-              </button>`
-    );
+    const sollEl = btn.querySelector(".m1-w-soll");
+    const wantSoll = `Soll: ${sG ? "G" : "A"}`;
+    if (sollEl && sollEl.textContent !== wantSoll) sollEl.textContent = wantSoll;
+
+    const red = btn.querySelector(".m1-w-red");
+    if (red) red.style.display = isSlow ? "" : "none";
   }
-
-  const lockHint = (!canCmd)
-    ? `<div class="hint" style="margin-top:.5rem;">CMD gesperrt: ${!wsOk ? "WS down" : (lock ? "Safety-Lock" : (notausActive ? "HW-NOT-AUS" : ""))}</div>`
-    : "";
-
-  el.innerHTML = `
-    <div class="m1-section">
-      <div class="toggle-grid grid-6">
-        ${wBtns.join("")}
-      </div>
-    </div>
-    ${lockHint}
-  `;
 }
 
 // ------------------------------------------------------------
@@ -2133,109 +2225,8 @@ function fmtHex(v, width) {
   return "0x" + s.padStart(width || 2, "0");
 }
 
-function renderStationsLeft(msg) {
-  const el = document.getElementById("ov-stations");
-  if (!el) return;
-
-  const mega1online = !!(msg && msg.mega1 && msg.mega1.online);
-  const hasDiag = !!(msg && msg.mega1 && msg.mega1.hasDiag);
-  const wsOk = (wsConnected === true);
-  const lock = !!(lastSafetyState && lastSafetyState.lock === true);
-  const notausActive = !!(lastSafetyState && lastSafetyState.notausActive === true);
-
-  if (!mega1online) {
-    el.innerHTML = `<div class="hint">Mega1 offline</div>`;
-    return;
-  }
-  if (!hasDiag || !msg.mega1.diag) {
-    el.innerHTML = `<div class="hint">Mega1 online - diag noch nicht verfuegbar</div>`;
-    return;
-  }
-
-  const diag = msg.mega1.diag;
-  const mode = Number(diag.mode ?? 0);
-  const powerMask = Number(diag.powerMask ?? 0);
-  const ist = Number(diag.weicheIstBits ?? 0);
-  const soll = Number(diag.weicheSollBits ?? 0);
-  // STRICT: show Redukt only if transmitted bit is set
-  const slow = Number(diag.weicheSlowSelectedBits ?? 0);
-
-  // Enable rules for CMD buttons
-  const canCmd = wsOk && mega1online && !lock && !notausActive;
-
-  const modeText = (mode === 1) ? "Auto" : "Manuell";
-  const modeCls  = (mode === 1) ? "badge-ok" : "badge-info";
-
-  const mkPill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
-
-  // Bahnhoefe 1..4 (powerMask bit0..3)
-  const bhfBtns = [];
-  for (let i = 0; i < 4; i++) {
-    const on = ((powerMask >> i) & 1) === 1;
-    const cls = "toggle-btn " + (on ? "is-on" : "is-off");
-    const st = mkPill(on ? "AN" : "aus", on ? "pill-on" : "pill-off");
-    const dis = canCmd ? "" : "disabled";
-    bhfBtns.push(
-      `<button class="${cls}" ${dis} onclick="sendM1BhfToggle(${i+1})">
-        <div class="toggle-title">BHF ${i+1}</div>
-        <div class="toggle-state">${st}</div>
-      </button>`
-    );
-  }
-
-  // Weichen 0..11 (Ist gerade Bits)
-  const wBtns = [];
-  for (let i = 0; i < 12; i++) {
-    const curG = ((ist >> i) & 1) === 1;
-    const sG   = ((soll >> i) & 1) === 1;
-    const isSlow = ((slow >> i) & 1) === 1;
-
-    const cls = ["toggle-btn", curG ? "is-on" : "is-off", isSlow ? "is-slow" : ""].join(" ").trim();
-    const dis = canCmd ? "" : "disabled";
-
-    const st = mkPill(curG ? "Gerade" : "Abzweig", curG ? "pill-on" : "pill-off");
-    const stSoll = mkPill("Soll: " + (sG ? "G" : "A"), (sG === curG ? "pill-ok" : "pill-warn"));
-    const slowTag = isSlow ? mkPill("Slow", "pill-info") : "";
-
-    wBtns.push(
-      `<button class="${cls}" ${dis} data-m1cmd="weicheToggle" data-idx="${i}">
-        <div class="toggle-title">W ${i}</div>
-        <div class="toggle-state">${st}</div>
-        <div class="toggle-sub">${stSoll}${slowTag}</div>
-      </button>`
-    );
-  }
-
-  const lockHint = (!canCmd)
-    ? `<div class="hint" style="margin-top:.5rem;">CMD gesperrt: ${!wsOk ? "WS down" : (lock ? "Safety-Lock" : (notausActive ? "HW-NOT-AUS" : ""))}</div>`
-    : "";
-
-  el.innerHTML = `
-    <div class="m1-summary">
-      <div class="badge-row">
-        <span class="badge ${modeCls}">Mode: ${modeText}</span>
-        <span class="badge badge-warn">PowerMask: ${powerMask}</span>
-        <span class="badge badge-warn">Ist: ${fmtHex(ist, 4)}</span>
-      </div>
-    </div>
-
-    <div class="m1-section">
-      <div class="m1-title">Bahnhoefe</div>
-      <div class="toggle-grid grid-4">
-        ${bhfBtns.join("")}
-      </div>
-    </div>
-
-    <div class="m1-section">
-      <div class="m1-title">Weichen</div>
-      <div class="toggle-grid grid-6">
-        ${wBtns.join("")}
-      </div>
-    </div>
-
-    ${lockHint}
-  `;
-}
+// NOTE: Legacy renderStationsLeft() (old ov-stations panel) removed.
+// Current Mega1 UI is rendered via renderMega1StationsLeft/renderMega1TurnoutsLeft.
 
 /* =========================================================
  *  Mega2: SBHF / Weichen / Bloecke (INFO only)
@@ -2288,25 +2279,68 @@ function renderTurnoutsLeft(msg) {
   const online = !!msg?.mega2?.online;
   const t = msg?.mega2?.turnouts;
 
+  // Build stable grid once (avoid periodic "wobble" due to innerHTML rebuild)
+  if (!el.__gridBuilt) {
+    el.__gridBuilt = true;
+    el.innerHTML = `<div class="m2-turnout-grid" id="m2-turnout-grid"></div>`;
+    const grid = el.querySelector("#m2-turnout-grid");
+    if (!grid) return;
+    for (let wi = 12; wi <= 15; wi++) {
+      const node = document.createElement("div");
+      node.id = `m2-w-${wi}`;
+      node.className = "m2-turnout-tile";
+      node.innerHTML = `
+        <div class="m2-turnout-title">W${wi}</div>
+        <div class="m2-turnout-row">
+          <img class="turnout-img" alt="">
+          <div class="m2-turnout-meta"></div>
+        </div>`;
+      grid.appendChild(node);
+    }
+  }
+  const grid = el.querySelector("#m2-turnout-grid");
+  if (!grid) return;
+
+  // NoData/Offline -> show U and "—" but keep same DOM
   if (!online || !t) {
-    el.innerHTML = "<em>keine Daten</em>";
+    for (let wi = 12; wi <= 15; wi++) {
+      const node = grid.querySelector(`#m2-w-${wi}`);
+      if (!node) continue;
+      node.classList.remove("is-ok", "is-bad");
+      const img = resolveTurnoutImg(wi, "U");
+      const imgEl = node.querySelector("img");
+      if (imgEl && imgEl.getAttribute("src") !== img.src) imgEl.setAttribute("src", img.src);
+      if (imgEl) imgEl.style.transform = `rotate(${img.rot}deg)`;
+      if (imgEl) imgEl.setAttribute("alt", `W${wi} U`);
+      const meta = node.querySelector(".m2-turnout-meta");
+      if (meta) meta.textContent = "Soll: —";
+    }
     return;
   }
 
   const soll = t.sollMask ?? 0;
   const ist  = t.istMask ?? 0;
 
-  const names = ["W12", "W13", "W14", "W15"];
-
-  let html = `<div class="badge-wrap">`;
   for (let i = 0; i < 4; i++) {
+    const wi = 12 + i;
     const s = bit(soll, i) ? "A" : "G";
     const r = bit(ist, i)  ? "A" : "G";
     const ok = (s === r);
-    html += `<span class="badge ${ok ? "badge-ok" : "badge-warn"}">${names[i]} Soll:${s} Ist:${r}</span>`;
+    const img = resolveTurnoutImg(wi, r);
+
+    const node = grid.querySelector(`#m2-w-${wi}`);
+    if (!node) continue;
+    node.classList.toggle("is-ok", ok);
+    node.classList.toggle("is-bad", !ok);
+    const imgEl = node.querySelector("img");
+    if (imgEl && imgEl.getAttribute("src") !== img.src) imgEl.setAttribute("src", img.src);
+    if (imgEl) imgEl.style.transform = `rotate(${img.rot}deg)`;
+    if (imgEl) imgEl.setAttribute("alt", `W${wi} ${r}`);
+    const meta = node.querySelector(".m2-turnout-meta");
+    const want = `Soll: ${s}`;
+    if (meta && meta.textContent !== want) meta.textContent = want;
   }
-  html += `</div>`;
-  el.innerHTML = html;
+
 }
 
 function renderBlocksLeft(msg) {
@@ -2320,11 +2354,20 @@ function renderBlocksLeft(msg) {
     return;
   }
 
+  // Build stable sub-layout once to avoid flicker (images not recreated each WS tick)
+  if (!el.__stableBuilt) {
+    el.__stableBuilt = true;
+    el.innerHTML = `<div id="m2-occ-wrap"></div><div id="m2-sig-wrap" style="margin-top:0.8rem;"></div>`;
+  }
+  const occWrap = el.querySelector("#m2-occ-wrap");
+  const sigWrap = el.querySelector("#m2-sig-wrap");
+  if (!occWrap || !sigWrap) return;
+
   const occMask = msg?.mega2?.blocks?.occupiedMask ?? msg?.mega2?.blockOccupiedMask ?? 0;
   const entryNow = msg?.mega2?.entryAllowed;
   const entryPrev = msg?.mega2?.entryPreview;
 
-  // 1) Occupancy
+  // 1) Occupancy (darf weiterhin per innerHTML neu gerendert werden)
   let html = `<div><b>Belegung:</b></div><div class="badge-wrap">`;
 
   const an = msg?.mega2?.analog;
@@ -2364,8 +2407,9 @@ function renderBlocksLeft(msg) {
             `</span>`;
   }
   html += `</div>`;
+  occWrap.innerHTML = html;
 
-  // 2) FROM->TO Signale (fixe Liste nach Topologie)
+  // 2) FROM->TO Signale (stabile DOM-Nodes, kein innerHTML-Churn -> kein Wackeln)
   if (Array.isArray(entryPrev) && entryPrev.length >= 9 && Array.isArray(entryNow) && entryNow.length >= 9) {
     const pairs = [
       [1, 2],
@@ -2382,8 +2426,12 @@ function renderBlocksLeft(msg) {
       [6, 4],
     ];
 
-    html += `<div style="margin-top:0.8rem;"><b>Signale (FROM -> TO):</b></div>`;
-    html += `<div class="badge-wrap">`;
+    if (!sigWrap.__gridBuilt) {
+      sigWrap.__gridBuilt = true;
+      sigWrap.innerHTML = `<div><b>Signale (FROM -&gt; TO):</b></div><div class="badge-wrap" id="m2-sig-grid"></div>`;
+    }
+    const grid = sigWrap.querySelector("#m2-sig-grid");
+    if (!grid) return;
 
     for (const [from, to] of pairs) {
       const maskPrev = entryPrev[from - 1] ?? 0;
@@ -2392,16 +2440,31 @@ function renderBlocksLeft(msg) {
       const prevOk = (maskPrev & (1 << (to - 1))) !== 0;
       const nowOk  = (maskNow  & (1 << (to - 1))) !== 0;
 
-      html += `<span class="badge ${prevOk ? "badge-ok" : "badge-err"}" style="line-height:1.15; padding-top:6px; padding-bottom:6px;">
-        <div style="font-size:0.85em; opacity:0.85;">P: B${from}->B${to}</div>
-        <div style="font-weight:700;">N: ${nowOk ? "OK" : "STOP"}</div>
-      </span>`;
+      const id = `sig-${from}-${to}`;
+      let node = grid.querySelector(`#${id}`);
+      const sigImg = resolveSignalImg(nowOk ? "G" : "R");
+      const cls = `badge ${prevOk ? "badge-ok" : "badge-err"}`;
+      const label = `B${from}→B${to}`;
+
+      if (!node) {
+        node = document.createElement("span");
+        node.id = id;
+        node.className = cls;
+        node.innerHTML = `<img class="signal-img" alt=""><span></span>`;
+        grid.appendChild(node);
+      }
+      if (node.className !== cls) node.className = cls;
+      const imgEl = node.querySelector("img");
+      if (imgEl && imgEl.getAttribute("src") !== sigImg) imgEl.setAttribute("src", sigImg);
+      if (imgEl && imgEl.getAttribute("alt") !== `Signal ${label}`) imgEl.setAttribute("alt", `Signal ${label}`);
+      const tEl = node.querySelector("span");
+      if (tEl && tEl.textContent !== label) tEl.textContent = label;
     }
 
-    html += `</div>`;
   } else {
-    html += `<div style="margin-top:0.8rem;"><em>Signale: keine Daten</em></div>`;
+    // keep stable container; show a simple placeholder
+    sigWrap.__gridBuilt = false;
+    sigWrap.innerHTML = `<div style="margin-top:0.8rem;"><em>Signale: keine Daten</em></div>`;
   }
 
-  el.innerHTML = html;
 }
