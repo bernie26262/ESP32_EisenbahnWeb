@@ -161,8 +161,14 @@ static uint32_t s_lastDrdyPollMs   = 0; // last DRDY-driven poll (pending + one 
 static bool     s_bootstrapActive     = false;
 static uint32_t s_bootstrapUntilMs    = 0;
 static uint32_t s_lastBootstrapPollMs = 0;
-static constexpr uint32_t BOOTSTRAP_MS       = 2500;
-static constexpr uint32_t BOOTSTRAP_POLL_MS  = 100;
+static constexpr uint32_t BOOTSTRAP_MS       = 1200; // short burst
+static constexpr uint32_t BOOTSTRAP_POLL_MS  = 50;   // fast during burst
+
+// After burst: backoff polling while checklist still needs fresh DIAG (edge-miss-safe)
+static uint32_t s_nextBackoffDiagMs   = 0;
+static uint32_t s_backoffDiagMs       = 250;  // start gently
+static constexpr uint32_t BACKOFF_MIN_MS = 250;
+static constexpr uint32_t BACKOFF_MAX_MS = 1000;
 
 // ------------------------------------------------------------
 // Selftest/Startup watchdog:
@@ -170,7 +176,7 @@ static constexpr uint32_t BOOTSTRAP_POLL_MS  = 100;
 // do NOT rely on DRDY edges only. Poll DIAG periodically.
 // ------------------------------------------------------------
 static uint32_t s_nextFastDiagMs = 0;
-static constexpr uint32_t FAST_DIAG_MS = 100;
+static constexpr uint32_t FAST_DIAG_MS = 250; // less spam, still responsive
 
 
 static void IRAM_ATTR onMega1DrdyIsr()
@@ -224,6 +230,14 @@ void Mega1Link::begin()
     s_rrPreferStatus    = true;
 
     s_nextFastMs       = 0;
+    
+    // If DRDY is already LOW at boot (no falling edge for IRQ), treat as active immediately.
+    if (digitalRead(PIN_DATAREADY_1) == LOW)
+    {
+        s_drdyLatched = true;
+        DBG_PRINTLN("[M1LINK] DRDY already LOW at begin -> latch active");
+    }
+
     DBG_PRINTLN("[M1LINK] begin()");
 }
 
@@ -265,6 +279,10 @@ void Mega1Link::update()
         s_bootstrapActive     = true;
         s_bootstrapUntilMs    = now + BOOTSTRAP_MS;
         s_lastBootstrapPollMs = 0;
+        
+        // reset backoff helper
+        s_nextBackoffDiagMs = 0;
+        s_backoffDiagMs     = BACKOFF_MIN_MS;
     }
 
     // --------------------------------------------------
@@ -291,6 +309,7 @@ void Mega1Link::update()
 
     // --------------------------------------------------
     // Selftest/Startup watchdog: poll DIAG periodically while needed
+    // After the short burst above, switch to a calm backoff scheme.
     // --------------------------------------------------
     {
         const auto& d = SystemRuntimeState::mega1Diag();
@@ -301,17 +320,31 @@ void Mega1Link::update()
 
         if (needFastDiag)
         {
-            if (s_nextFastDiagMs == 0 || (uint32_t)(now - s_nextFastDiagMs) >= FAST_DIAG_MS)
+            // During initial burst we already pull status+diag frequently.
+            // Afterwards: use backoff polling to avoid "poll like crazy".
+            if (!s_bootstrapActive)
             {
-                s_nextFastDiagMs = now;
-                (void)Mega1Client::pollDiag(); // force fresh diag even without DRDY edge
-                SystemRuntimeState::noteMega1LinkActivity();
-                g_stateDirty = true;
+                if (s_nextBackoffDiagMs == 0 || (uint32_t)(now - s_nextBackoffDiagMs) >= s_backoffDiagMs)
+                {
+                    s_nextBackoffDiagMs = now;
+                    (void)Mega1Client::pollDiag(); // edge-miss-safe
+                    SystemRuntimeState::noteMega1LinkActivity();
+                    g_stateDirty = true;
+
+                    // backoff: 250 -> 500 -> 1000 (cap)
+                    if (s_backoffDiagMs < BACKOFF_MAX_MS)
+                    {
+                        s_backoffDiagMs <<= 1;
+                        if (s_backoffDiagMs > BACKOFF_MAX_MS) s_backoffDiagMs = BACKOFF_MAX_MS;
+                    }
+                }
             }
         }
         else
         {
             s_nextFastDiagMs = 0;
+            s_nextBackoffDiagMs = 0;
+            s_backoffDiagMs     = BACKOFF_MIN_MS;
         }
     }
 
