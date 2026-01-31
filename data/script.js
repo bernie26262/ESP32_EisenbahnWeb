@@ -221,7 +221,6 @@ let lastStateMsg = null;
 // Startup session tracking (avoid "startup checklist" overlay on selftest retry)
 // ------------------------------------------------------------
 let g_startupSessionActive = false;
-let g_lastM1BootId = undefined, g_lastM2BootId = undefined;
 // ------------------------------------------------------------
 // UI one-shot hint: SBHF selftest finished, power remains OFF
 // (shown in right message list for a short time)
@@ -662,39 +661,25 @@ function getUiStateFromWs(msg, safety, mega2online) {
   let hasWarn = false;
   let overlayMode = undefined; // "ack" | "info" | "startup" | undefined
 
-  const startup = msg?.startup;
-  // Startup-Overlay soll bleiben, bis der User explizit quittiert.
-  // ABER: Selftest-Retry darf NICHT in das Startup-Checklist-Overlay springen.
-  // Lösung: Startup-Session nur dann aktivieren, wenn BootId neu ist.
-  const startupNeeds = !!(startup && (startup.m1Needs === true || startup.m2Needs === true));
-  let bootIdsPresent = false;
-  let bootChanged = false;
-  if (startup) {
-    const m1b = startup.m1BootId;
-    const m2b = startup.m2BootId;
-    bootIdsPresent = (m1b !== undefined) || (m2b !== undefined);
-    if (bootIdsPresent) {
-      // first-seen counts as "changed"
-      const m1chg = (m1b !== undefined) && (g_lastM1BootId === undefined || m1b !== g_lastM1BootId);
-      const m2chg = (m2b !== undefined) && (g_lastM2BootId === undefined || m2b !== g_lastM2BootId);
-      bootChanged = !!(m1chg || m2chg);
+  // Flags-first Startup gate (sticky UI session):
+  // - Needs/done derived from Mega selftest flags
+  // - Overlay stays visible until user clicks "Quittieren" inside the checklist
+  const m1diag = msg?.mega1?.diag;
+  const m1Flags = Number(m1diag?.selftestFlags ?? 0);
+  const m1Done = !!(m1diag?.selftestDone) || ((m1Flags & 0x02) !== 0);
 
-      // update last seen boot ids
-      if (m1b !== undefined) g_lastM1BootId = m1b;
-      if (m2b !== undefined) g_lastM2BootId = m2b;
+  const m2Sbhf = msg?.mega2?.sbhf;
+  const m2Shadow = msg?.mega2?.shadow;
+  const m2ShadowFlags = Number(m2Shadow?.selftestFlags ?? 0);
+  const m2Done = !!(m2Sbhf?.selftestDone) || ((m2ShadowFlags & 0x02) !== 0);
 
-      // latch session start on boot change; clear when checklist no longer needed
-      if (bootChanged) g_startupSessionActive = true;
-      if (!startupNeeds) g_startupSessionActive = false;
-    } else {
-      // No boot ids -> keep legacy behavior
-      g_startupSessionActive = startupNeeds;
-    }
-  } else {
-    g_startupSessionActive = false;
+  const m1NeedsNow = (msg?.mega1?.online === true) && !m1Done;
+  const m2NeedsNow = (msg?.mega2?.online === true) && !m2Done;
+
+  if (!g_startupSessionActive && (m1NeedsNow || m2NeedsNow)) {
+    g_startupSessionActive = true;
   }
-
-  const inStartup = !!(startupNeeds && g_startupSessionActive);
+  const inStartup = !!g_startupSessionActive;
 
   if (!mega2online) {
     level = "WARN";
@@ -1292,22 +1277,25 @@ function showOverlay(title, lines, requireChecked, options = {}) {
       }
     }
 
-   // Update state (from latest WS message)
-    const startup = window.lastStateMsg?.startup;
-    const simNoHw = !!window.lastStateMsg?.sim?.noHwBuild;
-    const simBypass = !!window.lastStateMsg?.sim?.bypassSbhfSelftest;
-    const m2Needs = !!startup?.m2Needs;
-    const m1Needs = !!startup?.m1Needs;
-    const selftestRunning = !!window.lastStateMsg?.mega2?.sbhf?.selftestRunning;
+   // Update state (from latest WS message) - FLAGS FIRST
+    const st = window.lastStateMsg || {};
+    const simNoHw = !!st.sim?.noHwBuild;
+    const simBypass = !!st.sim?.bypassSbhfSelftest;
 
+    const m1diag = st.mega1?.diag;
+    const m1Flags = Number(m1diag?.selftestFlags ?? 0);
+    const m1SelftestRunning = !!m1diag?.selftestRunning || ((m1Flags & 0x01) !== 0);
+    const m1SelftestDone    = !!m1diag?.selftestDone    || ((m1Flags & 0x02) !== 0);
+    const m1Needs = (st.mega1?.online === true) && !m1SelftestDone;
 
-    // Mega1 Selftest running (optional; may not exist yet)
-    const m1SelftestRunning = !!window.lastStateMsg?.mega1?.diag?.selftestRunning;
-    // Step-done markers (stay within the startup overlay until user ACKs).
-    // If a Mega does not need a checklist, it counts as "done".
-    // m1SelftestDone is optional (may not exist yet).
-    const m2Done = (!m2Needs) || !!startup?.m2SelftestDone;
-    const m1Done = (!m1Needs) || !!startup?.m1SelftestDone;
+    const m2Sbhf = st.mega2?.sbhf;
+    const m2ShadowFlags = Number(st.mega2?.shadow?.selftestFlags ?? 0);
+    const selftestRunning = !!m2Sbhf?.selftestRunning || ((m2ShadowFlags & 0x01) !== 0);
+    const m2SelftestDone  = !!m2Sbhf?.selftestDone    || ((m2ShadowFlags & 0x02) !== 0);
+    const m2Needs = (st.mega2?.online === true) && !m2SelftestDone;
+
+    const m2Done = !m2Needs;
+    const m1Done = !m1Needs;
     const allDone = (m1Done && m2Done);
 
 
@@ -1588,34 +1576,27 @@ function confirmAck() {
     return;
   }
 
-  // If the startup checklist is active, "ACK" must also close the checklist steps.
-  // Contract: Checklist disappears only by explicit markMegaXChecklistDone.
-  const st = window.lastStateMsg?.startup;
-  const inStartupChecklist = !!(st && (st.m1Needs === true || st.m2Needs === true));
+  // If the startup checklist overlay is active, keep UX inside the checklist:
+  // User expects to see results and ACK there (no overlay switch surprise).
+  const inStartupChecklist = (g_startupSessionActive === true);
 
   if (inStartupChecklist) {
-    // Close checklist steps first (sticky flags on ESP)
-    if (st?.m1Needs === true) {
-      const ok1 = wsSend({ action: "markMega1ChecklistDone" });
-      if (ok1) logLine(" Startup: Mega1 Checklist quittiert");
-      else     logLine(" Startup: Mega1 Checklist NICHT quittiert (WS down?)");
+    // Optional Komfort: nach Startup-Checkliste automatisch auf Automatik schalten
+    if (window.lastStateMsg?.mega1?.online === true) {
+      wsSend({ action: "m1SetMode", mode: 1 });
     }
-    if (st?.m2Needs === true) {
-      const ok2 = wsSend({ action: "markMega2ChecklistDone" });
-      if (ok2) logLine(" Startup: Mega2 Checklist quittiert");
-      else     logLine(" Startup: Mega2 Checklist NICHT quittiert (WS down?)");
-    }
-  }
-
-  // Komfort: Nach Abschluss der Startup-Checkliste automatisch auf Automatik schalten
-  if (inStartupChecklist && window.lastStateMsg?.mega1?.online === true) {
-    wsSend({ action: "m1SetMode", mode: 1 });
   }
 
 
   // Safety ACK (may still be needed even after checklist is done)
   const ok = wsSend({ action: "safetyAck" });
   if (ok) logLine("ACK gesendet.");
+  
+  // Close sticky startup session only after ACK was sent successfully.
+  if (inStartupChecklist && ok) {
+    g_startupSessionActive = false;
+    closeOverlay();
+  }
 }
 
 /* =========================================================
@@ -2028,7 +2009,7 @@ function renderMega1StationsLeft(msg) {
       b.setAttribute("data-m1cmd", "bhfToggle");
       b.setAttribute("data-bhf", String(i));
       b.innerHTML = `
-        <div class="m1-sig-title">BHF${i + 1}</div>
+        <div class="m1-sig-title">BHF ${i + 1}</div>
         <div class="m1-sig-row">
           <img class="signal-img" alt="">
           <span class="m1-sig-text"></span>
@@ -2102,13 +2083,13 @@ function renderMega1TurnoutsLeft(msg) {
       b.setAttribute("data-m1cmd", "weicheToggle");
       b.setAttribute("data-idx", String(i));
       b.innerHTML = `
-        <div class="toggle-title">W${i}</div>
+        <div class="toggle-title">W ${i}</div>
         <div class="toggle-sub turnout-col">
           <img class="turnout-img" alt="">
           <span class="m1-w-soll"></span>
         </div>
         <div class="toggle-sub">
-          <span class="pill pill-info m1-w-red is-hidden">Redukt.</span>
+          <span class="pill pill-info m1-w-red" style="display:none;">Redukt.</span>
         </div>`;
       grid.appendChild(b);
     }
@@ -2146,7 +2127,7 @@ function renderMega1TurnoutsLeft(msg) {
       const sollEl = btn.querySelector(".m1-w-soll");
       if (sollEl) sollEl.textContent = "Soll: —";
       const red = btn.querySelector(".m1-w-red");
-      if (red) red.classList.add("is-hidden");
+      if (red) red.style.display = "none";
       continue;
     }
 
@@ -2174,7 +2155,7 @@ function renderMega1TurnoutsLeft(msg) {
     if (sollEl && sollEl.textContent !== wantSoll) sollEl.textContent = wantSoll;
 
     const red = btn.querySelector(".m1-w-red");
-    if (red) red.classList.toggle("is-hidden", !isSlow);
+    if (red) red.style.display = isSlow ? "" : "none";
   }
 }
 
