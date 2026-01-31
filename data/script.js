@@ -665,9 +665,8 @@ function getUiStateFromWs(msg, safety, mega2online) {
   // - Needs/done derived from Mega selftest flags
   // - Overlay stays visible until user clicks "Quittieren" inside the checklist
   const m1diag = msg?.mega1?.diag;
-  const m1Flags = Number(m1diag?.selftestFlags ?? 0);
-  const m1Done = !!(m1diag?.selftestDone) || ((m1Flags & 0x02) !== 0);
-
+  const m1SelftestFlags = Number(m1diag?.selftestFlags ?? 0);
+  const m1Done = !!(m1diag?.selftestDone) || ((m1SelftestFlags & 0x02) !== 0);
   const m2Sbhf = msg?.mega2?.sbhf;
   const m2Shadow = msg?.mega2?.shadow;
   const m2ShadowFlags = Number(m2Shadow?.selftestFlags ?? 0);
@@ -766,8 +765,8 @@ function getUiStateFromWs(msg, safety, mega2online) {
   // Mega1 warnings: "wie Mega2" -> Mega1 entscheidet selbst und setzt SYS_WARNING_PRESENT.
   // ESP/WebUI zeigt nur an (keine Interpretation aus selftestFailMask als Level-Quelle).
   const m1online = !!(msg?.mega1?.online);
-  const m1Flags  = Number(msg?.mega1?.status?.flags ?? 0) & 0xff;
-  if (m1online && ((m1Flags & SYS_WARNING_PRESENT) !== 0)) {
+  const m1StatusFlags  = Number(msg?.mega1?.status?.flags ?? 0) & 0xff;
+  if (m1online && ((m1StatusFlags & SYS_WARNING_PRESENT) !== 0)) {
     hasWarn = true;
     level = "WARN";
     text = [" Warning aktiv"];
