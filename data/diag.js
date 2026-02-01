@@ -41,6 +41,13 @@ function connect(){
     let msg = null;
     try { msg = JSON.parse(ev.data); } catch(e) { return; }
 
+    // Diag stream (separater Payload-Typ)
+    if (msg.type === "diag") {
+      const pre = qs("diag-json");
+      if (pre) pre.textContent = JSON.stringify(msg, null, 2);
+      return;
+    }
+
     if (msg.type === "diagControl") {
       if (msg.isOwner && msg.token) {
         token = msg.token;
