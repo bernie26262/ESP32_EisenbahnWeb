@@ -12,13 +12,36 @@
 #include "core2/bus/i2c_bus.h"
 #include "core2/ui/oled_status.h"
 
+#include <WiFi.h>
+#include <esp_wifi.h>
+#include <esp_bt.h>
+
+static void disableWirelessHard()
+{
+  WiFi.persistent(false);
+  WiFi.disconnect(true, true);
+  WiFi.mode(WIFI_OFF);
+
+  // IDF: toleriert "already stopped/deinit" -> Fehlercodes ignorieren
+  esp_wifi_stop();
+  esp_wifi_deinit();
+
+  // Bluetooth ebenfalls aus
+  esp_bt_controller_disable();
+  esp_bt_controller_deinit();
+}
+
 // ============================================================================
 // SETUP
 // ============================================================================
 void setup()
 {
+    disableWirelessHard(); // <-- ganz am Anfang
     Serial.begin(115200);
     delay(200);
+
+    // Bestätigung, dass WiFi/BT wirklich hart deaktiviert wurde (vor Netzwerk-Init)
+    Serial.println(F("[HW] WiFi/BT hard-off (disableWirelessHard ran)"));
 
     Serial.println();
     Serial.println(F("===== ESP32-S3 Eisenbahn (core2) ====="));
