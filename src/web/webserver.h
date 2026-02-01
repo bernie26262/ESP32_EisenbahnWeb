@@ -11,6 +11,9 @@ namespace Web
 
     // Periodic analog stream (every ~500ms)
     void pushAnalogTick();
+    
+    // Periodic/on-change diag stream (only if diag clients subscribed)
+    void pushDiagIfNeeded();
 }
 
 // IMPORTANT: Dieses Symbol wird (derzeit) auch aus anderen Modulen referenziert.

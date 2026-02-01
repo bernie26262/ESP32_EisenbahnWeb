@@ -437,12 +437,7 @@ static String buildWsStateJson(bool includeAnalog)
     // (WS payload can grow; adjust if overflow log appears.)
     String out;
     out.reserve(4096);
-    if (doc.overflowed())
-    {
-        // If you ever see this, increase the document size above.
-        Serial.println("[WS] buildWsStateJson: JSON document overflow (fields may be missing!)");
-
-
+    
     // WS client counts + diag control status (used for safety banner + gating UX)
     {
         JsonObject wsC = doc.createNestedObject("wsClients");
@@ -455,8 +450,15 @@ static String buildWsStateJson(bool includeAnalog)
         d["ownerId"] = s_diag.active ? s_diag.ownerId : 0;
         d["sinceMs"] = s_diag.active ? s_diag.sinceMs : 0;
         const uint32_t nowMs = (uint32_t)millis();
-        d["expiresInMs"] = s_diag.active ? (uint32_t)((s_diag.expiresMs > nowMs) ? (s_diag.expiresMs - nowMs) : 0) : 0;
+        d["expiresInMs"] = s_diag.active
+            ? (uint32_t)((s_diag.expiresMs > nowMs) ? (s_diag.expiresMs - nowMs) : 0)
+            : 0;
     }
+
+    if (doc.overflowed())
+    {
+        // If you ever see this, increase the document size above.
+        Serial.println("[WS] buildWsStateJson: JSON document overflow (fields may be missing!)");
     }
     serializeJson(doc, out);
 
@@ -540,6 +542,91 @@ static String buildWsAnalogJson()
 
     return out;
 }
+
+// ---------------------------------------------------------
+// WS Diag JSON (read-only, only for diag subscribers)
+// ---------------------------------------------------------
+static String buildWsDiagJson()
+{
+    // Read-only diagnostics snapshot. Keep modest in size; we can extend later.
+    StaticJsonDocument<2048> doc;
+
+    doc["type"] = "diag";
+    doc["ts"]   = (uint32_t)millis();
+
+    // WS client counts + diag control status (same shape as in state)
+    {
+        JsonObject wsC = doc.createNestedObject("wsClients");
+        wsC["base"] = countSubBase();
+        wsC["diag"] = countSubDiag();
+    }
+    {
+        JsonObject d = doc.createNestedObject("diagCtrl");
+        d["active"] = s_diag.active;
+        d["ownerId"] = s_diag.active ? s_diag.ownerId : 0;
+        d["sinceMs"] = s_diag.active ? s_diag.sinceMs : 0;
+        const uint32_t nowMs = (uint32_t)millis();
+        d["expiresInMs"] = s_diag.active
+            ? (uint32_t)((s_diag.expiresMs > nowMs) ? (s_diag.expiresMs - nowMs) : 0)
+            : 0;
+    }
+
+    const bool m2online = Mega2Link::mega2Online();
+    const bool m1online = SystemRuntimeState::mega1Online();
+    doc["mega2"]["online"] = m2online;
+    doc["mega1"]["online"] = m1online;
+
+    // Mega1: status + diag snapshot (same fields as state, but compact)
+    {
+        const auto& m1s = SystemRuntimeState::mega1Status();
+        JsonObject m1st = doc["mega1"]["status"].to<JsonObject>();
+        m1st["ver"]   = m1s.version;
+        m1st["size"]  = m1s.size;
+        m1st["node"]  = m1s.nodeId;
+        m1st["flags"] = m1s.flags;
+        m1st["reserved"] = m1s.reserved;
+
+        doc["mega1"]["warningMask"] = (uint8_t)(m1s.reserved & 0xFFu);
+
+        // In deinem State wird mega1.hasDiag nur gesetzt, wenn online.
+        doc["mega1"]["hasDiag"] = false;
+        if (m1online)
+        {
+            const auto& m1d = SystemRuntimeState::mega1Diag();
+            JsonObject d  = doc["mega1"]["diag"].to<JsonObject>();
+            d["mode"]      = m1d.mode;
+            d["powerMask"] = m1d.powerMask;
+            d["weicheIstBits"]  = m1d.weicheIstGeradeBits;
+            d["weicheSollBits"] = m1d.weicheSollGeradeBits;
+            d["weicheSlowSelectedBits"] = m1d.weicheSlowSelectedBits;
+            d["selftestRunning"]    = ((m1d.selftestFlags & 0x01u) != 0);
+            d["selftestDone"]       = ((m1d.selftestFlags & 0x02u) != 0);
+            d["selftestFailMask"]   = (uint16_t)m1d.selftestFailMask;
+            d["selftestCurrentIdx"] = (uint8_t)m1d.selftestCurrentIdx;
+            doc["mega1"]["hasDiag"] = true;
+        }
+    }
+
+    // Mega2: masks + minimal analog meta (seq) – Hz/age kommt im nächsten ToDo
+    if (m2online)
+    {
+        const auto& m2s = SystemRuntimeState::mega2Status();
+        doc["mega2"]["flags"] = m2s.flags;
+        const uint8_t allowedMask = (uint8_t)((m2s.reserved >> 8) & 0xFF);
+        const uint8_t warningMask = (uint8_t)(m2s.reserved & 0xFF);
+        doc["mega2"]["allowedMask"] = allowedMask;
+        doc["mega2"]["warningMask"] = warningMask;
+
+        const auto& an = SystemRuntimeState::mega2Analog();
+        doc["mega2"]["analog"]["seq"] = an.seq;
+    }
+
+    String out;
+    out.reserve(2048);
+    serializeJson(doc, out);
+    return out;
+}
+
 
 
 // ---------------------------------------------------------
@@ -923,6 +1010,8 @@ void Web::loop()
     // Analog stream: small periodic payload (every 500ms).
     Web::pushAnalogTick();
     
+    // Diag stream: only if diag clients subscribed (on-change throttled + periodic full)
+    Web::pushDiagIfNeeded();
 }
 
 // ---------------------------------------------------------
@@ -940,7 +1029,7 @@ void Web::pushStateIfDirty()
     const uint32_t now = (uint32_t)millis();
 
     // No clients => nothing to send (also avoids allocating JSON Strings).
-    if (ws.count() == 0)
+    if (countSubBase() == 0)
     {
         // Still clear dirty if nothing is connected to prevent "burst" right after connect.
         // The CONNECT handler sends a full state anyway.
@@ -992,7 +1081,7 @@ void Web::pushAnalogTick()
     const uint32_t now = (uint32_t)millis();
 
     // No clients => nothing to send (also avoids allocating JSON Strings).
-    if (ws.count() == 0)
+    if (countSubBase() == 0)
         return;
 
     constexpr uint32_t WS_ANALOG_MS = 500;
@@ -1001,4 +1090,54 @@ void Web::pushAnalogTick()
     s_lastAnalogMs = now;
 
     wsTextToBase(buildWsAnalogJson());
+}
+
+// ---------------------------------------------------------
+// Web::pushDiagIfNeeded
+// Policy:
+//  - on-change push (throttled to DIAG_MIN_MS)
+//  - periodic full/ground-truth every DIAG_FULL_MS
+//  - only when there is at least one diag-subscribed client
+// ---------------------------------------------------------
+void Web::pushDiagIfNeeded()
+{
+    if (countSubDiag() == 0)
+        return;
+
+    static bool     s_diagDirty = true;     // first diag client should get a frame quickly
+    static uint32_t s_lastSendMs = 0;
+    static uint32_t s_nextFullMs = 0;
+    static bool     s_lastLeaseActive = false;
+
+    const uint32_t now = (uint32_t)millis();
+
+    // Variant A (start): couple to base dirty (later we can refine -> Variant B via dedicated hooks)
+    if (g_stateDirty)
+        s_diagDirty = true;
+
+    // Also treat lease state changes as "diag change" (so banner/owner/timeout updates show up)
+    if (s_diag.active != s_lastLeaseActive) {
+        s_lastLeaseActive = s_diag.active;
+        s_diagDirty = true;
+    }
+
+    constexpr uint32_t DIAG_MIN_MS  = 250;   // throttle on-change frames
+    constexpr uint32_t DIAG_FULL_MS = 1000;  // periodic ground-truth
+
+    const bool wantFull  = (s_nextFullMs == 0) || ((int32_t)(now - s_nextFullMs) >= 0);
+    const bool wantDirty = s_diagDirty;
+
+    if (!wantFull && !wantDirty)
+        return;
+
+    // Throttle bursts; but don't delay periodic full indefinitely.
+    if (!wantFull && (now - s_lastSendMs) < DIAG_MIN_MS)
+        return;
+
+    const String payload = buildWsDiagJson();
+    wsTextToDiag(payload);
+
+    s_lastSendMs = now;
+    if (wantFull) s_nextFullMs = now + DIAG_FULL_MS;
+    s_diagDirty = false;
 }
