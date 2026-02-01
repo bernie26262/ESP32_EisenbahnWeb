@@ -80,6 +80,18 @@ h2 {
     background: #fff;
 }
 
+/* Diag-Control warning banner (index.htm) */
+.diag-banner {
+    margin-top: .75rem;
+    padding: .6rem .75rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 160, 0, .55);
+    background: rgba(255, 160, 0, .12);
+    color: #7a4f00; /* auf weißem Hintergrund gut lesbar */
+    font-weight: 700;
+}
+.diag-banner.hidden { display: none; }
+
 /* Buttons */
 .btn-nothalt {
     width: 100%;

@@ -346,6 +346,8 @@ function connectWebSocket() {
   socket.onopen = () => {
     wsConnected = true;
     logLine("WS connected");
+    // Subscription: base UI wants normal state/analog; diag UI will override to diag:true
+    try { wsSend({ action: "subscribe", base: true, diag: false }); } catch (e) {}
     if (lastStateMsg) {
       const uiState = getUiStateFromWs(lastStateMsg, lastSafetyState, lastMega2Online);
       applyUiState(uiState, lastStateMsg);
@@ -446,6 +448,14 @@ function handleWsMessage(msg) {
   // (State logs remain as before.)
   // if (DEBUG_WS) console.log("[WS MSG json]", JSON.stringify(msg));
   if (!msg) return;
+
+  // Error frames (e.g. DIAG_ACTIVE gating)
+  if (msg.type === "error") {
+    const code = msg.code || "ERROR";
+    const ownerId = (msg.ownerId != null) ? msg.ownerId : "";
+    logLine(`⚠ ${code}${ownerId !== "" ? ` (owner ${ownerId})` : ""}: ${msg.msg || ""}`);
+    return;
+  }
 
   // Fast-path: analog stream (periodic, small)
   if (msg.type === "analog") {
@@ -857,6 +867,26 @@ if (bNo) {
   bNo.className = "badge " + (notausActive ? "badge-err" : "badge-ok");
   bNo.textContent = "HW-NOT AUS: " + (notausActive ? "AKTIV" : "nein");
 }
+
+  // --------------------------------------------------
+  // Diag-Control banner: warn if someone holds exclusive diagnose control
+  // --------------------------------------------------
+  try {
+    const el = document.getElementById("diag-banner");
+    const dc = msg && msg.diagCtrl;
+    const wc = msg && msg.wsClients;
+    const diagCount = (wc && typeof wc.diag === "number") ? wc.diag : 0;
+    if (el) {
+      if (dc && dc.active) {
+        const owner = (dc.ownerId != null) ? dc.ownerId : "?";
+        const sec = (dc.expiresInMs != null) ? Math.round((dc.expiresInMs || 0) / 1000) : "?";
+        el.textContent = `⚠ Diagnose aktiv (${diagCount} Client${diagCount === 1 ? "" : "s"}) – Schreibzugriffe gesperrt (Owner ${owner}, Timeout ~${sec}s)`;
+        el.classList.remove("hidden");
+      } else {
+        el.classList.add("hidden");
+      }
+    }
+  } catch (e) {}
 
 
 

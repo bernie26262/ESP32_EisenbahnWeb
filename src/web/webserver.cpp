@@ -34,6 +34,116 @@ static void dbgHeap(const char* tag)
 static AsyncWebServer server(80);
 static AsyncWebSocket ws("/ws");
 
+// ---------------------------------------------------------
+// WS Client Subscriptions + Diag-Control Lease (exclusive writer)
+// ---------------------------------------------------------
+struct WsClientInfo {
+    uint32_t id = 0;
+    bool used = false;
+    bool subBase = true;   // default: base on
+    bool subDiag = false;  // default: diag off
+    uint32_t lastSeenMs = 0;
+};
+
+static constexpr uint8_t MAX_WS_CLIENTS = 8;
+static WsClientInfo s_wsClients[MAX_WS_CLIENTS];
+
+static WsClientInfo* findWsClient(uint32_t id) {
+    for (auto &c : s_wsClients) if (c.used && c.id == id) return &c;
+    return nullptr;
+}
+static WsClientInfo* upsertWsClient(uint32_t id) {
+    if (auto *c = findWsClient(id)) return c;
+    for (auto &c : s_wsClients) {
+        if (!c.used) { c.used = true; c.id = id; c.subBase = true; c.subDiag = false; c.lastSeenMs = (uint32_t)millis(); return &c; }
+    }
+    // No slot -> reuse first (should be rare)
+    s_wsClients[0] = WsClientInfo{};
+    s_wsClients[0].used = true; s_wsClients[0].id = id;
+    s_wsClients[0].lastSeenMs = (uint32_t)millis();
+    return &s_wsClients[0];
+}
+static void eraseWsClient(uint32_t id) {
+    for (auto &c : s_wsClients) {
+        if (c.used && c.id == id) { c = WsClientInfo{}; return; }
+    }
+}
+static uint8_t countSubBase() {
+    uint8_t n=0; for (auto &c: s_wsClients) if (c.used && c.subBase) n++; return n;
+}
+static uint8_t countSubDiag() {
+    uint8_t n=0; for (auto &c: s_wsClients) if (c.used && c.subDiag) n++; return n;
+}
+
+struct DiagLease {
+    bool active = false;
+    uint32_t ownerId = 0;
+    uint32_t sinceMs = 0;
+    uint32_t expiresMs = 0;   // millis deadline
+    char token[33] = {0};     // 32 hex + NUL
+};
+static DiagLease s_diag;
+
+static void genToken32(char out[33]) {
+#if defined(ESP32)
+    uint32_t r[4] = { (uint32_t)esp_random(), (uint32_t)esp_random(), (uint32_t)esp_random(), (uint32_t)esp_random() };
+#else
+    uint32_t r[4] = { (uint32_t)random(), (uint32_t)random(), (uint32_t)random(), (uint32_t)random() };
+#endif
+    // Achtung: Arduino core definiert bereits ein Makro "HEX" (Print.h: #define HEX 16)
+    // Daher NICHT "HEX" als Bezeichner verwenden.
+    static const char* HEXCHARS = "0123456789abcdef";
+    int k = 0;
+    for (int i = 0; i < 4; i++) {
+        // 32-bit Wort -> 8 Hex-Zeichen (MSB zuerst)
+        for (int shift = 28; shift >= 0; shift -= 4) {
+            uint8_t v = (uint8_t)((r[i] >> shift) & 0x0F);
+            out[k++] = HEXCHARS[v];
+        }
+    }
+    out[32] = 0;
+}
+
+static bool isDiagOwner(AsyncWebSocketClient* client, const char* token) {
+    if (!client) return false;
+    if (!s_diag.active) return false;
+    if (client->id() != s_diag.ownerId) return false;
+    if (!token) return false;
+    return (strncmp(token, s_diag.token, 32) == 0);
+}
+
+static void diagRevertToNormal(const char* reason) {
+    // Option A: revert to normal operation. (Currently: release lease only; future: clear manual overrides.)
+    (void)reason;
+    s_diag = DiagLease{};
+    // Trigger a fresh state push so all UIs see diagActive=false immediately.
+    g_stateDirty = true;
+}
+
+static void diagLeaseTick() {
+    if (!s_diag.active) return;
+    const uint32_t now = (uint32_t)millis();
+    if ((int32_t)(now - s_diag.expiresMs) >= 0) {
+        Serial.println("[DIAG] lease timeout -> revert to normal");
+        diagRevertToNormal("timeout");
+    }
+}
+
+static void wsTextToBase(const String& payload) {
+    for (auto &c : s_wsClients) {
+        if (!c.used || !c.subBase) continue;
+        ws.text(c.id, payload);
+    }
+}
+
+static void wsTextToDiag(const String& payload) {
+    for (auto &c : s_wsClients) {
+        if (!c.used || !c.subDiag) continue;
+        ws.text(c.id, payload);
+    }
+}
+
+
 // IMPORTANT: Dieses Symbol wird (derzeit) auch aus anderen Modulen referenziert.
 volatile bool g_stateDirty = true;
 
@@ -331,6 +441,22 @@ static String buildWsStateJson(bool includeAnalog)
     {
         // If you ever see this, increase the document size above.
         Serial.println("[WS] buildWsStateJson: JSON document overflow (fields may be missing!)");
+
+
+    // WS client counts + diag control status (used for safety banner + gating UX)
+    {
+        JsonObject wsC = doc.createNestedObject("wsClients");
+        wsC["base"] = countSubBase();
+        wsC["diag"] = countSubDiag();
+    }
+    {
+        JsonObject d = doc.createNestedObject("diagCtrl");
+        d["active"] = s_diag.active;
+        d["ownerId"] = s_diag.active ? s_diag.ownerId : 0;
+        d["sinceMs"] = s_diag.active ? s_diag.sinceMs : 0;
+        const uint32_t nowMs = (uint32_t)millis();
+        d["expiresInMs"] = s_diag.active ? (uint32_t)((s_diag.expiresMs > nowMs) ? (s_diag.expiresMs - nowMs) : 0) : 0;
+    }
     }
     serializeJson(doc, out);
 
@@ -427,18 +553,39 @@ static void onWsEvent(AsyncWebSocket* server,
                       size_t len)
 {
     if (type == WS_EVT_CONNECT)
-    {
-        Serial.printf("[WS] client connected id=%u\n", client ? client->id() : 0);
+{
+    const uint32_t cid = client ? client->id() : 0;
+    Serial.printf("[WS] client connected id=%u\n", (unsigned)cid);
 #if defined(DEBUG_AWS_HEAP)
-        dbgHeap("ws connect");
+    dbgHeap("ws connect");
 #endif
+    if (client) {
+        auto *ci = upsertWsClient(cid);
+        ci->lastSeenMs = (uint32_t)millis();
+        // Default: base subscribed, diag not subscribed.
+        ci->subBase = true;
+        ci->subDiag = false;
+        // Initial state/analog snapshot to the new client only (base).
         client->text(buildWsStateJson(true));
         client->text(buildWsAnalogJson());
-        return;
     }
+    return;
+}
 
-    if (type != WS_EVT_DATA)
-        return;
+if (type == WS_EVT_DISCONNECT)
+{
+    const uint32_t cid = client ? client->id() : 0;
+    Serial.printf("[WS] client disconnected id=%u\n", (unsigned)cid);
+    eraseWsClient(cid);
+    if (s_diag.active && cid && (cid == s_diag.ownerId)) {
+        Serial.println("[DIAG] owner disconnected -> revert to normal");
+        diagRevertToNormal("disconnect");
+    }
+    return;
+}
+
+if (type != WS_EVT_DATA)
+    return;
 
     AwsFrameInfo* info = (AwsFrameInfo*)arg;
     if (!info->final || info->index != 0 || info->len != len)
@@ -453,6 +600,114 @@ static void onWsEvent(AsyncWebSocket* server,
         return;
 
     Serial.printf("[WS] action rx: %s\n", action);
+
+    // Update lastSeen for this client (used for diag lease + presence)
+    if (client) {
+        if (auto *ci = upsertWsClient(client->id())) ci->lastSeenMs = (uint32_t)millis();
+    }
+
+    // -------------------------------------------------
+    // Subscription: client declares what it wants to receive
+    // action:"subscribe", base:true/false, diag:true/false
+    // -------------------------------------------------
+    if (!strcmp(action, "subscribe"))
+    {
+        bool subBase = true;
+        bool subDiag = false;
+        if (!cmd["base"].isNull()) subBase = cmd["base"].as<bool>();
+        if (!cmd["diag"].isNull()) subDiag = cmd["diag"].as<bool>();
+        if (client) {
+            auto *ci = upsertWsClient(client->id());
+            ci->subBase = subBase;
+            ci->subDiag = subDiag;
+            ci->lastSeenMs = (uint32_t)millis();
+            Serial.printf("[WS] subscribe id=%u base=%d diag=%d\n", (unsigned)client->id(), subBase?1:0, subDiag?1:0);
+            // Send a fresh base snapshot so the client is immediately consistent.
+            if (subBase) {
+                client->text(buildWsStateJson(true));
+                client->text(buildWsAnalogJson());
+            }
+        }
+        return;
+    }
+
+    // -------------------------------------------------
+    // Diag-Control (exclusive writer) : enter/exit/heartbeat
+    // Option A on loss: revert to normal operation.
+    // -------------------------------------------------
+    if (!strcmp(action, "diagEnter"))
+    {
+        const uint32_t now = (uint32_t)millis();
+        const uint32_t cid = client ? client->id() : 0;
+        StaticJsonDocument<256> reply;
+        reply["type"] = "diagControl";
+        if (!s_diag.active || (cid && cid == s_diag.ownerId)) {
+            if (!s_diag.active) {
+                s_diag.active = true;
+                s_diag.ownerId = cid;
+                s_diag.sinceMs = now;
+                genToken32(s_diag.token);
+            }
+            constexpr uint32_t LEASE_MS = 10000; // 10s without heartbeat -> auto revert
+            s_diag.expiresMs = now + LEASE_MS;
+            reply["active"] = true;
+            reply["ownerId"] = s_diag.ownerId;
+            reply["isOwner"] = true;
+            reply["token"] = s_diag.token;
+            reply["expiresInMs"] = LEASE_MS;
+            String out; serializeJson(reply, out);
+            if (client) client->text(out);
+            g_stateDirty = true;
+        } else {
+            reply["active"] = true;
+            reply["ownerId"] = s_diag.ownerId;
+            reply["isOwner"] = false;
+            reply["error"] = "busy";
+            String out; serializeJson(reply, out);
+            if (client) client->text(out);
+        }
+        return;
+    }
+    if (!strcmp(action, "diagHeartbeat"))
+    {
+        const char* token = cmd["token"] | nullptr;
+        if (isDiagOwner(client, token)) {
+            constexpr uint32_t LEASE_MS = 10000;
+            s_diag.expiresMs = (uint32_t)millis() + LEASE_MS;
+        }
+        return;
+    }
+    if (!strcmp(action, "diagExit"))
+    {
+        const char* token = cmd["token"] | nullptr;
+        if (isDiagOwner(client, token)) {
+            Serial.println("[DIAG] lease released by owner -> revert to normal");
+            diagRevertToNormal("exit");
+        }
+        return;
+    }
+
+    // -------------------------------------------------
+    // Safety gate: while diag lease is active, only the owner may send "write" actions.
+    // This prevents accidental conflicts (e.g. Torben drives while Bernhard diagnoses).
+    // -------------------------------------------------
+    auto isProtectedAction = [&](const char* a) -> bool {
+        return (!strcmp(a,"powerOff") || !strcmp(a,"m1PowerSet") || !strcmp(a,"m1SelftestStart") || !strcmp(a,"m1SetMode") || !strcmp(a,"m1TurnoutSet") || !strcmp(a,"sbhfSelftestRetry"));
+    };
+    if (s_diag.active && isProtectedAction(action)) {
+        const char* token = cmd["token"] | nullptr;
+        if (!isDiagOwner(client, token)) {
+            StaticJsonDocument<192> err;
+            err["type"] = "error";
+            err["code"] = "DIAG_ACTIVE";
+            err["ownerId"] = s_diag.ownerId;
+            err["msg"] = "diagnose active: write actions allowed only for diag owner";
+            String out; serializeJson(err, out);
+            if (client) client->text(out);
+            return;
+        }
+    }
+
 
     // -------------------------------------------------
     // Simulation helpers (only enabled in sim builds)
@@ -661,6 +916,7 @@ void Web::loop()
     }
 #endif
     ws.cleanupClients();
+    diagLeaseTick();
     // Digital state: on-change (throttled) + periodic ground-truth full push.
     Web::pushStateIfDirty();
 
@@ -717,7 +973,7 @@ void Web::pushStateIfDirty()
     Serial.printf("[WS] push state full=%d dirty=%d len=%u\n",
                   includeAnalog ? 1 : 0, wantDirty ? 1 : 0, (unsigned)payload.length());
 #endif
-    ws.textAll(payload);
+    wsTextToBase(payload);
 
     s_lastSendMs = now;
     s_nextFullMs = now + WS_FULL_MS;
@@ -744,5 +1000,5 @@ void Web::pushAnalogTick()
         return;
     s_lastAnalogMs = now;
 
-    ws.textAll(buildWsAnalogJson());
+    wsTextToBase(buildWsAnalogJson());
 }

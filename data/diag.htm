@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Diagnose</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Diagnose</h1>
+
+    <div class="status-box" id="diag-status">WS: …</div>
+
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin:.75rem 0;">
+      <button class="btn" id="diag-enter">Diagnose übernehmen</button>
+      <button class="btn" id="diag-exit" disabled>Diagnose beenden, zurück zur Hauptseite</button>
+      <a class="btn" href="index.htm">Zur Hauptseite</a>
+    </div>
+
+    <hr>
+    <p><strong>Hinweis:</strong> Solange Diagnose aktiv ist, sind Schreibaktionen für andere Clients gesperrt.</p>
+  </main>
+
+  <script src="diag.js"></script>
+</body>
+</html>
