@@ -39,22 +39,50 @@ function setKpi(ageMs, hz, seq){
   else el.classList.add("kpi-err");
 }
 
-function setAnalogTable(a){
-  const vA10 = qs("an-vA10");
-  const vB10 = qs("an-vB10");
-  const imA  = qs("an-imA");
-  if (vA10) vA10.textContent = (a && typeof a.vA10 === "number") ? String(a.vA10) : "–";
-  if (vB10) vB10.textContent = (a && typeof a.vB10 === "number") ? String(a.vB10) : "–";
-  if (imA) {
-    let arr = null;
-    if (a && Array.isArray(a.i_mA)) arr = a.i_mA;
-    if (arr) imA.textContent = arr.map((v,i)=>`${i}:${v}`).join("  ");
-    else imA.textContent = "–";
+function renderBlocksFromState(msg){
+  const st = msg?.mega2?.blocks?.status;
+  if (!Array.isArray(st) || st.length < 9) return;
+
+  const main = qs("diag-blocks-main");
+  const sbhf = qs("diag-blocks-sbhf");
+
+  function row(label, o){
+    return `<tr>
+      <td>${label}</td>
+      <td>${fmt01(o?.kontakt)}</td>
+      <td>${fmt01(o?.stromEin)}</td>
+      <td>${fmt01(o?.besetzt)}</td>
+      <td>${fmt01(o?.kurzschluss)}</td>
+      <td>${fmt01(o?.nothalt)}</td>
+      <td class="mono">${typeof o?.stromRaw === "number" ? o.stromRaw : "–"}</td>
+    </tr>`;
+  }
+
+  if (main){
+    let html = "";
+    for (let i=0;i<6;i++) html += row(`B${i+1}`, st[i]);
+    main.innerHTML = html;
+  }
+
+  if (sbhf){
+    let html = "";
+    for (let i=6;i<9;i++) html += row(`SBHF${i-5}`, st[i]);
+    sbhf.innerHTML = html;
   }
 }
 
 function qs(id){ return document.getElementById(id); }
 function setStatus(t){ const el=qs("diag-status"); if(el) el.textContent=t; }
+
+function fmtV10(raw){
+  if (typeof raw !== "number") return "–";
+  if (raw >= 65000) return `— (${raw})`;
+  return `${(raw/10).toFixed(1)} V (${raw})`;
+}
+
+function fmt01(v){
+  return v ? "1" : "0";
+}
 
 function setKpi(ageMs, hz, seq){
   const el = qs("diag-analog-kpi");
@@ -86,8 +114,8 @@ function setAnalogTable(a){
   const vA10 = qs("an-vA10");
   const vB10 = qs("an-vB10");
   const imA  = qs("an-imA");
-  if (vA10) vA10.textContent = (a && typeof a.vA10 === "number") ? String(a.vA10) : "–";
-  if (vB10) vB10.textContent = (a && typeof a.vB10 === "number") ? String(a.vB10) : "–";
+  if (vA10) vA10.textContent = (a && typeof a.vA10 === "number") ? fmtV10(a.vA10) : "–";
+  if (vB10) vB10.textContent = (a && typeof a.vB10 === "number") ? fmtV10(a.vB10) : "–";
 
   // i_mA[] formatiert
   if (imA) {
@@ -150,13 +178,6 @@ function connect(){
       if (a) setKpi(a.ageMs, a.hz, a.seq);
       return;
     }
-    
-    // Analog stream (base subscription): Spannungen/Ströme
-    if (msg.type === "analog") {
-      const a = msg.analog || msg?.mega2?.analog || null;
-      if (a) setAnalogTable(a);
-      return;
-    }
 
     // Analog fast stream (base subscription): Spannungen/Ströme
     if (msg.type === "analog") {
@@ -170,6 +191,20 @@ function connect(){
       return;
     }
 
+    if (msg.type === "state") {
+      renderBlocksFromState(msg);
+
+      // optional: Statusanzeige Lease-State aus state spiegeln
+      if (msg.diagCtrl && !msg.diagCtrl.active) {
+        // Lease weg (timeout/disconnect) -> UI zurücksetzen
+        token = null;
+        stopHeartbeat();
+        qs("diag-exit").disabled = true;
+        qs("diag-enter").disabled = false;
+        setStatus("Diagnose inaktiv");
+      }
+      return;
+    }
 
     if (msg.type === "diagControl") {
       if (msg.isOwner && msg.token) {
@@ -189,17 +224,6 @@ function connect(){
       return;
     }
 
-    if (msg.type === "state" && msg.diagCtrl) {
-      // optional: Statusanzeige aktualisieren
-      if (!msg.diagCtrl.active) {
-        // Lease weg (timeout/disconnect) -> UI zurücksetzen
-        token = null;
-        stopHeartbeat();
-        qs("diag-exit").disabled = true;
-        qs("diag-enter").disabled = false;
-        setStatus("Diagnose inaktiv");
-      }
-    }
   };
 }
 
