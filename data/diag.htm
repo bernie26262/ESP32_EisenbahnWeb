@@ -5,17 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Diagnose</title>
   <link rel="stylesheet" href="style.css?v=20260202085829">
-  <style>
-    /* Minimal CSS nur für diag.htm (kein Eingriff in style.css nötig) */
-    .kpi-ok   { border-left: 6px solid #2e7d32; background: rgba(46,125,50,.08); }
-    .kpi-warn { border-left: 6px solid #f9a825; background: rgba(249,168,37,.12); }
-    .kpi-err  { border-left: 6px solid #c62828; background: rgba(198,40,40,.10); }
-    .diag-table { width: 100%; border-collapse: collapse; margin-top: .5rem; }
-    .diag-table th, .diag-table td { border: 1px solid rgba(0,0,0,.12); padding: .35rem .5rem; text-align: left; }
-    .diag-table th { background: rgba(0,0,0,.04); }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
-    .small { font-size: .9rem; }
-  </style>
+  <link rel="stylesheet" href="diagstyle.css">
+
 </head>
 <body>
   <main class="container">
@@ -50,6 +41,22 @@
     </table>
 
     <pre id="diag-json" style="white-space:pre-wrap; font-size:.9rem; background:rgba(0,0,0,0.04); padding:.75rem; border-radius:10px; max-height:55vh; overflow:auto;">(warte auf type:"diag" ...)</pre>
+    <!-- KPI / Ampel für Analog-Updatequalität -->
+    <div class="status-box kpi-warn" id="diag-analog-kpi">Analog: (warte auf Daten ...)</div>
+
+    <!-- Kleine Tabelle: Spannung/Ströme -->
+    <table class="diag-table small" id="diag-analog-table">
+      <thead>
+        <tr><th>Signal</th><th>Wert</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>vA10</td><td class="mono" id="an-vA10">–</td></tr>
+        <tr><td>vB10</td><td class="mono" id="an-vB10">–</td></tr>
+        <tr><td>i_mA[]</td><td class="mono" id="an-imA">–</td></tr>
+      </tbody>
+    </table>
+
+    <pre id="diag-json" class="diag-pre">(warte auf type:"diag" ...)</pre>
   </main>
 
   <script src="diag.js"></script>

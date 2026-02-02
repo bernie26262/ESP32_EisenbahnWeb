@@ -1,0 +1,20 @@
+/* diagstyle.css - only used by diag.htm */
+.kpi-ok   { border-left: 6px solid #2e7d32; background: rgba(46,125,50,.08); }
+.kpi-warn { border-left: 6px solid #f9a825; background: rgba(249,168,37,.12); }
+.kpi-err  { border-left: 6px solid #c62828; background: rgba(198,40,40,.10); }
+
+.diag-pre {
+  white-space: pre-wrap;
+  font-size: .9rem;
+  background: rgba(0,0,0,0.04);
+  padding: .75rem;
+  border-radius: 10px;
+  max-height: 55vh;
+  overflow: auto;
+}
+
+.diag-table { width: 100%; border-collapse: collapse; margin-top: .5rem; }
+.diag-table th, .diag-table td { border: 1px solid rgba(0,0,0,.12); padding: .35rem .5rem; text-align: left; }
+.diag-table th { background: rgba(0,0,0,.04); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+.small { font-size: .9rem; }

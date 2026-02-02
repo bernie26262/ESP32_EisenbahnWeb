@@ -4,6 +4,55 @@ let hbTimer = null;
 let lastDiag = null;
 let lastAnalog = null;
 
+
+
+// ------------------------------------------------------------
+// Optional WS debug logging:
+// Enable via DevTools console:
+//   localStorage.setItem("diagWsLog","1"); location.reload();
+// Disable:
+//   localStorage.removeItem("diagWsLog"); location.reload();
+// ------------------------------------------------------------
+const WS_LOG = (localStorage.getItem("diagWsLog") === "1");
+let __wsLogCnt = 0;
+function wsLog(type, msg){
+  if (!WS_LOG) return;
+  __wsLogCnt++;
+  // avoid flooding: log every 10th message  always log errors/diagControl
+  if (type === "error" || type === "diagControl" || (__wsLogCnt % 10) === 0) {
+    console.log("[WS]", type, msg);
+  }
+}
+
+function setKpi(ageMs, hz, seq){
+  const el = qs("diag-analog-kpi");
+  if (!el) return;
+  const age = (typeof ageMs === "number") ? ageMs : null;
+  const hzTxt  = (typeof hz === "number") ? hz.toFixed(2) : "?";
+  const seqTxt = (typeof seq === "number") ? seq : "?";
+  const ageTxt = (age === null) ? "?" : age;
+  el.textContent = `Analog: ${hzTxt} Hz · age ${ageTxt} ms · seq ${seqTxt}`;
+  el.classList.remove("kpi-ok","kpi-warn","kpi-err");
+  if (age === null) el.classList.add("kpi-warn");
+  else if (age <= 800) el.classList.add("kpi-ok");
+  else if (age <= 2000) el.classList.add("kpi-warn");
+  else el.classList.add("kpi-err");
+}
+
+function setAnalogTable(a){
+  const vA10 = qs("an-vA10");
+  const vB10 = qs("an-vB10");
+  const imA  = qs("an-imA");
+  if (vA10) vA10.textContent = (a && typeof a.vA10 === "number") ? String(a.vA10) : "–";
+  if (vB10) vB10.textContent = (a && typeof a.vB10 === "number") ? String(a.vB10) : "–";
+  if (imA) {
+    let arr = null;
+    if (a && Array.isArray(a.i_mA)) arr = a.i_mA;
+    if (arr) imA.textContent = arr.map((v,i)=>`${i}:${v}`).join("  ");
+    else imA.textContent = "–";
+  }
+}
+
 function qs(id){ return document.getElementById(id); }
 function setStatus(t){ const el=qs("diag-status"); if(el) el.textContent=t; }
 
@@ -88,6 +137,7 @@ function connect(){
   ws.onmessage = (ev) => {
     let msg = null;
     try { msg = JSON.parse(ev.data); } catch(e) { return; }
+    wsLog(msg && msg.type ? msg.type : "?", msg);
 
     // Diag stream (separater Payload-Typ)
     if (msg.type === "diag") {
@@ -98,6 +148,13 @@ function connect(){
       // KPI aus mega2.analog
       const a = msg?.mega2?.analog;
       if (a) setKpi(a.ageMs, a.hz, a.seq);
+      return;
+    }
+    
+    // Analog stream (base subscription): Spannungen/Ströme
+    if (msg.type === "analog") {
+      const a = msg.analog || msg?.mega2?.analog || null;
+      if (a) setAnalogTable(a);
       return;
     }
 
