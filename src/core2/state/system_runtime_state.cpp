@@ -10,6 +10,8 @@
 static SystemStatus s_m2Status{};
 static Mega2AnalogPayload s_m2Analog{};
 static uint32_t s_m2AnalogTsMs = 0;
+static uint32_t s_m2AnalogPrevTsMs = 0;
+static float s_m2AnalogHz = 0.0f;
 
 static SystemStatus s_m1Status{};
 static Mega1DiagV1 s_m1Diag{};
@@ -573,8 +575,24 @@ void SystemRuntimeState::updateMega2EntryPreview(const uint16_t* arr, uint8_t n)
  
  void SystemRuntimeState::updateMega2Analog(const Mega2AnalogPayload& p)
  {
+    // Keep previous timestamp for Hz estimation
+    const uint32_t now = (uint32_t)millis();
+    const uint32_t prev = s_m2AnalogTsMs;
+
     s_m2Analog = p;
-    s_m2AnalogTsMs = millis();
+    s_m2AnalogPrevTsMs = prev;
+    s_m2AnalogTsMs = now;
+
+    // Estimate effective update frequency (ESP-side, measured at reception time)
+    if (prev != 0 && now > prev) {
+        const uint32_t dt = now - prev;
+        if (dt > 0) {
+            const float instHz = 1000.0f / (float)dt;
+            // simple low-pass filter to reduce jitter
+            s_m2AnalogHz = (s_m2AnalogHz <= 0.01f) ? instHz : (0.8f * s_m2AnalogHz + 0.2f * instHz);
+        }
+    }
+
     // IMPORTANT: analog is streamed separately (periodic WS message),
     // so it must not trigger the full digital WS "state" push.
  }
@@ -589,3 +607,13 @@ void SystemRuntimeState::updateMega2EntryPreview(const uint16_t* arr, uint8_t n)
      if (s_m2AnalogTsMs == 0) return 0xFFFFFFFFu;
      return (uint32_t)(millis() - s_m2AnalogTsMs);
  }
+
+uint32_t SystemRuntimeState::mega2AnalogLastUpdateMs()
+{
+    return s_m2AnalogTsMs;
+}
+
+float SystemRuntimeState::mega2AnalogHz()
+{
+    return s_m2AnalogHz;
+}

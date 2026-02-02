@@ -387,6 +387,9 @@ static String buildWsStateJson(bool includeAnalog)
             JsonObject a = doc["mega2"]["analog"].to<JsonObject>();
             a["seq"] = an.seq;
             a["flags"] = an.flags;
+            a["tsMs"]  = SystemRuntimeState::mega2AnalogLastUpdateMs();
+            a["ageMs"] = SystemRuntimeState::mega2AnalogAgeMs();
+            a["hz"]    = SystemRuntimeState::mega2AnalogHz();
             a["vA10"] = an.vA10;
             a["vB10"] = an.vB10;
             JsonArray ia = a["i_mA"].to<JsonArray>();
@@ -506,6 +509,9 @@ static String buildWsAnalogJson()
     JsonObject a = doc["analog"].to<JsonObject>();
     a["seq"]   = an.seq;
     a["flags"] = an.flags;
+    a["tsMs"]  = SystemRuntimeState::mega2AnalogLastUpdateMs();
+    a["ageMs"] = SystemRuntimeState::mega2AnalogAgeMs();
+    a["hz"]    = SystemRuntimeState::mega2AnalogHz();
     a["vA10"]  = an.vA10;
     a["vB10"]  = an.vB10;
 
@@ -619,6 +625,9 @@ static String buildWsDiagJson()
 
         const auto& an = SystemRuntimeState::mega2Analog();
         doc["mega2"]["analog"]["seq"] = an.seq;
+        doc["mega2"]["analog"]["tsMs"]  = SystemRuntimeState::mega2AnalogLastUpdateMs();
+        doc["mega2"]["analog"]["ageMs"] = SystemRuntimeState::mega2AnalogAgeMs();
+        doc["mega2"]["analog"]["hz"]    = SystemRuntimeState::mega2AnalogHz();
     }
 
     String out;

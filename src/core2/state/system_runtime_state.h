@@ -123,4 +123,8 @@ namespace SystemRuntimeState
      void updateMega2Analog(const Mega2AnalogPayload& p);
      const Mega2AnalogPayload& mega2Analog();
      uint32_t mega2AnalogAgeMs();
+
+     // Diag meta (ESP-seitig): letzte Aktualisierung + gemessene Update-Frequenz
+     uint32_t mega2AnalogLastUpdateMs();
+     float mega2AnalogHz();
 }
