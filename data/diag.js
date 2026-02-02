@@ -1,9 +1,57 @@
 let ws = null;
 let token = null;
 let hbTimer = null;
+let lastDiag = null;
+let lastAnalog = null;
 
 function qs(id){ return document.getElementById(id); }
 function setStatus(t){ const el=qs("diag-status"); if(el) el.textContent=t; }
+
+function setKpi(ageMs, hz, seq){
+  const el = qs("diag-analog-kpi");
+  if (!el) return;
+
+  // ageMs kann fehlen/undefiniert sein
+  const age = (typeof ageMs === "number") ? ageMs : null;
+  const hzTxt  = (typeof hz === "number") ? hz.toFixed(2) : "?";
+  const seqTxt = (typeof seq === "number") ? seq : "?";
+  const ageTxt = (age === null) ? "?" : age;
+
+  el.textContent = `Analog: ${hzTxt} Hz · age ${ageTxt} ms · seq ${seqTxt}`;
+
+  // Ampel: <800ms ok, <2000ms warn, sonst err
+  el.classList.remove("kpi-ok","kpi-warn","kpi-err");
+  if (age === null) {
+    el.classList.add("kpi-warn");
+  } else if (age <= 800) {
+    el.classList.add("kpi-ok");
+  } else if (age <= 2000) {
+    el.classList.add("kpi-warn");
+  } else {
+    el.classList.add("kpi-err");
+  }
+}
+
+function setAnalogTable(a){
+  // a ist das "analog"-Objekt: {vA10,vB10,i_mA:[...]} oder ähnlich
+  const vA10 = qs("an-vA10");
+  const vB10 = qs("an-vB10");
+  const imA  = qs("an-imA");
+  if (vA10) vA10.textContent = (a && typeof a.vA10 === "number") ? String(a.vA10) : "–";
+  if (vB10) vB10.textContent = (a && typeof a.vB10 === "number") ? String(a.vB10) : "–";
+
+  // i_mA[] formatiert
+  if (imA) {
+    let arr = null;
+    if (a && Array.isArray(a.i_mA)) arr = a.i_mA;
+    if (arr) {
+      const parts = arr.map((v, i) => `${i}:${v}`);
+      imA.textContent = parts.join("  ");
+    } else {
+      imA.textContent = "–";
+    }
+  }
+}
 
 function wsSend(obj){
   if (!ws || ws.readyState !== 1) return;
@@ -43,10 +91,28 @@ function connect(){
 
     // Diag stream (separater Payload-Typ)
     if (msg.type === "diag") {
+      lastDiag = msg;
       const pre = qs("diag-json");
       if (pre) pre.textContent = JSON.stringify(msg, null, 2);
+      
+      // KPI aus mega2.analog
+      const a = msg?.mega2?.analog;
+      if (a) setKpi(a.ageMs, a.hz, a.seq);
       return;
     }
+
+    // Analog fast stream (base subscription): Spannungen/Ströme
+    if (msg.type === "analog") {
+      lastAnalog = msg;
+      // shape: { type:"analog", analog:{...} }
+      const a = msg.analog || msg?.mega2?.analog || null;
+      if (a) setAnalogTable(a);
+
+      // wenn diag schon da ist, KPI beibehalten; sonst evtl. nur seq zeigen
+      if (!lastDiag && a) setKpi(null, null, a.seq);
+      return;
+    }
+
 
     if (msg.type === "diagControl") {
       if (msg.isOwner && msg.token) {
