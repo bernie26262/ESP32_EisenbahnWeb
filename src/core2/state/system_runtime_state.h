@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include "system/system_status_payload.h"
 #include "system/mega1_diag_payload.h"
+#include "system/mega1_sensor_counts_payload.h"
+#include "system/mega2_schaltgleise_payload.h"
 #include "proto_common.h"   // Mega2SafetyStatus
  
 
@@ -48,6 +50,33 @@ namespace SystemRuntimeState
     // Mega1 Diagnose (read-only)
     void updateMega1Diag(const Mega1DiagV1& d);
     const Mega1DiagV1& mega1Diag();
+
+    // ----------------------------------------------------
+    // Mega1 digitale Sensoren (Diagnose, read-only)
+    // Two pages (8 + 7 sensors) with separate rising/falling counters.
+    // ----------------------------------------------------
+    void updateMega1SensorPage(const Mega1SensorCountsPageV1& p);
+    bool mega1SensorsValid();            // true if at least one page received (both pages recommended)
+    uint8_t mega1SensorsSeq();           // last seq (page0 preferred)
+    uint32_t mega1SensorsLastUpdateMs(); // last update timestamp (any page)
+
+    // Build a compact per-sensor view for UI/WS.
+    // Returns number of sensors (always 15). For each i:
+    //   sid[i]  = S-id (0..23 with gaps)
+    //   level[i]= 0/1 (HIGH/LOW)
+    //   rise[i] = rising counter (uint8 wrap ok)
+    //   fall[i] = falling counter (uint8 wrap ok)
+    void mega1GetSensors15(uint8_t sid[15], uint8_t level[15], uint8_t rise[15], uint8_t fall[15]);
+
+    // ----------------------------------------------------
+    // Mega2 Schaltgleise S11..S16 (Diagnose, read-only)
+    // ----------------------------------------------------
+    void updateMega2Schaltgleise(const Mega2SchaltgleiseDiagV1& p);
+    bool mega2SchaltgleiseValid();
+    uint8_t mega2SchaltgleiseSeq();
+    uint32_t mega2SchaltgleiseLastUpdateMs();
+    void mega2GetSchaltgleise6(uint8_t sid[6], uint8_t level[6], uint16_t rise[6], uint16_t fall[6]);
+
     // Abgeleitete Safety-Informationen
     bool safetyLock();
     SafetyReason safetyReason();

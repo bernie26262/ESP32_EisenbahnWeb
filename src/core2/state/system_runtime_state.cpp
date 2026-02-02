@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include "system_runtime_state.h"
 #include "system/mega1_diag_payload.h"
+#include "system/mega1_sensor_counts_payload.h"
+#include "system/mega2_schaltgleise_payload.h"
 #include "debug.h"
 #include "proto_common.h"   // <-- für SAFETY_BLOCK_* + Mega2SafetyStatus
 
@@ -15,6 +17,22 @@ static float s_m2AnalogHz = 0.0f;
 
 static SystemStatus s_m1Status{};
 static Mega1DiagV1 s_m1Diag{};
+
+// Mega1 sensors (15 used sensors, two pages 8+7)
+static bool     s_m1SensPageValid[2] = {false,false};
+static uint8_t  s_m1SensSeqPage[2]   = {0,0};
+static uint32_t s_m1SensLastMs = 0;
+static uint8_t  s_m1SensActive[15] = {0};
+static uint8_t  s_m1SensRise[15]   = {0};
+static uint8_t  s_m1SensFall[15]   = {0};
+
+// Mega2 Schaltgleise S11..S16
+static bool     s_m2SchValid = false;
+static uint8_t  s_m2SchSeq   = 0;
+static uint32_t s_m2SchLastMs = 0;
+static uint8_t  s_m2SchLevel[6] = {0};
+static uint16_t s_m2SchRise[6]  = {0};
+static uint16_t s_m2SchFall[6]  = {0};
 // NEU: Mega2SafetyStatus Cache (separat gepollt)
 static Mega2SafetyStatus s_m2Safety{};
 
@@ -344,6 +362,108 @@ void SystemRuntimeState::updateMega1Diag(const Mega1DiagV1& d)
     }
     s_m1SelftestRunningPrev = running;
     g_stateDirty = true;
+}
+
+// =====================================================
+// Mega1 digitale Sensoren (15 Sensoren, 2 Pages 8+7)
+// =====================================================
+static constexpr uint8_t M1_SID_MAP_15[15] = {
+    0,1,2,3,4,5,6,7, 8,9,10,18,19,22,23
+};
+
+void SystemRuntimeState::updateMega1SensorPage(const Mega1SensorCountsPageV1& p)
+{
+    if (p.version != 1) return;
+    if (p.page > 1) return;
+
+    const uint8_t page = p.page;
+    s_m1SensPageValid[page] = true;
+    s_m1SensSeqPage[page]   = p.seq;
+    s_m1SensLastMs          = (uint32_t)millis();
+
+    const uint8_t base = (page == 0) ? 0 : 8;
+    const uint8_t n    = (page == 0) ? 8 : 7;
+
+    for (uint8_t i = 0; i < n; ++i)
+    {
+        const uint8_t dst = base + i;
+        s_m1SensActive[dst] = ((p.activeBits >> i) & 0x01u);
+        s_m1SensRise[dst]   = p.riseCount[i];
+        s_m1SensFall[dst]   = p.fallCount[i];
+    }
+}
+
+bool SystemRuntimeState::mega1SensorsValid()
+{
+    return s_m1SensPageValid[0] || s_m1SensPageValid[1];
+}
+
+uint8_t SystemRuntimeState::mega1SensorsSeq()
+{
+    // Prefer page0 sequence if available (first half of sensors)
+    return s_m1SensPageValid[0] ? s_m1SensSeqPage[0] : s_m1SensSeqPage[1];
+}
+
+uint32_t SystemRuntimeState::mega1SensorsLastUpdateMs()
+{
+    return s_m1SensLastMs;
+}
+
+void SystemRuntimeState::mega1GetSensors15(uint8_t sid[15], uint8_t level[15], uint8_t rise[15], uint8_t fall[15])
+{
+    for (uint8_t i = 0; i < 15; ++i)
+    {
+        sid[i]   = M1_SID_MAP_15[i];
+        level[i] = s_m1SensActive[i];
+        rise[i]  = s_m1SensRise[i];
+        fall[i]  = s_m1SensFall[i];
+    }
+}
+
+// =====================================================
+// Mega2 Schaltgleise S11..S16 (6 Sensoren)
+// =====================================================
+void SystemRuntimeState::updateMega2Schaltgleise(const Mega2SchaltgleiseDiagV1& p)
+{
+    if (p.version != 1) return;
+
+    s_m2SchValid  = true;
+    s_m2SchSeq    = p.seq;
+    s_m2SchLastMs = (uint32_t)millis();
+
+    for (uint8_t i = 0; i < 6; ++i)
+    {
+        s_m2SchLevel[i] = ((p.levelBits >> i) & 0x01u);
+        s_m2SchRise[i]  = p.riseCount[i];
+        s_m2SchFall[i]  = p.fallCount[i];
+    }
+}
+
+bool SystemRuntimeState::mega2SchaltgleiseValid()
+{
+    return s_m2SchValid;
+}
+
+uint8_t SystemRuntimeState::mega2SchaltgleiseSeq()
+{
+    return s_m2SchSeq;
+}
+
+uint32_t SystemRuntimeState::mega2SchaltgleiseLastUpdateMs()
+{
+    return s_m2SchLastMs;
+}
+
+void SystemRuntimeState::mega2GetSchaltgleise6(uint8_t sid[6], uint8_t level[6], uint16_t rise[6], uint16_t fall[6])
+{
+    // fixed mapping idx 0..5 => S11..S16
+    for (uint8_t i = 0; i < 6; ++i)
+    {
+        sid[i]   = (uint8_t)(11 + i);
+        level[i] = s_m2SchLevel[i];
+        rise[i]  = s_m2SchRise[i];
+        fall[i]  = s_m2SchFall[i];
+    }
 }
 
 const Mega1DiagV1& SystemRuntimeState::mega1Diag()

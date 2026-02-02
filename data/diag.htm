@@ -73,21 +73,32 @@
     </table>
 
 
-    <pre id="diag-json" style="white-space:pre-wrap; font-size:.9rem; background:rgba(0,0,0,0.04); padding:.75rem; border-radius:10px; max-height:55vh; overflow:auto;">(warte auf type:"diag" ...)</pre>
-    <!-- KPI / Ampel für Analog-Updatequalität -->
-    <div class="status-box kpi-warn" id="diag-analog-kpi">Analog: (warte auf Daten ...)</div>
-
-    <!-- Kleine Tabelle: Spannung/Ströme -->
-    <table class="diag-table small" id="diag-analog-table">
+    <h3 style="margin-top:1rem;">Schaltgleise S11..S16 (Mega2)</h3>
+    <table class="diag-table small">
       <thead>
-        <tr><th>Signal</th><th>Wert</th></tr>
+        <tr>
+          <th>Sensor</th>
+          <th>Level</th>
+          <th>Rise</th>
+          <th>Fall</th>
+        </tr>
       </thead>
-      <tbody>
-        <tr><td>vA10</td><td class="mono" id="an-vA10">–</td></tr>
-        <tr><td>vB10</td><td class="mono" id="an-vB10">–</td></tr>
-        <tr><td>i_mA[]</td><td class="mono" id="an-imA">–</td></tr>
-      </tbody>
+      <tbody id="diag-m2-schalt"></tbody>
     </table>
+
+    <h3 style="margin-top:1rem;">Sensoren (Mega1) – S0..S10, S18, S19, S22, S23</h3>
+    <table class="diag-table small">
+      <thead>
+        <tr>
+          <th>Sensor</th>
+          <th>Level</th>
+          <th>Rise</th>
+          <th>Fall</th>
+        </tr>
+      </thead>
+      <tbody id="diag-m1-sensors"></tbody>
+    </table>
+
 
     <pre id="diag-json" class="diag-pre">(warte auf type:"diag" ...)</pre>
   </main>

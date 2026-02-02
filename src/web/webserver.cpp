@@ -610,6 +610,27 @@ static String buildWsDiagJson()
             d["selftestFailMask"]   = (uint16_t)m1d.selftestFailMask;
             d["selftestCurrentIdx"] = (uint8_t)m1d.selftestCurrentIdx;
             doc["mega1"]["hasDiag"] = true;
+       
+            // Mega1 digitale Sensoren (S0..S10,S18,S19,S22,S23) – optional (requires Mega1 FW + ESP link support)
+            if (SystemRuntimeState::mega1SensorsValid())
+            {
+                uint8_t sid[15], lvl[15], rise[15], fall[15];
+                SystemRuntimeState::mega1GetSensors15(sid, lvl, rise, fall);
+
+                JsonArray arr = doc["mega1"]["sensors"].to<JsonArray>();
+                for (uint8_t i = 0; i < 15; ++i)
+                {
+                    JsonObject o = arr.createNestedObject();
+                    o["sid"]   = sid[i];     // real S-number (with gaps)
+                    o["level"] = lvl[i];     // electrical level (HIGH=1)
+                    o["rise"]  = rise[i];    // rising count (uint8, wrap ok)
+                    o["fall"]  = fall[i];    // falling count (uint8, wrap ok)
+                }
+                doc["mega1"]["sensorsSeq"]   = SystemRuntimeState::mega1SensorsSeq();
+                doc["mega1"]["sensorsTsMs"]  = SystemRuntimeState::mega1SensorsLastUpdateMs();
+                doc["mega1"]["sensorsAgeMs"] = (uint32_t)((uint32_t)millis() - SystemRuntimeState::mega1SensorsLastUpdateMs());
+            }
+    
         }
     }
 
@@ -628,6 +649,27 @@ static String buildWsDiagJson()
         doc["mega2"]["analog"]["tsMs"]  = SystemRuntimeState::mega2AnalogLastUpdateMs();
         doc["mega2"]["analog"]["ageMs"] = SystemRuntimeState::mega2AnalogAgeMs();
         doc["mega2"]["analog"]["hz"]    = SystemRuntimeState::mega2AnalogHz();
+        
+        // Mega2 Schaltgleise S11..S16 (level + rise/fall counters) – only if provided by Mega2 FW + ESP link
+        if (SystemRuntimeState::mega2SchaltgleiseValid())
+        {
+            uint8_t sid[6], lvl[6];
+            uint16_t rise[6], fall[6];
+            SystemRuntimeState::mega2GetSchaltgleise6(sid, lvl, rise, fall);
+
+            JsonArray arr = doc["mega2"]["schaltgleise"].to<JsonArray>();
+            for (uint8_t i = 0; i < 6; ++i)
+            {
+                JsonObject o = arr.createNestedObject();
+                o["sid"]   = sid[i];      // 11..16
+                o["level"] = lvl[i];      // electrical level (HIGH=1)
+                o["rise"]  = rise[i];     // rising count (uint16 wrap ok)
+                o["fall"]  = fall[i];     // falling count (uint16 wrap ok)
+            }
+            doc["mega2"]["schaltSeq"]   = SystemRuntimeState::mega2SchaltgleiseSeq();
+            doc["mega2"]["schaltTsMs"]  = SystemRuntimeState::mega2SchaltgleiseLastUpdateMs();
+            doc["mega2"]["schaltAgeMs"] = (uint32_t)((uint32_t)millis() - SystemRuntimeState::mega2SchaltgleiseLastUpdateMs());
+        }
     }
 
     String out;
