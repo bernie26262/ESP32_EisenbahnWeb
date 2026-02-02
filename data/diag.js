@@ -74,6 +74,35 @@ function renderBlocksFromState(msg){
 function qs(id){ return document.getElementById(id); }
 function setStatus(t){ const el=qs("diag-status"); if(el) el.textContent=t; }
 
+// ------------------------------------------------------------
+// Combined status model (WS + diag lease + warning)
+// ------------------------------------------------------------
+const statusModel = {
+  wsUp: false,
+  diagText: "",
+  warnText: ""
+};
+
+function renderStatus(){
+  const el = qs("diag-status");
+  if (!el) return;
+  const parts = [];
+  parts.push(statusModel.wsUp ? "WS connected" : "WS disconnected");
+  if (statusModel.diagText) parts.push(statusModel.diagText);
+  if (statusModel.warnText) parts.push("⚠ " + statusModel.warnText);
+  el.textContent = parts.join(" · ");
+}
+
+function setDiagStatus(t){
+  statusModel.diagText = t || "";
+  renderStatus();
+}
+
+function setWarnStatus(t){
+  statusModel.warnText = t || "";
+  renderStatus();
+}
+
 function fmtV10(raw){
   if (typeof raw !== "number") return "–";
   if (raw >= 65000) return `— (${raw})`;
@@ -150,12 +179,16 @@ function connect(){
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
   ws.onopen = () => {
-    setStatus("WS connected");
+    statusModel.wsUp = true;
+    renderStatus();
     wsSend({ action:"subscribe", base:true, diag:true });
   };
 
   ws.onclose = () => {
-    setStatus("WS disconnected");
+    statusModel.wsUp = false;
+    setDiagStatus("");
+    setWarnStatus("");
+    renderStatus();
     stopHeartbeat();
     token = null;
     qs("diag-exit").disabled = true;
@@ -194,14 +227,13 @@ function connect(){
     if (msg.type === "state") {
       renderBlocksFromState(msg);
 
-      // optional: Statusanzeige Lease-State aus state spiegeln
+      // Lease verloren (Timeout / Disconnect)
       if (msg.diagCtrl && !msg.diagCtrl.active) {
-        // Lease weg (timeout/disconnect) -> UI zurücksetzen
         token = null;
         stopHeartbeat();
         qs("diag-exit").disabled = true;
         qs("diag-enter").disabled = false;
-        setStatus("Diagnose inaktiv");
+        setDiagStatus("Diagnose inaktiv");
       }
       return;
     }
@@ -211,16 +243,17 @@ function connect(){
         token = msg.token;
         qs("diag-enter").disabled = true;
         qs("diag-exit").disabled = false;
-        setStatus(`Diagnose aktiv (Owner ${msg.ownerId}, Token gesetzt)`);
+        setWarnStatus("");
+        setDiagStatus(`Diagnose aktiv (Owner ${msg.ownerId})`);
         startHeartbeat();
       } else {
-        setStatus(`Diagnose belegt (Owner ${msg.ownerId})`);
+        setDiagStatus(`Diagnose belegt (Owner ${msg.ownerId})`);
       }
       return;
     }
 
     if (msg.type === "error" && msg.code === "DIAG_ACTIVE") {
-      setStatus("DIAG_ACTIVE: Schreibzugriff gesperrt (du bist nicht Owner)");
+      setWarnStatus("DIAG_ACTIVE: Schreibzugriff gesperrt (du bist nicht Owner)");
       return;
     }
 
