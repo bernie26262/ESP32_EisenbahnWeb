@@ -1,7 +1,80 @@
 let ws = null;
 let token = null;
 let hbTimer = null;
+let lastDiagMsg = null;
+ 
+ // ------------------------------------------------------------
+ // Performance guards for diag.htm:
+ // - pretty JSON dump is expensive -> throttle + optionally trim
+ // - render tables at most DIAG_RENDER_INTERVAL_MS
+ // - drop out-of-order/duplicate diag frames by msg.ts
+ // ------------------------------------------------------------
+ const DIAG_RENDER_INTERVAL_MS = 250;   // 4 Hz; adjust later if needed
+ const DIAG_JSON_DUMP_MS       = 1000;  // pretty-print at most 1 Hz
+ const DIAG_JSON_FULL          = (localStorage.getItem("diagJsonFull") === "1");
+ 
+ let _lastDiagTs = 0;
+ let _diagRenderPending = false;
+ let _latestDiagMsg = null;
+ let _lastPreDumpMs = 0;
+ 
+ function scheduleDiagRender(){
+   if (_diagRenderPending) return;
+   _diagRenderPending = true;
+   setTimeout(() => {
+     _diagRenderPending = false;
+     const m = _latestDiagMsg;
+     _latestDiagMsg = null;
+     if (!m) return;
+ 
+     // Digital sensor tables (heavy DOM)
+     renderM2Schalt(m);
+     renderM1Sensors(m);
+   }, DIAG_RENDER_INTERVAL_MS);
+ }
+// ------------------------------------------------------------
+// Mega1 sensor meta (from pins_mega1.h / pins_mega1.cpp)
+// sid -> { name, pin }
+// Note: In dieser Diagnose gilt: level==1 bedeutet "LOW/aktiv" (grüne LED).
+// ------------------------------------------------------------
+const M1_SENSOR_INFO = new Map([
+  [0,  { name:"S0 Fahrstraße",                   pin:22 }],
+  [1,  { name:"S1 Fahrstraße",                   pin:28 }],
+  [2,  { name:"S2 Bhf0/1 Einfahrt",              pin:23 }],
+  [3,  { name:"S3 Fahrstraße",                   pin:33 }],
+  [4,  { name:"S4 Fahrstraße",                   pin:24 }],
+  [5,  { name:"S5 Fahrstraße",                   pin:32 }],
+  [6,  { name:"S6 Fahrstraße",                   pin:25 }],
+  [7,  { name:"S7 Fahrstraße",                   pin:31 }],
+  [8,  { name:"S8 Bhf2/3 Einfahrt",              pin:27 }],
+  [9,  { name:"S9 Fahrstraße",                   pin:35 }],
+  [10, { name:"S10 Fahrstraße",                  pin:34 }],
+  [18, { name:"S18 Bhf1 Timerstart",             pin:29 }],
+  [19, { name:"S19 Bhf0 Timerstart",             pin:26 }],
+  [22, { name:"S22 Bhf2 Timerstart",             pin:30 }],
+  [23, { name:"S23 Bhf3 Timerstart",             pin:36 }],
+]);
 
+// ------------------------------------------------------------
+// Browser-side counters for Mega1 sensor events (rise/fall).
+// This makes testing easier: you don't have to "catch" the one WS frame
+// where rise/fall flags are visible. Counters reset via UI button.
+// ------------------------------------------------------------
+const m1EventCounters = {
+  // sid -> { rise:number, fall:number, lastLevel:0|1|null, lastTs:number, lastRiseFlag:number, lastFallFlag:number }
+  map: new Map(),
+  get(sid){
+    let e = this.map.get(sid);
+    if (!e){
+      e = { rise: 0, fall: 0, lastLevel: null, lastTs: 0, lastRiseFlag: 0, lastFallFlag: 0 };
+      this.map.set(sid, e);
+    }
+    return e;
+  },
+  reset(){
+    this.map.clear();
+  }
+};
 // ------------------------------------------------------------
 // Optional WS debug logging:
 // Enable via DevTools console:
@@ -21,6 +94,15 @@ function wsLog(type, msg){
 }
 
 function qs(id){ return document.getElementById(id); }
+
+function escapeHtml(s){
+  return String(s)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
 
 // ------------------------------------------------------------
 // Combined status model (WS + diag lease + warning)
@@ -132,16 +214,28 @@ function renderM2Schalt(msg){
 
   let html = "";
   for (const s of arr){
-    const sid = (typeof s?.sid === "number") ? s.sid : null;
-    const lvl = (typeof s?.level === "number") ? s.level : null;
-    const rise = (typeof s?.rise === "number") ? s.rise : null;
-    const fall = (typeof s?.fall === "number") ? s.fall : null;
+    const sid  = (typeof s?.sid === "number")   ? s.sid   : null;
+    const lvl  = (typeof s?.level === "number") ? s.level : null;
+    const rise = (typeof s?.rise === "number")  ? s.rise  : null;
+    const fall = (typeof s?.fall === "number")  ? s.fall  : null;
+
+    // Optional meta (Name/Pin) – currently unknown for Mega2, keep placeholders.
+    const nameTxt = "–";
+    const pinTxt  = "–";
+
+    const lvlKnown = (lvl === 0 || lvl === 1);
+    const levelHtml = lvlKnown
+      ? (`<span class="led ${(lvl === 1) ? "led-on" : "led-off"}" title="${(lvl === 1) ? "LOW (aktiv)" : "HIGH (inaktiv)"}"></span>` + ((lvl === 1) ? "LOW" : "HIGH"))
+      : "–";
 
     html += `<tr>
       <td>${sid === null ? "–" : ("S"+sid)}</td>
-      <td>${lvl === null ? "–" : fmt01(lvl)}</td>
-      <td class="mono">${rise === null ? "–" : rise}</td>
-      <td class="mono">${fall === null ? "–" : fall}</td>
+      <td>${(lvl === 0 || lvl === 1)
+         ? (`<span class="led ${(lvl === 1) ? "led-on" : "led-off"}" title="${(lvl === 1) ? "LOW (aktiv)" : "HIGH (inaktiv)"}"></span>` + ((lvl === 1) ? "LOW" : "HIGH"))
+         : "–"
+       }</td>
+       <td class="mono">${(rise === 0 || rise === 1) ? rise : "–"}</td>
+       <td class="mono">${(fall === 0 || fall === 1) ? fall : "–"}</td>
     </tr>`;
   }
   tb.innerHTML = html;
@@ -152,29 +246,69 @@ function renderM2Schalt(msg){
 // Expects: msg.mega1.sensors = [{sid,level,rise,fall}, ...]
 // ------------------------------------------------------------
 function renderM1Sensors(msg){
-  const arr = msg?.mega1?.sensors;
+  // Robust: some frames provide sensors under mega1.diag.sensors
+  const arr = msg?.mega1?.sensors
+           ?? msg?.mega1?.diag?.sensors;
   if (!Array.isArray(arr)) return;
 
   const tb = qs("diag-m1-sensors");
   if (!tb) return;
 
-  // Sort by numeric S-id to keep the gaps intuitive.
-  const sorted = [...arr].sort((a,b)=> (a?.sid??999)-(b?.sid??999));
+  // Sort by numeric S-id to keep gaps intuitive
+  const sorted = [...arr].sort((a,b)=> (a?.sid ?? 999) - (b?.sid ?? 999));
 
   let html = "";
   for (const s of sorted){
-    const sid = (typeof s?.sid === "number") ? s.sid : null;
-    const lvl = (typeof s?.level === "number") ? s.level : null;
-    const rise = (typeof s?.rise === "number") ? s.rise : null;
-    const fall = (typeof s?.fall === "number") ? s.fall : null;
+    const sid  = (typeof s?.sid === "number") ? s.sid : null;
+    const lvl  = (typeof s?.level === "number") ? s.level : null; // 1 = LOW/aktiv (grün)
+    const rise = (typeof s?.rise === "number") ? s.rise : 0;
+    const fall = (typeof s?.fall === "number") ? s.fall : 0;
+
+    // Browser-side counters
+    let cnt = null;
+    if (sid !== null){
+      cnt = m1EventCounters.get(sid);
+      // Count only once per edge-flag assertion (0->1), not for every frame that carries "1".
+      // This prevents runaway counts if rise/fall stays 1 for multiple WS frames.
+      const riseFlag = (rise === 1) ? 1 : 0;
+      const fallFlag = (fall === 1) ? 1 : 0;
+      if (riseFlag === 1 && cnt.lastRiseFlag === 0) cnt.rise += 1;
+      if (fallFlag === 1 && cnt.lastFallFlag === 0) cnt.fall += 1;
+      cnt.lastRiseFlag = riseFlag;
+      cnt.lastFallFlag = fallFlag;
+      if (lvl === 0 || lvl === 1) cnt.lastLevel = lvl;
+      cnt.lastTs = (typeof msg?.ts === "number") ? msg.ts : Date.now();
+    }
+
+    // Meta: name + pin
+    const meta = (sid !== null) ? M1_SENSOR_INFO.get(sid) : null;
+    const nameTxt = meta?.name ?? "–";
+    const pinTxt  = (typeof meta?.pin === "number") ? ("D" + meta.pin) : "–";
+
+    // LED + text: level==1 => LOW/aktiv => green
+    let levelHtml = "–";
+    if (lvl === 0 || lvl === 1){
+      const on = (lvl === 1);
+      levelHtml =
+        `<span class="led ${on ? "led-on" : "led-off"}" title="${on ? "LOW (aktiv)" : "HIGH (inaktiv)"}"></span>` +
+        (on ? "LOW" : "HIGH");
+    }
+
+    const riseTxt = (sid === null || !cnt) ? "–" : (cnt.rise + (rise === 1 ? " ⬆" : ""));
+    const fallTxt = (sid === null || !cnt) ? "–" : (cnt.fall + (fall === 1 ? " ⬇" : ""));
+
+    
 
     html += `<tr>
       <td>${sid === null ? "–" : ("S"+sid)}</td>
-      <td>${lvl === null ? "–" : fmt01(lvl)}</td>
-      <td class="mono">${rise === null ? "–" : rise}</td>
-      <td class="mono">${fall === null ? "–" : fall}</td>
+      <td>${escapeHtml(nameTxt)}</td>
+      <td class="mono">${pinTxt}</td>
+      <td>${levelHtml}</td>
+      <td class="mono">${riseTxt}</td>
+      <td class="mono">${fallTxt}</td>
     </tr>`;
   }
+
   tb.innerHTML = html;
 }
 
@@ -204,11 +338,29 @@ function stopHeartbeat(){
 // ------------------------------------------------------------
 // WS connect
 // ------------------------------------------------------------
+let _wsReconnectT = null;
+let _wsReconnectDelayMs = 500;         // start small
+const _WS_RECONNECT_MAX_MS = 8000;     // cap
+
+function scheduleReconnect(){
+  if (_wsReconnectT) return;
+  const d = _wsReconnectDelayMs;
+  _wsReconnectDelayMs = Math.min(_WS_RECONNECT_MAX_MS, Math.floor(_wsReconnectDelayMs * 1.6));
+  _wsReconnectT = setTimeout(() => {
+    _wsReconnectT = null;
+    try { connect(); } catch(e) { /* ignore */ }
+  }, d);
+}
+
 function connect(){
   const proto = (location.protocol === "https:") ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
   ws.onopen = () => {
+    // reset reconnect backoff
+    if (_wsReconnectT){ clearTimeout(_wsReconnectT); _wsReconnectT = null; }
+    _wsReconnectDelayMs = 500;
+
     statusModel.wsUp = true;
     renderStatus();
     setDiagStatus("Diagnose inaktiv");
@@ -227,10 +379,15 @@ function connect(){
     setWarnStatus("");
     stopHeartbeat();
     wsLog("close", {});
+
+    // auto-reconnect (important: diag stream uses subscriptions per WS client-id)
+    scheduleReconnect();
   };
 
   ws.onerror = (e) => {
     wsLog("error", e);
+    // Force a close to trigger reconnect logic
+    try { if (ws && ws.readyState === WebSocket.OPEN) ws.close(); } catch(_) {}
   };
 
   ws.onmessage = (ev) => {
@@ -241,8 +398,41 @@ function connect(){
 
     // Dump last diag frame for quick debugging
     if (msg.type === "diag"){
-      const pre = qs("diag-json");
-      if (pre) pre.textContent = JSON.stringify(msg, null, 2);
+        // Drop out-of-order/duplicate diag frames by ts (monotonic on ESP)
+       if (typeof msg.ts === "number"){
+         if (msg.ts <= _lastDiagTs) return;
+         _lastDiagTs = msg.ts;
+       }
+ 
+      lastDiagMsg = msg;
+      
+       // Pretty JSON dump is expensive -> throttle + (default) trim payload
+       const now = Date.now();
+       if (now - _lastPreDumpMs > DIAG_JSON_DUMP_MS){
+         _lastPreDumpMs = now;
+         const pre = qs("diag-json");
+         if (pre){
+           if (DIAG_JSON_FULL){
+             pre.textContent = JSON.stringify(msg, null, 2);
+           } else {
+             const d1 = msg?.mega1?.diag;
+             pre.textContent = JSON.stringify({
+               type: msg.type,
+               ts: msg.ts,
+               wsClients: msg.wsClients,
+               diagCtrl: msg.diagCtrl,
+               mega1: d1 ? {
+                 sensorActiveMask: d1.sensorActiveMask,
+                 sensorRiseMask: d1.sensorRiseMask,
+                 sensorFallMask: d1.sensorFallMask,
+                 sensors: d1.sensors
+               } : undefined,
+               mega2: msg?.mega2?.analog ? { analog: msg.mega2.analog } : undefined
+             }, null, 2);
+           }
+         }
+       }
+
 
       // Analog meta (Mega2)
       const an = msg?.mega2?.analog;
@@ -258,9 +448,9 @@ function connect(){
         if (imA && Array.isArray(an.i_mA)) imA.textContent = an.i_mA.join(", ");
       }
 
-      // Digital sensor tables
-      renderM2Schalt(msg);
-      renderM1Sensors(msg);
+      // Digital sensor tables (heavy DOM) -> throttle and render only latest
+       _latestDiagMsg = msg;
+       scheduleDiagRender();
       return;
     }
 
@@ -324,6 +514,15 @@ function connect(){
 }
 
 window.addEventListener("load", () => {
+  // Reset Mega1 browser-side counters
+  const resetBtn = qs("m1-reset");
+  if (resetBtn){
+    resetBtn.addEventListener("click", () => {
+      m1EventCounters.reset();
+      if (lastDiagMsg) renderM1Sensors(lastDiagMsg);
+    });
+  }
+
   qs("diag-enter").addEventListener("click", () => {
     wsSend({ action:"diagEnter" });
   });
@@ -332,6 +531,7 @@ window.addEventListener("load", () => {
     if (token) wsSend({ action:"diagExit", token });
     window.location.href = "index.htm";
   });
+
 
   connect();
 });

@@ -18,3 +18,38 @@
 .diag-table th { background: rgba(0,0,0,.04); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
 .small { font-size: .9rem; }
+
+/* ---- Blocks: left aligned (Sensor tables etc.) ---- */
+.diag-block-left{
+  max-width: 760px;
+  margin: 0 0 1rem 0;    /* linksbündig */
+}
+
+/* Ensure tables use the available width within block */
+.diag-block-left .diag-table{
+  width: 100%;
+}
+
+/* ---- LED indicator (Level) ---- */
+.led{
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: .4rem;
+  box-shadow: 0 0 0 rgba(0,0,0,0); /* default */
+}
+
+/* LOW/aktiv -> green */
+.led-on{
+  background: #16a34a;           /* green */
+  box-shadow: 0 0 8px rgba(22,163,74,.85);
+}
+
+/* HIGH/inaktiv -> grey */
+.led-off{
+  background: #9ca3af;           /* gray */
+  box-shadow: none;
+  opacity: .65;
+}

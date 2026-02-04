@@ -149,6 +149,29 @@ Startup/Selbsttest:
 - `selftestFailMask` (uint16): Bit i = FAIL bei Weiche i (0..11)
 - `selftestCurrentIdx` (uint8): 0..11, 0xFF = none
 
+
+Digitale Sensoren (neu, Diagnose):
+- `sensorActiveMask` (uint32):
+  - Bit i = 1 bedeutet: Sensor Si ist **logisch aktiv**
+  - Konvention: Sensoren sind `INPUT_PULLUP` verdrahtet ⇒ **LOW = aktiv**
+  - Damit ist `sensorActiveMask` i.d.R. die invertierte elektrische Pegellogik.
+
+- `sensorRiseMask` (uint32):
+  - Bit i = 1 bedeutet: seit dem letzten erfolgreichen DIAG-Read wurde eine
+    **logische Rising Edge (0→1, wurde aktiv)** erkannt.
+
+- `sensorFallMask` (uint32):
+  - Bit i = 1 bedeutet: seit dem letzten erfolgreichen DIAG-Read wurde eine
+    **logische Falling Edge (1→0, wurde inaktiv)** erkannt.
+
+Sticky-Verhalten:
+`sensorRiseMask` und `sensorFallMask` sind „sticky since last DIAG read“ und werden nach
+einem erfolgreichen `CMD_GET_DIAG` Read zurückgesetzt.
+
+Hinweis zur Anlagen-Nummerierung / Gaps:
+Auf Mega1 werden aktuell nur folgende Sensoren ausgewertet: `S0..S10, S18, S19, S22, S23`.
+Nicht genutzte Bits (z.B. S11..S17, S20..S21) bleiben 0.
+
 ---
 
 ## 9) Mega1StatusPayload (Legacy/optional)

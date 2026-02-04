@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Diagnose</title>
-  <link rel="stylesheet" href="style.css?v=20260202085829">
+  <link rel="stylesheet" href="style.css?v=20260204112437">
   <link rel="stylesheet" href="diagstyle.css">
 
 </head>
@@ -86,21 +86,39 @@
       <tbody id="diag-m2-schalt"></tbody>
     </table>
 
-    <h3 style="margin-top:1rem;">Sensoren (Mega1) – S0..S10, S18, S19, S22, S23</h3>
-    <table class="diag-table small">
-      <thead>
-        <tr>
-          <th>Sensor</th>
-          <th>Level</th>
-          <th>Rise</th>
-          <th>Fall</th>
-        </tr>
-      </thead>
-      <tbody id="diag-m1-sensors"></tbody>
-    </table>
+    <!-- Mega1 Sensoren: linksbündiger Block + Reset für Browser-Counter -->
+    <div class="diag-block-left">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:1rem;">
+        <h3 style="margin:0;">Sensoren (Mega1) – S0..S10, S18, S19, S22, S23</h3>
+        <button class="btn" id="m1-reset" type="button">Counter reset</button>
+      </div>
+
+      <table class="diag-table small">
+        <thead>
+          <tr>
+            <th>Sensor</th>
+            <th>Name</th>
+            <th>Pin</th>
+            <th>Level</th>
+            <th>Rise</th>
+            <th>Fall</th>
+          </tr>
+        </thead>
+        <tbody id="diag-m1-sensors"></tbody>
+      </table>
+    </div>
 
 
     <pre id="diag-json" class="diag-pre">(warte auf type:"diag" ...)</pre>
+    <!--
+      Hinweis (Performance):
+      Das Pretty-JSON wird in diag.js gedrosselt (Default: nur relevante Teilmenge, max 1x/s),
+      weil JSON.stringify(msg, null, 2) pro WS-Frame den Browser stark blockieren kann.
+      Für Full-Dump (Debug): in DevTools:
+        localStorage.setItem("diagJsonFull","1"); location.reload();
+      zurück:
+        localStorage.removeItem("diagJsonFull"); location.reload();
+    -->
   </main>
 
   <script src="diag.js"></script>

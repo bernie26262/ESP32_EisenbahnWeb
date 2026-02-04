@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h> // offsetof
+// NOTE: keep <= 32 bytes for single I2C frame
 
 // =====================================================
 // Mega1 Diagnosepaket (read-only, <= 32 Bytes, V1)
@@ -45,6 +46,19 @@ struct Mega1DiagV1
     uint8_t  selftestFlags;
     uint16_t selftestFailMask;    // Bit i: 1 = FAIL bei Weiche i (0..11)
     uint8_t  selftestCurrentIdx;  // 0..11 (nur Anzeige), 0xFF = none
+    
+    // -------------------------------------------------
+    // Digitale Sensoren (S0..S23) – Diagnose (read-only)
+    // Konvention: "aktiv" = logischer 1-Wert = Pin ist LOW (INPUT_PULLUP)
+    // Rise/Fall sind logische Flanken bezogen auf "aktiv":
+    //   rise: 0 -> 1  (wurde aktiv)
+    //   fall: 1 -> 0  (wurde inaktiv)
+    //
+    // Masken sind "sticky since last DIAG read" und werden nach einem
+    // erfolgreichen CMD_GET_DIAG Read zurückgesetzt.
+    uint32_t sensorActiveMask; // Bit i: Sensor Si ist aktuell aktiv
+    uint32_t sensorRiseMask;   // Bit i: seit letztem Read: rise gesehen
+    uint32_t sensorFallMask;   // Bit i: seit letztem Read: fall gesehen
 };
 #pragma pack(pop)
 

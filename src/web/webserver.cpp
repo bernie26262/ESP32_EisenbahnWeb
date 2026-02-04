@@ -609,27 +609,34 @@ static String buildWsDiagJson()
             d["selftestDone"]       = ((m1d.selftestFlags & 0x02u) != 0);
             d["selftestFailMask"]   = (uint16_t)m1d.selftestFailMask;
             d["selftestCurrentIdx"] = (uint8_t)m1d.selftestCurrentIdx;
-            doc["mega1"]["hasDiag"] = true;
-       
-            // Mega1 digitale Sensoren (S0..S10,S18,S19,S22,S23) – optional (requires Mega1 FW + ESP link support)
-            if (SystemRuntimeState::mega1SensorsValid())
+            
+            // -------------------------------------------------
+            // Mega1: Digitale Sensoren (S0..S23) – aus Masken
+            // Wir zeigen bewusst nur die "real genutzten" Sensoren:
+            // S0..S10, S18, S19, S22, S23 (15 Stück, mit Gap).
+            // level = logischer Aktivzustand (1=aktiv, i.d.R. physisch LOW)
+            // rise/fall = sticky edge flags (1=seit letztem DIAG-Read gesehen)
+            // -------------------------------------------------
+            static const uint8_t M1_SENS_SID[15] = {
+                0,1,2,3,4,5,6,7,8,9,10,18,19,22,23
+            };
+            JsonArray arr = doc["mega1"]["sensors"].to<JsonArray>();
+            for (uint8_t i = 0; i < 15; ++i)
             {
-                uint8_t sid[15], lvl[15], rise[15], fall[15];
-                SystemRuntimeState::mega1GetSensors15(sid, lvl, rise, fall);
-
-                JsonArray arr = doc["mega1"]["sensors"].to<JsonArray>();
-                for (uint8_t i = 0; i < 15; ++i)
-                {
-                    JsonObject o = arr.createNestedObject();
-                    o["sid"]   = sid[i];     // real S-number (with gaps)
-                    o["level"] = lvl[i];     // electrical level (HIGH=1)
-                    o["rise"]  = rise[i];    // rising count (uint8, wrap ok)
-                    o["fall"]  = fall[i];    // falling count (uint8, wrap ok)
-                }
-                doc["mega1"]["sensorsSeq"]   = SystemRuntimeState::mega1SensorsSeq();
-                doc["mega1"]["sensorsTsMs"]  = SystemRuntimeState::mega1SensorsLastUpdateMs();
-                doc["mega1"]["sensorsAgeMs"] = (uint32_t)((uint32_t)millis() - SystemRuntimeState::mega1SensorsLastUpdateMs());
+                const uint8_t sid = M1_SENS_SID[i];
+                const uint32_t bit = (1UL << sid);
+                JsonObject o = arr.createNestedObject();
+                o["sid"]   = sid; // reale Anlagen-Nummer (mit Lücken)
+                o["level"] = ((m1d.sensorActiveMask & bit) != 0) ? 1 : 0; // logischer Aktivzustand
+                o["rise"]  = ((m1d.sensorRiseMask   & bit) != 0) ? 1 : 0;
+                o["fall"]  = ((m1d.sensorFallMask   & bit) != 0) ? 1 : 0;
             }
+            // optional: raw masks fürs Debugging
+            doc["mega1"]["sensorActiveMask"] = m1d.sensorActiveMask;
+            doc["mega1"]["sensorRiseMask"]   = m1d.sensorRiseMask;
+            doc["mega1"]["sensorFallMask"]   = m1d.sensorFallMask;
+
+            doc["mega1"]["hasDiag"] = true;
     
         }
     }
