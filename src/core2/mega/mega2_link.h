@@ -24,6 +24,7 @@ namespace Mega2Link
     // Aktionen (von WebUI/Serial)
     bool safetyAck();
     bool sbhfSelftestRetry();
+    bool sbhfSelftestStartup();
     bool nothalt();     // setzt NOTAUS (true)
     bool powerOn();
     bool powerOff();    // UI-STOP / SSR_MAIN_ENABLE aus

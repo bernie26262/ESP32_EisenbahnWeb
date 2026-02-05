@@ -90,6 +90,16 @@ static bool updateBootTrack(BootTrack& bt, const SystemStatus& st)
     static constexpr uint32_t UPTIME_REBOOT_MARGIN_MS = 5000;
     bool rebootDetected = false;
 
+    // Guard: Ignore clearly invalid status frames.
+    // These can occur transiently on I2C glitches / partial reads.
+    // If we treat them as real data, we may falsely detect "reboot" and re-open the startup checklist,
+    // which then causes the retry-loop you observed.
+    if (st.bootId == 0 && st.uptimeMs == 0)
+    {
+        return false;
+    }
+
+
     if (!bt.seen)
     {
         bt.seen = true;
@@ -103,7 +113,9 @@ static bool updateBootTrack(BootTrack& bt, const SystemStatus& st)
     }
 
     // Reboot detection by uptime going backwards (covers the case bootId is constant/invalid)
-    if (st.uptimeMs + UPTIME_REBOOT_MARGIN_MS < bt.lastUptimeMs)
+    // NOTE: Ignore uptime==0 as "invalid/uninitialized" (do not treat as reboot).
+    if (st.uptimeMs != 0 &&
+        st.uptimeMs + UPTIME_REBOOT_MARGIN_MS < bt.lastUptimeMs)
     {
         rebootDetected = true;
         bt.bootChanged = true;      // treat as reboot event
@@ -116,7 +128,11 @@ static bool updateBootTrack(BootTrack& bt, const SystemStatus& st)
     bt.lastUptimeMs = st.uptimeMs;
 
 
-    if (st.bootId != bt.lastBootId)
+    // Ignore bootId changes to/from 0 (invalid/uninitialized).
+    // Only treat real bootId changes as reboot trigger.
+    if (st.bootId != 0 &&
+        bt.lastBootId != 0 &&
+        st.bootId != bt.lastBootId)
     {
         rebootDetected = true;
         bt.lastBootId = st.bootId;
@@ -462,7 +478,7 @@ bool SystemRuntimeState::mega1NeedsStartupChecklist()
 
 bool SystemRuntimeState::mega2NeedsStartupChecklist()
 {
-    return s_m2Boot.needsChecklist;
+    // SIM helper: when bypass is enabled, treat SBHF startup checklist as not required.
     if (s_bypassSbhfSelftest)
         return false;
     return s_m2Boot.needsChecklist;

@@ -406,29 +406,74 @@ function sendPollNow() {
 
 function sendSbhfSelftestRetry() {
   // Always log locally so we can see whether the click happened at all.
-  logLine(" SBHF Selftest start/retry (WS action) ...");
+  logLine("SBHF Selftest start/retry (WS action) ...");
+
+  const st = window.lastStateMsg || {};
+  const lock = (st?.safety?.lock === true);
+
+  // If we're locked, try to ACK/unlock first.
+  // Note: ackRequired might be false due to UI/state quirks; we still send safetyAck if lock==true.
+  if (lock) {
+    const okA = wsSend({ action: "safetyAck" });
+    if (okA) logLine("Safety ACK (vor SBHF Selftest)");
+    else     logLine("Safety ACK NICHT gesendet (WS down?)");
+  }
+
   // Komfort/UX wie bei Mega1: vor dem Selftest Power ausschalten.
   // (Viele SBHF-Selftests setzen voraus, dass Leistung aus ist.)
   const okP = wsSend({ action: "powerOff" });
+  if (okP) logLine("Power OFF (vor SBHF Selftest)");
+
+  // Give ACK/PowerOff a moment to propagate before sending the retry command.
+  // This avoids "retry rejected: lock=1" right after the click.
+  setTimeout(() => {
+    const ok = wsSend({ action: "sbhfSelftestRetry" });
+    if (ok) logLine("SBHF Selftest-Retry gesendet");
+    else    logLine("SBHF Selftest-Retry NICHT gesendet (WS down?)");
+  }, lock ? 250 : 0);
+}
+
+
+function sendSbhfSelftestStartup() {
+  // Only used by the Startup-Checklist button.
+  // This must NOT be used in diag/systemstatus, otherwise we'd re-trigger startup logic.
+  logLine(" SBHF Selftest STARTUP (WS action) ...");
+
+  // Komfort/UX: vor dem Selftest Power ausschalten.
+  const okP = wsSend({ action: "powerOff" });
   if (okP) logLine(" Power OFF (vor SBHF Selftest)");
 
-  const ok = wsSend({ action: "sbhfSelftestRetry" });
-  if (ok) logLine(" SBHF Selftest-Retry gesendet");
-  else    logLine(" SBHF Selftest-Retry NICHT gesendet (WS down?)");
+  const ok = wsSend({ action: "sbhfSelftestStartup" });
+  if (ok) logLine(" SBHF Selftest-STARTUP gesendet");
+  else    logLine(" SBHF Selftest-STARTUP NICHT gesendet (WS down?)");
 }
 
 function sendM1SelftestRetry() {
   // Always log locally so we can see whether the click happened at all.
-  logLine(" Mega1 Selftest start/retry (WS action) ...");
+  logLine("Mega1 Selftest start/retry (WS action) ...");
+
+  const st = window.lastStateMsg || {};
+  const lock = (st?.safety?.lock === true);
+
+  // If we're locked, try to ACK/unlock first.
+  if (lock) {
+    const okA = wsSend({ action: "safetyAck" });
+    if (okA) logLine("Safety ACK (vor Mega1 Selftest)");
+    else     logLine("Safety ACK NICHT gesendet (WS down?)");
+  }
 
   // Komfort/UX: wie bei Mega2 -> vor Selftest Power ausschalten.
   // (Power muss nach dem Test manuell wieder eingeschaltet werden.)
   const okP = wsSend({ action: "powerOff" });
-  if (okP) logLine(" Power OFF (vor Mega1 Selftest)");
-  const ok = wsSend({ action: "m1SelftestStart" });
-  if (ok) logLine(" Mega1 Selftest-Retry gesendet");
-  else    logLine(" Mega1 Selftest-Retry NICHT gesendet (WS down?)");
-  
+  if (okP) logLine("Power OFF (vor Mega1 Selftest)");
+
+  // Give ACK a moment to propagate before sending the start command.
+  setTimeout(() => {
+    const ok = wsSend({ action: "m1SelftestStart" });
+    if (ok) logLine("Mega1 Selftest-Retry gesendet");
+    else    logLine("Mega1 Selftest-Retry NICHT gesendet (WS down?)");
+  }, lock ? 250 : 0);
+
   // Hinweis: "Power bleibt aus" wird nach Testende (falling edge) transient angezeigt.
 }
 
@@ -672,23 +717,38 @@ function getUiStateFromWs(msg, safety, mega2online) {
   let overlayMode = undefined; // "ack" | "info" | "startup" | undefined
 
   // Flags-first Startup gate (sticky UI session):
-  // - Needs/done derived from Mega selftest flags
-  // - Overlay stays visible until user clicks "Quittieren" inside the checklist
-  const m1diag = msg?.mega1?.diag;
-  const m1SelftestFlags = Number(m1diag?.selftestFlags ?? 0);
-  const m1Done = !!(m1diag?.selftestDone) || ((m1SelftestFlags & 0x02) !== 0);
-  const m2Sbhf = msg?.mega2?.sbhf;
-  const m2Shadow = msg?.mega2?.shadow;
-  const m2ShadowFlags = Number(m2Shadow?.selftestFlags ?? 0);
-  const m2Done = !!(m2Sbhf?.selftestDone) || ((m2ShadowFlags & 0x02) !== 0);
+  // IMPORTANT (2026-02): The startup checklist is driven by WS msg.startup.{m1Needs,m2Needs}.
+  // It MUST NOT be derived from "!selftestDone", because "Selftest retry" temporarily changes done-flags.
+  // Sticky-session UX requirement: once active, remain in the checklist until user ACKs it (no ugly jump).
+  const stp = msg?.startup || {};
+  const m1NeedsNow = !!stp.m1Needs;
+  const m2NeedsNow = !!stp.m2Needs;
+  const startupNeeds = (m1NeedsNow || m2NeedsNow);
 
-  const m1NeedsNow = (msg?.mega1?.online === true) && !m1Done;
-  const m2NeedsNow = (msg?.mega2?.online === true) && !m2Done;
-
-  if (!g_startupSessionActive && (m1NeedsNow || m2NeedsNow)) {
+  // Start sticky startup session only if the system explicitly reports that startup checklist is needed.
+  if (!g_startupSessionActive && startupNeeds) {
     g_startupSessionActive = true;
   }
-  const inStartup = !!g_startupSessionActive;
+
+  // Auto-leave startup session once backend says nothing is needed anymore.
+  // Otherwise the overlay will keep coming back even though startup is complete.
+  try {
+    const stp = msg?.startup;
+    if (g_startupSessionActive &&
+        stp &&
+        stp.ready === true &&
+        stp.m1Needs === false &&
+        stp.m2Needs === false) {
+      g_startupSessionActive = false;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+
+  // DO NOT auto-drop the sticky session on "done" (prevents the ugly jump to standard overlay).
+  // The session is ended only by a successful ACK inside the startup overlay (markMega*ChecklistDone).
+  const inStartup = (g_startupSessionActive === true);
 
   if (!mega2online) {
     level = "WARN";
@@ -1255,7 +1315,7 @@ function showOverlay(title, lines, requireChecked, options = {}) {
       if (m2btn) {
         m2btn.addEventListener("click", () => {
           // IMPORTANT: Startup flow must work even while safety.lock==true.
-          sendSbhfSelftestRetry();
+          sendSbhfSelftestStartup();
         });
       }
 
@@ -1310,21 +1370,36 @@ function showOverlay(title, lines, requireChecked, options = {}) {
     const st = window.lastStateMsg || {};
     const simNoHw = !!st.sim?.noHwBuild;
     const simBypass = !!st.sim?.bypassSbhfSelftest;
+    const stp = st.startup || {};
 
     const m1diag = st.mega1?.diag;
     const m1Flags = Number(m1diag?.selftestFlags ?? 0);
     const m1SelftestRunning = !!m1diag?.selftestRunning || ((m1Flags & 0x01) !== 0);
     const m1SelftestDone    = !!m1diag?.selftestDone    || ((m1Flags & 0x02) !== 0);
-    const m1Needs = (st.mega1?.online === true) && !m1SelftestDone;
+    // Startup checklist "needs" is a latch (stp.m1Needs), but the step can still be completed.
+    // Step completed if: not needed OR startup says done OR HW says done.
+    const m1Needs = (st.mega1?.online === true) &&
+      (typeof stp.m1Needs === "boolean" ? stp.m1Needs : !m1SelftestDone);
+    const m1Ok =
+      (!m1Needs) ||
+      (typeof stp.m1SelftestDone === "boolean" ? stp.m1SelftestDone : false) ||
+      (m1SelftestDone === true);
 
     const m2Sbhf = st.mega2?.sbhf;
     const m2ShadowFlags = Number(st.mega2?.shadow?.selftestFlags ?? 0);
     const selftestRunning = !!m2Sbhf?.selftestRunning || ((m2ShadowFlags & 0x01) !== 0);
     const m2SelftestDone  = !!m2Sbhf?.selftestDone    || ((m2ShadowFlags & 0x02) !== 0);
-    const m2Needs = (st.mega2?.online === true) && !m2SelftestDone;
+    // For SBHF: "needs" must follow startup.m2Needs, because SIM-bypass only affects startup layer.
+    const m2Needs = (st.mega2?.online === true) &&
+      (typeof stp.m2Needs === "boolean" ? stp.m2Needs : !m2SelftestDone);
+    const m2Ok =
+      (!m2Needs) ||
+      (typeof stp.m2SelftestDone === "boolean" ? stp.m2SelftestDone : false) ||
+      (m2SelftestDone === true);
 
-    const m2Done = !m2Needs;
-    const m1Done = !m1Needs;
+    // Keep old variable names used below in the render code:
+    const m1Done = m1Ok;
+    const m2Done = m2Ok;
     const allDone = (m1Done && m2Done);
 
 
@@ -1607,24 +1682,52 @@ function confirmAck() {
 
   // If the startup checklist overlay is active, keep UX inside the checklist:
   // User expects to see results and ACK there (no overlay switch surprise).
-  const inStartupChecklist = (g_startupSessionActive === true);
+  const st = window.lastStateMsg || {};
+  const stp = st.startup || {};
+  const startupNeeds = !!stp.m1Needs || !!stp.m2Needs;
+  const inStartupChecklist = (g_startupSessionActive === true) && startupNeeds;
 
   if (inStartupChecklist) {
     // Optional Komfort: nach Startup-Checkliste automatisch auf Automatik schalten
-    if (window.lastStateMsg?.mega1?.online === true) {
+    if (st?.mega1?.online === true) {
       wsSend({ action: "m1SetMode", mode: 1 });
     }
-  }
-
-
-  // Safety ACK (may still be needed even after checklist is done)
-  const ok = wsSend({ action: "safetyAck" });
-  if (ok) logLine("ACK gesendet.");
   
-  // Close sticky startup session only after ACK was sent successfully.
-  if (inStartupChecklist && ok) {
-    g_startupSessionActive = false;
-    closeOverlay();
+    // The startup checklist is cleared on ESP ONLY through markMega*ChecklistDone.
+    // safetyAck does NOT clear startupNeeds.
+    const m1Ok = (!stp.m1Needs) || !!stp.m1SelftestDone;
+    const m2Ok = (!stp.m2Needs) || !!stp.m2SelftestDone;
+
+    if (!m1Ok || !m2Ok) {
+      logLine("Startup-Checkliste noch nicht abgeschlossen (Selftest fehlt).");
+      return;
+    }
+
+    let okAll = true;
+    if (stp.m1Needs) okAll = wsSend({ action: "markMega1ChecklistDone" }) && okAll;
+    if (stp.m2Needs) okAll = wsSend({ action: "markMega2ChecklistDone" }) && okAll;
+
+    // Only send safetyAck if a safety lock is actually active.
+    if (st?.safety?.lock === true) {
+      okAll = wsSend({ action: "safetyAck" }) && okAll;
+      if (okAll) logLine("ACK gesendet.");
+    } else {
+      if (okAll) logLine("Startup-Checkliste quittiert.");
+    }
+
+    if (okAll) {
+      g_startupSessionActive = false;
+      closeOverlay();
+    } else {
+      logLine("ACK/Quittierung fehlgeschlagen (WS down?).");
+    }
+    return;
+  }
+  
+  // Normal case: Safety ACK (only relevant when lock is active; otherwise harmless but noisy)
+  if (st?.safety?.lock === true) {
+    const ok = wsSend({ action: "safetyAck" });
+    if (ok) logLine("ACK gesendet.");
   }
 }
 
@@ -1877,7 +1980,7 @@ if (msg?.mega1?.online && msg?.mega1?.diag) {
 
 
 const retryBtn = weicheWarnActive
-  ? `<button class="btn-mini" ${(canMega2 && !selftestRunning && !lock) ? "" : "disabled"} onclick="sendSbhfSelftestRetry()"> SBHF Selftest erneut</button>`
+  ? `<button class="btn-mini" ${(canMega2 && !selftestRunning) ? "" : "disabled"} onclick="sendSbhfSelftestRetry()"> SBHF Selftest erneut</button>`
   : "";
 
 const retryBtnM1 = m1WeicheWarnActive

@@ -1,6 +1,7 @@
 #include "webserver.h"
 
 #include <ArduinoJson.h>
+#include <stdint.h>
 #include <AsyncWebServer_ESP32_SC_W5500.h>
 #include <AsyncTCP.h>
 #if defined(ESP32)
@@ -12,6 +13,20 @@
 #include "core2/mega/mega1_link.h"
 
 #include <LittleFS.h>
+
+// ---------------------------------------------------------
+// ArduinoJson overflow warning (throttled)
+// ---------------------------------------------------------
+static void warnJsonOverflowThrottled(const char* tag, const JsonDocument& doc)
+{
+    if (!doc.overflowed()) return;
+    static uint32_t s_lastWarnMs = 0;
+    const uint32_t now = (uint32_t)millis();
+    if ((uint32_t)(now - s_lastWarnMs) < 5000) return; // max 1x/5s
+    s_lastWarnMs = now;
+    Serial.printf("[AJ] WARNING: JsonDocument overflow in %s (memory allocation failed / fields may be dropped)\n", tag);
+}
+
 
 // ---------------------------------------------------------
 // Heap debug (helps diagnose [AWS] _ack malloc failed)
@@ -155,7 +170,7 @@ static String buildWsStateJson(bool includeAnalog)
     // NOTE: This payload grew over time (mega1 diag, startup, entry matrices, sim flags, ...).
     // Keep this generously sized to avoid ArduinoJson overflow (which would silently drop fields
     // and look like "random" UI state glitches).
-    StaticJsonDocument<3072> doc;
+    JsonDocument doc;
 
     doc["type"] = "state";
     doc["full"] = includeAnalog;
@@ -293,7 +308,7 @@ static String buildWsStateJson(bool includeAnalog)
             JsonArray bst = b["status"].to<JsonArray>();
             for (uint8_t i = 0; i < M2_NUM_BLOCKS; i++)
             {
-                JsonObject o = bst.createNestedObject();
+                JsonObject o = bst.add<JsonObject>();
                 o["kontakt"]     = (uint8_t)bs[i].kontakt;
                 o["stromEin"]    = (uint8_t)bs[i].stromEin;
                 o["besetzt"]     = (uint8_t)((occFast & (uint16_t)(1u << i)) != 0);
@@ -443,12 +458,12 @@ static String buildWsStateJson(bool includeAnalog)
     
     // WS client counts + diag control status (used for safety banner + gating UX)
     {
-        JsonObject wsC = doc.createNestedObject("wsClients");
+        JsonObject wsC = doc["wsClients"].to<JsonObject>();
         wsC["base"] = countSubBase();
         wsC["diag"] = countSubDiag();
     }
     {
-        JsonObject d = doc.createNestedObject("diagCtrl");
+        JsonObject d = doc["diagCtrl"].to<JsonObject>();
         d["active"] = s_diag.active;
         d["ownerId"] = s_diag.active ? s_diag.ownerId : 0;
         d["sinceMs"] = s_diag.active ? s_diag.sinceMs : 0;
@@ -458,11 +473,7 @@ static String buildWsStateJson(bool includeAnalog)
             : 0;
     }
 
-    if (doc.overflowed())
-    {
-        // If you ever see this, increase the document size above.
-        Serial.println("[WS] buildWsStateJson: JSON document overflow (fields may be missing!)");
-    }
+    warnJsonOverflowThrottled("buildWsStateJson", doc);
     serializeJson(doc, out);
 
     
@@ -499,7 +510,7 @@ static String buildWsStateJson(bool includeAnalog)
 static String buildWsAnalogJson()
 {
     // Only a small payload -> keep this tight to reduce heap pressure.
-    StaticJsonDocument<512> doc;
+    JsonDocument doc;
 
     doc["type"] = "analog";
     doc["ts"]   = (uint32_t)millis();
@@ -521,6 +532,7 @@ static String buildWsAnalogJson()
 
     String out;
     out.reserve(512);
+    warnJsonOverflowThrottled("buildWsAnalogJson", doc);
     serializeJson(doc, out);
 
 #if defined(DEBUG_WS_SIZE)
@@ -555,19 +567,19 @@ static String buildWsAnalogJson()
 static String buildWsDiagJson()
 {
     // Read-only diagnostics snapshot. Keep modest in size; we can extend later.
-    StaticJsonDocument<2048> doc;
+    JsonDocument doc;
 
     doc["type"] = "diag";
     doc["ts"]   = (uint32_t)millis();
 
     // WS client counts + diag control status (same shape as in state)
     {
-        JsonObject wsC = doc.createNestedObject("wsClients");
+        JsonObject wsC = doc["wsClients"].to<JsonObject>();
         wsC["base"] = countSubBase();
         wsC["diag"] = countSubDiag();
     }
     {
-        JsonObject d = doc.createNestedObject("diagCtrl");
+        JsonObject d = doc["diagCtrl"].to<JsonObject>();
         d["active"] = s_diag.active;
         d["ownerId"] = s_diag.active ? s_diag.ownerId : 0;
         d["sinceMs"] = s_diag.active ? s_diag.sinceMs : 0;
@@ -625,7 +637,7 @@ static String buildWsDiagJson()
             {
                 const uint8_t sid = M1_SENS_SID[i];
                 const uint32_t bit = (1UL << sid);
-                JsonObject o = arr.createNestedObject();
+                JsonObject o = arr.add<JsonObject>();
                 o["sid"]   = sid; // reale Anlagen-Nummer (mit Lücken)
                 o["level"] = ((m1d.sensorActiveMask & bit) != 0) ? 1 : 0; // logischer Aktivzustand
                 o["rise"]  = ((m1d.sensorRiseMask   & bit) != 0) ? 1 : 0;
@@ -667,7 +679,7 @@ static String buildWsDiagJson()
             JsonArray arr = doc["mega2"]["schaltgleise"].to<JsonArray>();
             for (uint8_t i = 0; i < 6; ++i)
             {
-                JsonObject o = arr.createNestedObject();
+                JsonObject o = arr.add<JsonObject>();
                 o["sid"]   = sid[i];      // 11..16
                 o["level"] = lvl[i];      // electrical level (HIGH=1)
                 o["rise"]  = rise[i];     // rising count (uint16 wrap ok)
@@ -681,6 +693,7 @@ static String buildWsDiagJson()
 
     String out;
     out.reserve(2048);
+    warnJsonOverflowThrottled("buildWsDiagJson", doc);
     serializeJson(doc, out);
     return out;
 }
@@ -784,7 +797,7 @@ if (type != WS_EVT_DATA)
     {
         const uint32_t now = (uint32_t)millis();
         const uint32_t cid = client ? client->id() : 0;
-        StaticJsonDocument<256> reply;
+        JsonDocument reply;
         reply["type"] = "diagControl";
         if (!s_diag.active || (cid && cid == s_diag.ownerId)) {
             if (!s_diag.active) {
@@ -800,7 +813,9 @@ if (type != WS_EVT_DATA)
             reply["isOwner"] = true;
             reply["token"] = s_diag.token;
             reply["expiresInMs"] = LEASE_MS;
-            String out; serializeJson(reply, out);
+            String out;
+            warnJsonOverflowThrottled("onWsMessage/diagEnter", reply);
+            serializeJson(reply, out);
             if (client) client->text(out);
             g_stateDirty = true;
         } else {
@@ -808,7 +823,9 @@ if (type != WS_EVT_DATA)
             reply["ownerId"] = s_diag.ownerId;
             reply["isOwner"] = false;
             reply["error"] = "busy";
-            String out; serializeJson(reply, out);
+            String out;
+            warnJsonOverflowThrottled("onWsMessage/diagEnterBusy", reply);
+            serializeJson(reply, out);
             if (client) client->text(out);
         }
         return;
@@ -837,17 +854,19 @@ if (type != WS_EVT_DATA)
     // This prevents accidental conflicts (e.g. Torben drives while Bernhard diagnoses).
     // -------------------------------------------------
     auto isProtectedAction = [&](const char* a) -> bool {
-        return (!strcmp(a,"powerOff") || !strcmp(a,"m1PowerSet") || !strcmp(a,"m1SelftestStart") || !strcmp(a,"m1SetMode") || !strcmp(a,"m1TurnoutSet") || !strcmp(a,"sbhfSelftestRetry"));
+        return (!strcmp(a,"powerOff") || !strcmp(a,"m1PowerSet") || !strcmp(a,"m1SelftestStart") || !strcmp(a,"m1SetMode") || !strcmp(a,"m1TurnoutSet") || !strcmp(a,"sbhfSelftestRetry") || !strcmp(a,"sbhfSelftestStartup"));
     };
     if (s_diag.active && isProtectedAction(action)) {
         const char* token = cmd["token"] | nullptr;
         if (!isDiagOwner(client, token)) {
-            StaticJsonDocument<192> err;
+            JsonDocument err;
             err["type"] = "error";
             err["code"] = "DIAG_ACTIVE";
             err["ownerId"] = s_diag.ownerId;
             err["msg"] = "diagnose active: write actions allowed only for diag owner";
-            String out; serializeJson(err, out);
+            String out;
+            warnJsonOverflowThrottled("onWsMessage/DIAG_ACTIVE", err);
+            serializeJson(err, out);
             if (client) client->text(out);
             return;
         }
@@ -1014,6 +1033,14 @@ if (type != WS_EVT_DATA)
     {
         Serial.println("[WS] -> SBHF Selftest Retry");
         Mega2Link::sbhfSelftestRetry();
+        g_stateDirty = true;
+        return;
+    }
+    
+    if (!strcmp(action, "sbhfSelftestStartup"))
+    {
+        Serial.println("[WS] -> SBHF Selftest Startup");
+        Mega2Link::sbhfSelftestStartup();
         g_stateDirty = true;
         return;
     }

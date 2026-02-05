@@ -24,6 +24,7 @@ static constexpr uint8_t ACT_PON      = 0x04;
 static constexpr uint8_t ACT_REL      = 0x08;
 static constexpr uint8_t ACT_POFF     = 0x10;
 static constexpr uint8_t ACT_STRETRY  = 0x20;
+static constexpr uint8_t ACT_STSTART  = 0x40;
 
 static inline void queueAction(uint8_t mask)
 {
@@ -281,6 +282,12 @@ void update()
         }
         if (act & ACT_STRETRY)
         {
+            DBG_PRINTLN("[M2LINK] sending cmd: SBHF_SELFTEST_RETRY");
+            (void)Mega2Client::sbhfSelftestRetry();
+            requestPollNow();
+        }
+        if (act & ACT_STSTART)
+        {
             DBG_PRINTLN("[M2LINK] sending cmd: SBHF_SELFTEST_STARTUP");
             (void)Mega2Client::sbhfSelftestStartup();
             requestPollNow();
@@ -465,6 +472,7 @@ void update()
 
 bool safetyAck()     { queueAction(ACT_ACK);     return true; }
 bool sbhfSelftestRetry() { queueAction(ACT_STRETRY); return true; }
+bool sbhfSelftestStartup() { queueAction(ACT_STSTART); return true; }
 bool nothalt()       { queueAction(ACT_NOTHALT); return true; }
 bool releaseNotaus() { queueAction(ACT_REL);     return true; }
 bool powerOff()      { queueAction(ACT_POFF);    return true; }
