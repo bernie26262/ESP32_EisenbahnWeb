@@ -24,6 +24,9 @@ namespace Mega2Client
     I2CBus::Result pollBlocksStatus();
     I2CBus::Result pollShadowStatus();
     I2CBus::Result pollTurnoutsStatus();
+
+    // Mega2 Diag Sensors (Kontaktgleise + Schaltgleise) – read-only
+    I2CBus::Result pollDiagSensors(Mega2DiagSensorsPayload& out);
      
     // Analogwerte (Trafo + Blockströme)
     I2CBus::Result pollAnalog();

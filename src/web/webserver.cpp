@@ -90,6 +90,12 @@ static uint8_t countSubDiag() {
     uint8_t n=0; for (auto &c: s_wsClients) if (c.used && c.subDiag) n++; return n;
 }
 
+// Exported helper for link-layer gating: only read diag-only payloads when at least one diag WS subscriber exists.
+bool webserverHasDiagSubscribers()
+{
+    return countSubDiag() > 0;
+}
+
 struct DiagLease {
     bool active = false;
     uint32_t ownerId = 0;
@@ -688,6 +694,25 @@ static String buildWsDiagJson()
             doc["mega2"]["schaltSeq"]   = SystemRuntimeState::mega2SchaltgleiseSeq();
             doc["mega2"]["schaltTsMs"]  = SystemRuntimeState::mega2SchaltgleiseLastUpdateMs();
             doc["mega2"]["schaltAgeMs"] = (uint32_t)((uint32_t)millis() - SystemRuntimeState::mega2SchaltgleiseLastUpdateMs());
+        }
+
+        // Mega2 Diag Sensors (Kontaktgleise + Schaltgleise) – compact masks + counters
+        if (SystemRuntimeState::mega2DiagSensorsValid())
+        {
+            const auto& p = SystemRuntimeState::mega2DiagSensors();
+            JsonObject ds = doc["mega2"]["diagSensors"].to<JsonObject>();
+            ds["seq"] = p.seq;
+            ds["kontaktLevelMask"] = p.kontaktLevelMask;
+            ds["kontaktRiseMask"]  = p.kontaktRiseMask;
+            ds["kontaktFallMask"]  = p.kontaktFallMask;
+            ds["schaltLevelMask"]  = p.schaltLevelMask;
+            JsonArray r = ds["schaltRise"].to<JsonArray>();
+            JsonArray f = ds["schaltFall"].to<JsonArray>();
+            for (uint8_t i=0;i<M2_DIAG_NUM_SCHALT;i++){
+                r.add(p.schaltRise[i]);
+                f.add(p.schaltFall[i]);
+            }
+            ds["ageMs"] = SystemRuntimeState::mega2DiagSensorsAgeMs();
         }
     }
 

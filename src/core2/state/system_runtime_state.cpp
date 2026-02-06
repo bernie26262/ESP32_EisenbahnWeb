@@ -26,6 +26,13 @@ static uint32_t s_m2SchLastMs = 0;
 static uint8_t  s_m2SchLevel[6] = {0};
 static uint16_t s_m2SchRise[6]  = {0};
 static uint16_t s_m2SchFall[6]  = {0};
+
+// Mega2 Diag Sensors (Kontaktgleise + Schaltgleise, compact masks+counters)
+static bool     s_m2DiagSensValid  = false;
+static uint8_t  s_m2DiagSensSeq    = 0;
+static uint32_t s_m2DiagSensLastMs = 0;
+static Mega2DiagSensorsPayload s_m2DiagSens{};
+
 // NEU: Mega2SafetyStatus Cache (separat gepollt)
 static Mega2SafetyStatus s_m2Safety{};
 
@@ -417,6 +424,43 @@ void SystemRuntimeState::mega2GetSchaltgleise6(uint8_t sid[6], uint8_t level[6],
         rise[i]  = s_m2SchRise[i];
         fall[i]  = s_m2SchFall[i];
     }
+}
+
+// =====================================================
+// Mega2 Diag Sensors (Kontaktgleise + Schaltgleise)
+// =====================================================
+void SystemRuntimeState::updateMega2DiagSensors(const Mega2DiagSensorsPayload& p)
+{
+    s_m2DiagSens = p;
+    s_m2DiagSensSeq = p.seq;
+    s_m2DiagSensLastMs = (uint32_t)millis();
+    s_m2DiagSensValid = true;
+}
+
+bool SystemRuntimeState::mega2DiagSensorsValid()
+{
+    return s_m2DiagSensValid;
+}
+
+uint8_t SystemRuntimeState::mega2DiagSensorsSeq()
+{
+    return s_m2DiagSensSeq;
+}
+
+uint32_t SystemRuntimeState::mega2DiagSensorsLastUpdateMs()
+{
+    return s_m2DiagSensLastMs;
+}
+
+uint32_t SystemRuntimeState::mega2DiagSensorsAgeMs()
+{
+    if (!s_m2DiagSensValid) return 0xFFFFFFFFu;
+    return (uint32_t)((uint32_t)millis() - s_m2DiagSensLastMs);
+}
+
+const Mega2DiagSensorsPayload& SystemRuntimeState::mega2DiagSensors()
+{
+    return s_m2DiagSens;
 }
 
 const Mega1DiagV1& SystemRuntimeState::mega1Diag()

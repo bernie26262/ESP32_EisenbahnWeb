@@ -97,6 +97,14 @@ I2CBus::Result Mega2Client::pollTurnoutsStatus()
     return r;
 }
 
+I2CBus::Result Mega2Client::pollDiagSensors(Mega2DiagSensorsPayload& out)
+{
+    const uint8_t cmd = M2_CMD_GET_DIAG_SENSORS;
+    Mega2DiagSensorsPayload p{};
+    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), &p, sizeof(p), 2000);
+    if (r == I2CBus::Result::OK) out = p;
+    return r;
+}
 
 void Mega2Client::begin()
 {

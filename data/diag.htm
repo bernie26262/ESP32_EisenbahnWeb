@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Diagnose</title>
-  <link rel="stylesheet" href="style.css?v=20260205114952">
+  <link rel="stylesheet" href="style.css?v=20260206122356">
   <link rel="stylesheet" href="diagstyle.css">
 
 </head>
@@ -33,57 +33,37 @@
       <thead>
         <tr><th>Signal</th><th>Wert</th></tr>
       </thead>
-      <tbody>
-        <tr><td>vA10</td><td class="mono" id="an-vA10">–</td></tr>
-        <tr><td>vB10</td><td class="mono" id="an-vB10">–</td></tr>
-        <tr><td>i_mA[]</td><td class="mono" id="an-imA">–</td></tr>
+      <tbody id="diag-analog-body">
+        <tr><td>vA10</td><td class="mono">–</td></tr>
+        <tr><td>vB10</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B1</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B2</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B3</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B4</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B5</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B6</td><td class="mono">–</td></tr>
+        <tr><td>i_mA SBHF1</td><td class="mono">–</td></tr>
+        <tr><td>i_mA SBHF2</td><td class="mono">–</td></tr>
+        <tr><td>i_mA SBHF3</td><td class="mono">–</td></tr>
       </tbody>
     </table>
 
-    <h3 style="margin-top:1rem;">Blöcke (Mega2)</h3>
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:1rem;">
+      <h3 style="margin:0;">Kontakt- &amp; Schaltgleise (Mega2)</h3>
+      <button class="btn" id="m2-reset" type="button">Counter reset</button>
+    </div>
     <table class="diag-table small">
       <thead>
         <tr>
-          <th>Block</th>
           <th>Kontakt</th>
-          <th>Strom</th>
-          <th>Besetzt</th>
-          <th>Kurzschl.</th>
-          <th>Nothalt</th>
-          <th>stromRaw</th>
-        </tr>
-      </thead>
-      <tbody id="diag-blocks-main"></tbody>
-    </table>
-
-    <h3 style="margin-top:1rem;">SBHF (Mega2)</h3>
-    <table class="diag-table small">
-      <thead>
-        <tr>
-          <th>SBHF</th>
-          <th>Kontakt</th>
-          <th>Strom</th>
-          <th>Besetzt</th>
-          <th>Kurzschl.</th>
-          <th>Nothalt</th>
-          <th>stromRaw</th>
-        </tr>
-      </thead>
-      <tbody id="diag-blocks-sbhf"></tbody>
-    </table>
-
-
-    <h3 style="margin-top:1rem;">Schaltgleise S11..S16 (Mega2)</h3>
-    <table class="diag-table small">
-      <thead>
-        <tr>
-          <th>Sensor</th>
+          <th>Name</th>
+          <th>Pin</th>
           <th>Level</th>
           <th>Rise</th>
           <th>Fall</th>
         </tr>
       </thead>
-      <tbody id="diag-m2-schalt"></tbody>
+      <tbody id="diag-m2-kontakte"></tbody>
     </table>
 
     <!-- Mega1 Sensoren: linksbündiger Block + Reset für Browser-Counter -->

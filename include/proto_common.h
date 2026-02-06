@@ -29,6 +29,7 @@ enum : uint8_t
     M2_CMD_GET_ANALOG = 0x25,  // -> Mega2AnalogPayload
     M2_CMD_GET_PENDING_MASK = 0x26 // -> Mega2PendingMaskPayload
     ,    M2_CMD_GET_TURNOUTS = 0x27 // -> Mega2TurnoutsPayload
+    ,    M2_CMD_GET_DIAG_SENSORS = 0x28 // -> Mega2DiagSensorsPayload (kontakt+schalt, read-only)
 };
 
 // =====================================================
@@ -137,7 +138,9 @@ enum : uint16_t {
     M2_PEND_BLOCKS      = 1u << 3,
     M2_PEND_SHADOW      = 1u << 4,
     M2_PEND_TURNOUTS    = 1u << 5,  // reserved (future)
+    M2_PEND_DIAG_SENSORS = 1u << 6, // diag-only sensors (kontakt + schaltgleise)
 
+    // IMPORTANT: diag sensors are NOT part of ALL_DIGITAL (so "status pull" won't clear it implicitly)
     M2_PEND_ALL_DIGITAL = M2_PEND_SAFETY | M2_PEND_ENTRY | M2_PEND_ENTRY_PREV | M2_PEND_BLOCKS | M2_PEND_SHADOW | M2_PEND_TURNOUTS,
 };
 
@@ -156,6 +159,27 @@ struct __attribute__((packed)) Mega2TurnoutsPayload
     uint16_t sollMask;
     uint16_t istMask;
 };
+
+// =====================================================
+// Mega2 Diag Sensors Payload (I2C, <=32 bytes, Wire-safe on AVR)
+// Kontakte: 14 Bits: Level + sticky Rise/Fall since last DIAG read
+// Schaltgleise: S11..S16: Level + edge counters (uint8 wrap ok)
+// Level semantics: 1 = aktiv (LOW bei INPUT_PULLUP)
+// =====================================================
+static constexpr uint8_t M2_DIAG_NUM_KONTAKTE = 14; // fixed order (matches Mega2 FW)
+static constexpr uint8_t M2_DIAG_NUM_SCHALT   = 6;  // S11..S16
+
+struct __attribute__((packed)) Mega2DiagSensorsPayload
+{
+    uint8_t  seq;
+    uint16_t kontaktLevelMask; // 14 Bits used
+    uint16_t kontaktRiseMask;  // sticky bits since last read
+    uint16_t kontaktFallMask;  // sticky bits since last read
+    uint8_t  schaltLevelMask;  // bit0=S11..bit5=S16
+    uint8_t  schaltRise[M2_DIAG_NUM_SCHALT];
+    uint8_t  schaltFall[M2_DIAG_NUM_SCHALT];
+};
+static_assert(sizeof(Mega2DiagSensorsPayload) <= 32, "Mega2DiagSensorsPayload must fit Wire buffer");
 
 enum Mega2Command : uint8_t {
     CMD_GET_M2_SAFETY = 0x20,

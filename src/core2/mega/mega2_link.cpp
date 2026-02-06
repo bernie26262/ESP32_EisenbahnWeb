@@ -10,6 +10,10 @@
 #include "core2/state/system_runtime_state.h"
 #include "debug.h"
 
+// in webserver.cpp bereitstellen (kleiner Export), damit wir diag-only Reads gaten können
+extern bool webserverHasDiagSubscribers();
+
+
 #if defined(ESP32)
   #include "freertos/FreeRTOS.h"
   #include "freertos/portmacro.h"
@@ -115,6 +119,10 @@ static uint32_t s_lastPendMaskMs = 0;
 // Full pull ground-truth interval (slow on purpose for DRDY test)
 static constexpr uint32_t FULL_PULL_MS = 8000;
 static uint32_t s_lastFullPullMs = 0;
+
+// diag-only sensors poll (prime + keep-alive)
+static uint32_t s_lastDiagSensorsPollMs = 0;
+static constexpr uint32_t DIAG_SENSORS_POLL_MS = 500;
 
 static constexpr uint32_t POLL_STATUS_MS   = 200;
 static constexpr uint32_t POLL_SAFETY_MS   = 400;   // Safety halb so oft wie Status
@@ -414,13 +422,20 @@ void update()
                 M2_PEND_BLOCKS,
                 M2_PEND_TURNOUTS,
                 M2_PEND_SHADOW,
+                // diag-only sensors only when diag WS is active
+                // (avoid bus noise / reads when nobody watches)
+                // NOTE: bit is NOT part of ALL_DIGITAL.
+                M2_PEND_DIAG_SENSORS,
             };
             constexpr uint8_t RR_N = sizeof(rrBits) / sizeof(rrBits[0]);
 
             uint8_t chosen = 0xFF;
+            const bool diagOn = webserverHasDiagSubscribers();
+
             for (uint8_t k = 0; k < RR_N; k++)
             {
                 const uint8_t idx = (uint8_t)((s_drdyRr + k) % RR_N);
+                if (!diagOn && rrBits[idx] == M2_PEND_DIAG_SENSORS) continue;
                 if (s_m2PendMask & rrBits[idx]) { chosen = idx; break; }
             }
 
@@ -446,6 +461,13 @@ void update()
                         break;
                     case M2_PEND_SHADOW:      ok = (Mega2Client::pollShadowStatus() == I2CBus::Result::OK); break;
                     case M2_PEND_TURNOUTS:    ok = (Mega2Client::pollTurnoutsStatus() == I2CBus::Result::OK); break;
+                    case M2_PEND_DIAG_SENSORS:
+                    {
+                        Mega2DiagSensorsPayload p{};
+                        ok = (Mega2Client::pollDiagSensors(p) == I2CBus::Result::OK);
+                        if (ok) SystemRuntimeState::updateMega2DiagSensors(p);
+                        break;
+                    }
                     default: break;
                 }
             }
@@ -466,6 +488,21 @@ void update()
         else
         {
             DBG_PRINTLN("[M2LINK][DRDY] pendingMask read FAILED");
+        }
+    }
+    // --------------------------------------------------------
+    // Diag keepalive/prime:
+    // Wenn diag WS offen ist, lesen wir diagSensors periodisch,
+    // damit Mega2-FW "diag active" bleibt und DRDY für diag-only Updates setzt.
+    // --------------------------------------------------------
+    {
+        const bool diagOn = webserverHasDiagSubscribers();
+        if (diagOn && (s_lastDiagSensorsPollMs == 0 || (uint32_t)(now - s_lastDiagSensorsPollMs) >= DIAG_SENSORS_POLL_MS))
+        {
+            s_lastDiagSensorsPollMs = now;
+            Mega2DiagSensorsPayload p{};
+            if (Mega2Client::pollDiagSensors(p) == I2CBus::Result::OK)
+                SystemRuntimeState::updateMega2DiagSensors(p);
         }
     }
 }

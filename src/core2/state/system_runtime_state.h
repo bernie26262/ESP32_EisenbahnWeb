@@ -59,6 +59,17 @@ namespace SystemRuntimeState
     uint32_t mega2SchaltgleiseLastUpdateMs();
     void mega2GetSchaltgleise6(uint8_t sid[6], uint8_t level[6], uint16_t rise[6], uint16_t fall[6]);
 
+    // ----------------------------------------------------
+    // Mega2 Diag Sensors (Kontaktgleise + Schaltgleise, compact masks+counters)
+    // read-only, nur im diag WS stream
+    // ----------------------------------------------------
+    void updateMega2DiagSensors(const Mega2DiagSensorsPayload& p);
+    bool mega2DiagSensorsValid();
+    uint8_t mega2DiagSensorsSeq();
+    uint32_t mega2DiagSensorsLastUpdateMs();
+    uint32_t mega2DiagSensorsAgeMs();
+    const Mega2DiagSensorsPayload& mega2DiagSensors();;
+
     // Abgeleitete Safety-Informationen
     bool safetyLock();
     SafetyReason safetyReason();
