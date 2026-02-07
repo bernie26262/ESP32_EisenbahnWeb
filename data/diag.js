@@ -17,30 +17,75 @@ let lastDiagMsg = null;
  let _diagRenderPending = false;
  let _latestDiagMsg = null;
  let _lastPreDumpMs = 0;
- 
- function scheduleDiagRender(){
-   if (_diagRenderPending) return;
-   _diagRenderPending = true;
-   setTimeout(() => {
-     _diagRenderPending = false;
-     const m = _latestDiagMsg;
-     _latestDiagMsg = null;
-     if (!m) return;
- 
-     // Digital sensor tables (heavy DOM)
-     try { renderM2Kontakte(m); } catch(e){ console.error("[diag] renderM2Kontakte failed", e); }
-     try { renderM2Schalt(m); } catch(e){ console.error("[diag] renderM2Schalt failed", e); }
-     try { renderM1Sensors(m); } catch(e){ console.error("[diag] renderM1Sensors failed", e); }
 
-     // Quick visibility in console (helps catch path/ID issues)
-     try {
-       const a1 = m?.mega1?.sensors ?? m?.mega1?.diag?.sensors;
-       if (Array.isArray(a1)) console.log("[diag] m1 sensors:", a1.length);
-       const tb1 = qs("diag-m1-sensors");
-       if (!tb1) console.warn("[diag] missing tbody #diag-m1-sensors");
-     } catch(_) {}
-   }, DIAG_RENDER_INTERVAL_MS);
+ function renderM2Sensors(msg){
+  // Mega2: Kontakte + Schaltgleise in einem konsistenten Durchlauf
+  try { renderM2Kontakte(msg); } catch(e){ console.error("[diag] renderM2Kontakte failed", e); }
+  try { renderM2Schalt(msg); } catch(e){ console.error("[diag] renderM2Schalt failed", e); }
  }
+
+function initM2PrevFromFirstPacket(msg){
+  const d = msg?.mega2?.diagSensors;
+  if (!d) return;
+
+  // Kontakte: packed 4-bit counters
+  if (!_m2InitKontaktPrevDone && Array.isArray(d.kontaktRise4) && Array.isArray(d.kontaktFall4)){
+    for (let i=0; i<14; i++){
+      const r = getNibble4(d.kontaktRise4, i);
+      const f = getNibble4(d.kontaktFall4, i);
+
+      // Prev für Pfeile
+      m2Ui.kontakt.prevRise[i] = r;
+      m2Ui.kontakt.prevFall[i] = f;
+
+      // Offset initialisieren -> Anzeige startet bei 0 nach Page-Load
+      m2Ui.kontakt.offRise[i] = r;
+      m2Ui.kontakt.offFall[i] = f;
+    }
+    _m2InitKontaktPrevDone = true;
+  }
+
+  // Schaltgleise: arrays of counters
+  if (!_m2InitSchaltPrevDone && Array.isArray(d.schaltRise) && Array.isArray(d.schaltFall)){
+    for (let i=0; i<6; i++){
+      const r = (typeof d.schaltRise[i] === "number") ? d.schaltRise[i] : 0;
+      const f = (typeof d.schaltFall[i] === "number") ? d.schaltFall[i] : 0;
+
+      // Prev für Pfeile
+      m2Ui.schalt.prevRise[i] = r;
+      m2Ui.schalt.prevFall[i] = f;
+
+      // Offset initialisieren -> Anzeige startet bei 0 nach Page-Load
+      m2Ui.schalt.offRise[i] = r;
+      m2Ui.schalt.offFall[i] = f;
+    }
+    _m2InitSchaltPrevDone = true;
+  }
+}
+ 
+function scheduleDiagRender(){
+  if (_diagRenderPending) return;
+  _diagRenderPending = true;
+  setTimeout(() => {
+    _diagRenderPending = false;
+    const m = _latestDiagMsg;
+    _latestDiagMsg = null;
+    if (!m) return;
+
+    // Digital sensor tables (heavy DOM)
+    try { initM2PrevFromFirstPacket(m); } catch(e){ console.error("[diag] initM2PrevFromFirstPacket failed", e); }
+    try { renderM2Sensors(m); } catch(e){ console.error("[diag] renderM2Sensors failed", e); }
+    try { renderM1Sensors(m); } catch(e){ console.error("[diag] renderM1Sensors failed", e); }
+
+    // Quick visibility in console (helps catch path/ID issues)
+    try {
+      const a1 = m?.mega1?.sensors ?? m?.mega1?.diag?.sensors;
+      if (Array.isArray(a1)) console.log("[diag] m1 sensors:", a1.length);
+      const tb1 = qs("diag-m1-sensors");
+      if (!tb1) console.warn("[diag] missing tbody #diag-m1-sensors");
+    } catch(_) {}
+  }, DIAG_RENDER_INTERVAL_MS);
+}
 
 
 // ------------------------------------------------------------
@@ -65,14 +110,15 @@ const M2_KONTAKT_INFO = [
   { key:"BHF4_B",    name:"Bahnhof Block4 B",         pin:11 },
 ];
 
-const M2_SCHALT_INFO = [
-  { key:"S11", name:"Schaltgleis S11", pin:31, idx:0 },
-  { key:"S12", name:"Schaltgleis S12", pin:32, idx:1 },
-  { key:"S13", name:"Schaltgleis S13", pin:33, idx:2 },
-  { key:"S14", name:"Schaltgleis S14", pin:34, idx:3 },
-  { key:"S15", name:"Schaltgleis S15", pin:35, idx:4 },
-  { key:"S16", name:"Schaltgleis S16", pin:36, idx:5 },
-];
+// Mega2 Schaltgleise S11..S16: Map nach sid (11..16)
+const M2_SCHALT_INFO = new Map([
+  [11, { key:"S11", name:"Schaltgleis S11", pin:31, idx:0 }],
+  [12, { key:"S12", name:"Schaltgleis S12", pin:32, idx:1 }],
+  [13, { key:"S13", name:"Schaltgleis S13", pin:33, idx:2 }],
+  [14, { key:"S14", name:"Schaltgleis S14", pin:34, idx:3 }],
+  [15, { key:"S15", name:"Schaltgleis S15", pin:35, idx:4 }],
+  [16, { key:"S16", name:"Schaltgleis S16", pin:36, idx:5 }],
+]);
 // ------------------------------------------------------------
 // Mega1 sensor meta (from pins_mega1.h / pins_mega1.cpp)
 // sid -> { name, pin }
@@ -117,10 +163,33 @@ const m1EventCounters = {
   }
 };
 
+
+// For Mega2 Schaltgleise: counters come from FW, but we can show "just changed" arrows
+// ------------------------------------------------------------
+// Mega2 UI State (kanonisch): lokale Offsets + Prev für Pfeile
+// ------------------------------------------------------------
+const m2Ui = {
+  kontakt: {
+    prevRise: Array(14).fill(0), // raw FW counter nibble (0..15) zum Pfeilvergleich
+    prevFall: Array(14).fill(0),
+    offRise:  Array(14).fill(0), // raw FW counter nibble zum lokalen Reset (Offset)
+    offFall:  Array(14).fill(0),
+  },
+  schalt: {
+    prevRise: Array(6).fill(0),
+    prevFall: Array(6).fill(0),
+    offRise:  Array(6).fill(0), // lokaler Reset-Offset
+    offFall:  Array(6).fill(0),
+  }
+};
+
+let _m2InitKontaktPrevDone = false;
+let _m2InitSchaltPrevDone  = false;
 // ------------------------------------------------------------
 // Browser-side counters for Mega2 *Kontakt*-events (rise/fall).
-// Mega2 liefert kontaktRiseMask/kontaktFallMask nur als "seen" Flags (kurz).
-// Wir zählen deshalb im Browser hoch (wie bei Mega1).
+// Unterstützt zwei Formate:
+//  - alt: kontaktRiseMask/kontaktFallMask ("seen" Flags)
+//  - neu: kontaktRise4/kontaktFall4 (4-bit cumulative counters, wrap 0..15)
 // ------------------------------------------------------------
 const m2KontaktCounters = {
   // idx -> { rise:number, fall:number, lastRiseFlag:0|1, lastFallFlag:0|1 }
@@ -128,7 +197,7 @@ const m2KontaktCounters = {
   get(idx){
     let e = this.map.get(idx);
     if (!e){
-      e = { rise: 0, fall: 0, lastRiseFlag: 0, lastFallFlag: 0 };
+      e = { rise: 0, fall: 0, lastRiseFlag: 0, lastFallFlag: 0, lastRise4: -1, lastFall4: -1 };
       this.map.set(idx, e);
     }
     return e;
@@ -137,6 +206,7 @@ const m2KontaktCounters = {
     this.map.clear();
   }
 };
+
 
 // ------------------------------------------------------------
 // Optional WS debug logging:
@@ -167,82 +237,121 @@ function escapeHtml(s){
     .replaceAll("'","&#39;");
 }
 
+// Helpers for packed 4-bit counters (Mega2 kontaktRise4/kontaktFall4)
+function getNibble4(arr, idx){
+  if (!Array.isArray(arr)) return 0;
+  const b = (typeof arr[idx >> 1] === "number") ? arr[idx >> 1] : 0;
+  return (idx & 1) ? ((b >> 4) & 0x0F) : (b & 0x0F);
+}
+
 // compat alias (render helpers use esc())
 function esc(s){ return escapeHtml(s); }
+
+ // ------------------------------------------------------------
+ // Render: Mega2 Kontakte + Schaltgleise from diag (type:"diag")
+ // Expects: msg.mega2.diagSensors = { kontakt*Mask, schalt* }
+ // ------------------------------------------------------------
 
 // ------------------------------------------------------------
 // Render: Mega2 Kontakte + Schaltgleise from diag (type:"diag")
 // Expects: msg.mega2.diagSensors = { kontakt*Mask, schalt* }
 // ------------------------------------------------------------
 function renderM2Kontakte(msg){
-  const d = msg?.mega2?.diagSensors;
-  if (!d) return;
-
   const tb = qs("diag-m2-kontakte");
   if (!tb) return;
 
-  const lvlMask  = (typeof d.kontaktLevelMask === "number") ? d.kontaktLevelMask : 0;
-  const riseMask = (typeof d.kontaktRiseMask  === "number") ? d.kontaktRiseMask  : 0;
-  const fallMask = (typeof d.kontaktFallMask  === "number") ? d.kontaktFallMask  : 0;
+  const d = msg?.mega2?.diagSensors;
 
-  const sLvlMask = (typeof d.schaltLevelMask === "number") ? d.schaltLevelMask : 0;
-  const sRise = Array.isArray(d.schaltRise) ? d.schaltRise : [];
-  const sFall = Array.isArray(d.schaltFall) ? d.schaltFall : [];
+  // Immer 14 Zeilen rendern (auch ohne Daten)
+  if (!d){
+    let html = "";
+    for (let i=0; i<M2_KONTAKT_INFO.length; i++){
+      const info = M2_KONTAKT_INFO[i];
+      html += `<tr>
+        <td class="mono">${esc(info.key)}</td>
+        <td>${esc(info.name)}</td>
+        <td class="mono">${info.pin}</td>
+        <td>–</td>
+        <td class="mono">–</td>
+        <td class="mono">–</td>
+      </tr>`;
+    }
+    tb.innerHTML = html;
+    return;
+  }
+
+  const lvlMask = (typeof d.kontaktLevelMask === "number") ? d.kontaktLevelMask : 0;
+
+  // Preferred: packed 4-bit counters (wrap 0..15)
+  const rise4 = Array.isArray(d.kontaktRise4) ? d.kontaktRise4 : null;
+  const fall4 = Array.isArray(d.kontaktFall4) ? d.kontaktFall4 : null;
+
+  // Legacy: sticky masks (fallback)
+  const riseMaskLegacy = (typeof d.kontaktRiseMask === "number") ? d.kontaktRiseMask : 0;
+  const fallMaskLegacy = (typeof d.kontaktFallMask === "number") ? d.kontaktFallMask : 0;
 
   let html = "";
 
-  // Kontakte (Level + Browser-Counter + Pfeil wenn Event im aktuellen Frame sichtbar)
   for (let i=0; i<M2_KONTAKT_INFO.length; i++){
     const info = M2_KONTAKT_INFO[i];
-    const bit = (1 << i);
-    const lvl  = (lvlMask  & bit) ? 1 : 0;
-    const rise = (riseMask & bit) ? 1 : 0;
-    const fall = (fallMask & bit) ? 1 : 0;
+    const bit  = (1 << i);
 
-    const c = m2KontaktCounters.get(i);
-    if (rise && !c.lastRiseFlag) c.rise++;
-    if (fall && !c.lastFallFlag) c.fall++;
-    c.lastRiseFlag = rise ? 1 : 0;
-    c.lastFallFlag = fall ? 1 : 0;
+    // 1 = LOW/aktiv (wie bisher)
+    const lvl = (lvlMask & bit) ? 1 : 0;
 
-    const riseTxt = `${rise ? "↑ " : ""}${c.rise}`;
-    const fallTxt = `${fall ? "↓ " : ""}${c.fall}`;
+    let rise = 0, fall = 0, riseDelta = false, fallDelta = false;
+
+    if (rise4 && fall4){
+      // Raw counters from FW (0..15)
+      const curRise = getNibble4(rise4, i);
+      const curFall = getNibble4(fall4, i);
+
+      // Anzeige seit lokalem Reset (mod16)
+      rise = (curRise - (m2Ui.kontakt.offRise[i] ?? 0) + 16) & 0x0F;
+      fall = (curFall - (m2Ui.kontakt.offFall[i] ?? 0) + 16) & 0x0F;
+
+      // Pfeile bei echter Counter-Änderung
+      riseDelta = (curRise !== (m2Ui.kontakt.prevRise[i] ?? curRise));
+      fallDelta = (curFall !== (m2Ui.kontakt.prevFall[i] ?? curFall));
+      m2Ui.kontakt.prevRise[i] = curRise;
+      m2Ui.kontakt.prevFall[i] = curFall;
+    } else {
+      // Legacy fallback: sticky 1-shot flags -> browser counters
+      const r = (riseMaskLegacy & bit) ? 1 : 0;
+      const f = (fallMaskLegacy & bit) ? 1 : 0;
+
+      const c = m2KontaktCounters.get(i);
+      if (r && !c.lastRiseFlag) c.rise++;
+      if (f && !c.lastFallFlag) c.fall++;
+      c.lastRiseFlag = r ? 1 : 0;
+      c.lastFallFlag = f ? 1 : 0;
+
+      rise = c.rise;
+      fall = c.fall;
+      riseDelta = !!r;
+      fallDelta = !!f;
+    }
+
+    const levelHtml =
+      `<span class="led ${lvl ? "led-on" : "led-off"}" title="${lvl ? "LOW (aktiv)" : "HIGH (inaktiv)"}"></span>` +
+      (lvl ? "LOW" : "HIGH");
+
+    const riseTxt = `${rise}${riseDelta ? " ⬆" : ""}`;
+    const fallTxt = `${fall}${fallDelta ? " ⬇" : ""}`;
 
     html += `<tr>
       <td class="mono">${esc(info.key)}</td>
       <td>${esc(info.name)}</td>
       <td class="mono">${info.pin}</td>
-      <td>${lvl ? `<span class="led led-on"></span>LOW` : `<span class="led led-off"></span>HIGH`}</td>
+      <td>${levelHtml}</td>
       <td class="mono">${riseTxt}</td>
       <td class="mono">${fallTxt}</td>
-    </tr>`;
-  }
-
-  // Schaltgleise (Level + Counter)
-  for (const s of M2_SCHALT_INFO){
-    const bit = (1 << s.idx);
-    const lvl  = (sLvlMask & bit) ? 1 : 0;
-    const rise = (typeof sRise[s.idx] === "number") ? sRise[s.idx] : 0;
-    const fall = (typeof sFall[s.idx] === "number") ? sFall[s.idx] : 0;
-
-    html += `<tr>
-      <td class="mono">${esc(s.key)}</td>
-      <td>${esc(s.name)}</td>
-      <td class="mono">${s.pin}</td>
-      <td>${lvl ? `<span class="led led-on"></span>LOW` : `<span class="led led-off"></span>HIGH`}</td>
-      <td class="mono">${rise}</td>
-      <td class="mono">${fall}</td>
     </tr>`;
   }
 
   tb.innerHTML = html;
 }
 
-// Hook: optional Mega2 counter reset button (if present in diag.htm)
-try {
-  const b = qs("m2-reset");
-  if (b) b.addEventListener("click", () => m2KontaktCounters.reset());
-} catch(_) {}
 
 // ------------------------------------------------------------
 // Combined status model (WS + diag lease + warning)
@@ -368,71 +477,85 @@ function renderBlocksFromState(msg){
 // Expects: msg.mega2.schaltgleise = [{sid,level,rise,fall}, ...]
 // ------------------------------------------------------------
 function renderM2Schalt(msg){
-  const arr = msg?.mega2?.schaltgleise;
-  if (!Array.isArray(arr)) return;
-
   const tb = qs("diag-m2-schalt");
   if (!tb) return;
 
-  let html = "";
-  for (const s of arr){
-    const sid  = (typeof s?.sid === "number")   ? s.sid   : null;
-    const lvl  = (typeof s?.level === "number") ? s.level : null;
-    const rise = (typeof s?.rise === "number")  ? s.rise  : null;
-    const fall = (typeof s?.fall === "number")  ? s.fall  : null;
-
-    // Optional meta (Name/Pin) – currently unknown for Mega2, keep placeholders.
-    const nameTxt = "–";
-    const pinTxt  = "–";
-
-    const lvlKnown = (lvl === 0 || lvl === 1);
-    const levelHtml = lvlKnown
-      ? (`<span class="led ${(lvl === 1) ? "led-on" : "led-off"}" title="${(lvl === 1) ? "LOW (aktiv)" : "HIGH (inaktiv)"}"></span>` + ((lvl === 1) ? "LOW" : "HIGH"))
-      : "–";
-
-    html += `<tr>
-      <td>${sid === null ? "–" : ("S"+sid)}</td>
-      <td>${(lvl === 0 || lvl === 1)
-         ? (`<span class="led ${(lvl === 1) ? "led-on" : "led-off"}" title="${(lvl === 1) ? "LOW (aktiv)" : "HIGH (inaktiv)"}"></span>` + ((lvl === 1) ? "LOW" : "HIGH"))
-         : "–"
-       }</td>
-       <td class="mono">${(typeof rise === "number") ? rise : "–"}</td>
-       <td class="mono">${(typeof fall === "number") ? fall : "–"}</td>
-    </tr>`;
-  }
-  tb.innerHTML = html;
-}
-
-function renderM2Kontakte(msg){
   const d = msg?.mega2?.diagSensors;
-  if (!d) return;
+  if (!d){
+    // Immer sichtbar: 6 leere Zeilen statt "verschwindet"
+    let html = "";
+    for (let i=0; i<6; i++){
+      const sid = 11 + i;
+      const meta = M2_SCHALT_INFO.get(sid);
+      html += `<tr>
+        <td class="mono">${esc(meta?.key ?? ("S"+sid))}</td>
+        <td>${esc(meta?.name ?? ("Schaltgleis S"+sid))}</td>
+        <td class="mono">${(typeof meta?.pin === "number") ? meta.pin : "–"}</td>
+        <td>–</td>
+        <td class="mono">–</td>
+        <td class="mono">–</td>
+      </tr>`;
+    }
+    tb.innerHTML = html;
+    return;
+  }
 
-  const tb = qs("diag-m2-kontakte");
-  if (!tb) return;
-
-  const lvlMask  = (typeof d.kontaktLevelMask === "number") ? d.kontaktLevelMask : 0;
-  const riseMask = (typeof d.kontaktRiseMask  === "number") ? d.kontaktRiseMask  : 0;
-  const fallMask = (typeof d.kontaktFallMask  === "number") ? d.kontaktFallMask  : 0;
+  const lvlMask = (typeof d.schaltLevelMask === "number") ? d.schaltLevelMask : 0;
+  const riseArr = Array.isArray(d.schaltRise) ? d.schaltRise : [0,0,0,0,0,0];
+  const fallArr = Array.isArray(d.schaltFall) ? d.schaltFall : [0,0,0,0,0,0];
 
   let html = "";
-  for (let i=0; i<M2_KONTAKT_INFO.length; i++){
-    const info = M2_KONTAKT_INFO[i];
+  for (let i=0; i<6; i++){
+    const sid  = 11 + i;
+    const meta = M2_SCHALT_INFO.get(sid);
+
     const bit = (1 << i);
-    const lvl  = (lvlMask  & bit) ? 1 : 0;
-    const rise = (riseMask & bit) ? 1 : 0;
-    const fall = (fallMask & bit) ? 1 : 0;
+    const lvl = (lvlMask & bit) ? 1 : 0; // 1 = LOW/aktiv
+
+    let rise = (typeof riseArr[i] === "number") ? riseArr[i] : null;
+    let fall = (typeof fallArr[i] === "number") ? fallArr[i] : null;
+
+    // 255 (und generell >=250) als "uninitialisiert/invalid" behandeln
+    if (typeof rise === "number" && rise >= 250) rise = null;
+    if (typeof fall === "number" && fall >= 250) fall = null;
+
+    // lokale Reset-Offets: Anzeige ab 0 nach Reset
+    let riseDispVal = null;
+    let fallDispVal = null;
+    if (rise !== null) riseDispVal = rise - (m2Ui.schalt.offRise[i] ?? 0);
+    if (fall !== null) fallDispVal = fall - (m2Ui.schalt.offFall[i] ?? 0);
+
+    // Pfeile nur, wenn Werte gültig sind
+    const prevR = m2Ui.schalt.prevRise[i];
+    const prevF = m2Ui.schalt.prevFall[i];
+
+    const riseDelta = (rise !== null) && (prevR !== undefined) && (rise !== prevR);
+    const fallDelta = (fall !== null) && (prevF !== undefined) && (fall !== prevF);
+
+    // Prev nur aktualisieren, wenn gültig (sonst würde "null" prev kaputt machen)
+    if (rise !== null) m2Ui.schalt.prevRise[i] = rise;
+    if (fall !== null) m2Ui.schalt.prevFall[i] = fall;
+
+    const levelHtml =
+      `<span class="led ${lvl ? "led-on" : "led-off"}" title="${lvl ? "LOW (aktiv)" : "HIGH (inaktiv)"}"></span>` +
+      (lvl ? "LOW" : "HIGH");
+
+    const riseTxt = `${(riseDispVal === null) ? "–" : riseDispVal}${riseDelta ? " ⬆" : ""}`;
+    const fallTxt = `${(fallDispVal === null) ? "–" : fallDispVal}${fallDelta ? " ⬇" : ""}`;
 
     html += `<tr>
-      <td class="mono">${esc(info.key)}</td>
-      <td>${esc(info.name)}</td>
-      <td class="mono">${info.pin}</td>
-      <td>${lvl ? `<span class="led led-on"></span>LOW` : `<span class="led led-off"></span>HIGH`}</td>
-      <td class="mono">${rise}</td>
-      <td class="mono">${fall}</td>
+      <td class="mono">${esc(meta?.key ?? ("S"+sid))}</td>
+      <td>${esc(meta?.name ?? ("Schaltgleis S"+sid))}</td>
+      <td class="mono">${(typeof meta?.pin === "number") ? meta.pin : "–"}</td>
+      <td>${levelHtml}</td>
+      <td class="mono">${riseTxt}</td>
+      <td class="mono">${fallTxt}</td>
     </tr>`;
   }
+
   tb.innerHTML = html;
 }
+
 
 // ------------------------------------------------------------
 // Render: Mega1 Sensors from diag (type:"diag")
@@ -620,7 +743,10 @@ function connect(){
                  sensorFallMask: d1.sensorFallMask,
                  sensors: d1.sensors
                } : undefined,
-               mega2: msg?.mega2?.analog ? { analog: msg.mega2.analog } : undefined
+              mega2: {
+                 analog: msg?.mega2?.analog,
+                 diagSensors: msg?.mega2?.diagSensors
+               }
              }, null, 2);
            }
          }
@@ -720,6 +846,51 @@ window.addEventListener("load", () => {
     });
   }
 
+  // Reset Mega2 Kontakte + Schaltgleise (nur lokal, read-only)
+  const resetBtnM2 = qs("m2-reset");
+  if (resetBtnM2){
+    resetBtnM2.addEventListener("click", () => {
+      try {
+        const d = lastDiagMsg?.mega2?.diagSensors;
+
+        // Kontakte: packed 4-bit counters -> Offsets + Prev auf aktuellen FW-Stand setzen
+        if (d && Array.isArray(d.kontaktRise4) && Array.isArray(d.kontaktFall4)){
+          for (let i=0;i<14;i++){
+            const r = getNibble4(d.kontaktRise4, i);
+            const f = getNibble4(d.kontaktFall4, i);
+            m2Ui.kontakt.offRise[i]  = r;
+            m2Ui.kontakt.offFall[i]  = f;
+            m2Ui.kontakt.prevRise[i] = r;
+            m2Ui.kontakt.prevFall[i] = f;
+          }
+        } else {
+          // Legacy masks (fallback)
+          m2KontaktCounters.reset();
+        }
+
+        // Schaltgleise: Offsets + Prev auf aktuellen FW-Stand setzen (Anzeige startet ab 0)
+        const sr = Array.isArray(d?.schaltRise) ? d.schaltRise : null;
+        const sf = Array.isArray(d?.schaltFall) ? d.schaltFall : null;
+
+        for (let i=0;i<6;i++){
+          const r = (sr && typeof sr[i] === "number") ? sr[i] : 0;
+          const f = (sf && typeof sf[i] === "number") ? sf[i] : 0;
+          m2Ui.schalt.offRise[i]  = r;
+          m2Ui.schalt.offFall[i]  = f;
+          m2Ui.schalt.prevRise[i] = r;
+          m2Ui.schalt.prevFall[i] = f;
+        }
+
+        // Re-render (latest)
+        if (lastDiagMsg){
+          renderM2Sensors(lastDiagMsg);
+        }
+      } catch(_) {
+        m2KontaktCounters.reset();
+      }
+    });
+  }
+
   qs("diag-enter").addEventListener("click", () => {
     wsSend({ action:"diagEnter" });
   });
@@ -728,7 +899,6 @@ window.addEventListener("load", () => {
     if (token) wsSend({ action:"diagExit", token });
     window.location.href = "index.htm";
   });
-
 
   connect();
 });

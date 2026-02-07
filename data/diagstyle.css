@@ -16,6 +16,13 @@
 .diag-table { width: 100%; border-collapse: collapse; margin-top: .5rem; }
 .diag-table th, .diag-table td { border: 1px solid rgba(0,0,0,.12); padding: .35rem .5rem; text-align: left; }
 .diag-table th { background: rgba(0,0,0,.04); }
+
+/* Section separator rows inside tables (e.g. "Schaltgleise S11..S16") */
+.diag-section td{
+  background: rgba(0,0,0,.04);
+  border-top: 2px solid rgba(0,0,0,.25);
+  font-weight: 600;
+}
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
 .small { font-size: .9rem; }
 

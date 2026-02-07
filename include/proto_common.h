@@ -173,8 +173,10 @@ struct __attribute__((packed)) Mega2DiagSensorsPayload
 {
     uint8_t  seq;
     uint16_t kontaktLevelMask; // 14 Bits used
-    uint16_t kontaktRiseMask;  // sticky bits since last read
-    uint16_t kontaktFallMask;  // sticky bits since last read
+    // 4-bit counters packed: low nibble = even index, high nibble = odd index.
+    // Arrays have length 7 -> 14 Kontakte.
+    uint8_t  kontaktRise4[(M2_DIAG_NUM_KONTAKTE + 1) / 2]; // cumulative (wrap 0..15)
+    uint8_t  kontaktFall4[(M2_DIAG_NUM_KONTAKTE + 1) / 2]; // cumulative (wrap 0..15)
     uint8_t  schaltLevelMask;  // bit0=S11..bit5=S16
     uint8_t  schaltRise[M2_DIAG_NUM_SCHALT];
     uint8_t  schaltFall[M2_DIAG_NUM_SCHALT];
@@ -190,5 +192,6 @@ enum Mega2Command : uint8_t {
     CMD_GET_M2_ANALOG = 0x25,
     CMD_GET_M2_PENDING_MASK = 0x26,
     CMD_GET_M2_TURNOUTS     = 0x27,
+    CMD_GET_M2_DIAG_SENSORS = 0x28,
 };
 
