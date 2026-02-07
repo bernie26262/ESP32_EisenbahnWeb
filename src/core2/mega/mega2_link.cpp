@@ -385,111 +385,136 @@ void update()
     }
 
     // 3) DRDY-driven: PendingMask lesen + pro Tick max. 1 Payload holen
-    const bool drdyLevelLow = (digitalRead(PIN_DATAREADY_2) == LOW);
-    const bool drdyActive = drdyLevelLow || s_drdyLatched;
+const bool drdyLevelLow = (digitalRead(PIN_DATAREADY_2) == LOW);
+const bool drdyActive   = drdyLevelLow || s_drdyLatched;
 
-    if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
+if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
+{
+    s_lastDrdyPollMs = now;
+
+    Mega2PendingMaskPayload pm{};
+    if (Mega2Client::pollPendingMask(pm) == I2CBus::Result::OK)
     {
-        s_lastDrdyPollMs = now;
+        s_m2PendMask      = pm.mask;
+        s_lastPendMaskMs  = now;
 
-        Mega2PendingMaskPayload pm{};
-        if (Mega2Client::pollPendingMask(pm) == I2CBus::Result::OK)
+        DBG_PRINTF("[M2LINK][DRDY] irq=%u pin=%u mask=0x%04X seq=%u\n",
+                   (unsigned)s_drdyIrqCount,
+                   (unsigned)(drdyLevelLow ? 0 : 1),
+                   (unsigned)s_m2PendMask,
+                   (unsigned)pm.seq);
+
+        // Wenn Pin wieder HIGH ist, ist der DRDY-Burst vorbei -> Latch darf nicht "kleben".
+        // mask==0 bleibt der klassische Fall; aber auch mask!=0 kann auftreten (z.B. wenn wir Bits bewusst nicht lesen).
+        if (!drdyLevelLow && s_m2PendMask == 0)
         {
-            s_m2PendMask = pm.mask;
-            s_lastPendMaskMs = now;
+            s_drdyLatched = false;
+            return;
+        }
 
-            DBG_PRINTF("[M2LINK][DRDY] irq=%u pin=%u mask=0x%04X seq=%u\n",
-                       (unsigned)s_drdyIrqCount,
-                       (unsigned)(drdyLevelLow ? 0 : 1),
-                       (unsigned)s_m2PendMask,
-                       (unsigned)pm.seq);
+        // pro Tick maximal EIN payload read – fair via Round-Robin
+        bool ok = true;
 
-            // Wenn mask=0 und Pin wieder HIGH -> latch löschen
-            if (s_m2PendMask == 0 && !drdyLevelLow)
+        const uint16_t rrBits[] = {
+            M2_PEND_SAFETY,
+            M2_PEND_ENTRY,
+            M2_PEND_ENTRY_PREV,
+            M2_PEND_BLOCKS,
+            M2_PEND_TURNOUTS,
+            M2_PEND_SHADOW,
+            // diag-only sensors only when diag WS is active
+            M2_PEND_DIAG_SENSORS,
+        };
+        constexpr uint8_t RR_N = sizeof(rrBits) / sizeof(rrBits[0]);
+
+        const bool diagOn = webserverHasDiagSubscribers();
+
+        uint8_t chosen = 0xFF;
+        for (uint8_t k = 0; k < RR_N; k++)
+        {
+            const uint8_t idx = (uint8_t)((s_drdyRr + k) % RR_N);
+            if (!diagOn && rrBits[idx] == M2_PEND_DIAG_SENSORS) continue;
+            if (s_m2PendMask & rrBits[idx]) { chosen = idx; break; }
+        }
+
+        // Wenn wir nichts lesen (z.B. nur DIAG pending aber kein diag subscriber),
+        // dann darf das NICHT zu einer Dauer-DRDY-Schleife führen.
+        if (chosen == 0xFF)
+        {
+            if (!drdyLevelLow)
             {
+                // Pin HIGH -> Burst vorbei, Latch löschen
                 s_drdyLatched = false;
-                return;
             }
+            return;
+        }
 
-            // pro Tick maximal EIN größeres Read (Burst vermeiden) – fair via Round-Robin
-            bool ok = true;
+        s_drdyRr = (uint8_t)((chosen + 1) % RR_N);
 
-            // Order matters (UI first), but RR prevents starvation if one bit is "chatty".
-            const uint16_t rrBits[] = {
-                M2_PEND_SAFETY,
-                M2_PEND_ENTRY,
-                M2_PEND_ENTRY_PREV,
-                M2_PEND_BLOCKS,
-                M2_PEND_TURNOUTS,
-                M2_PEND_SHADOW,
-                // diag-only sensors only when diag WS is active
-                // (avoid bus noise / reads when nobody watches)
-                // NOTE: bit is NOT part of ALL_DIGITAL.
-                M2_PEND_DIAG_SENSORS,
-            };
-            constexpr uint8_t RR_N = sizeof(rrBits) / sizeof(rrBits[0]);
+        switch (rrBits[chosen])
+        {
+            case M2_PEND_SAFETY:
+                ok = (Mega2Client::pollSafetyStatus() == I2CBus::Result::OK);
+                if (ok) (void)Mega2Client::pollStatus();
+                break;
 
-            uint8_t chosen = 0xFF;
-            const bool diagOn = webserverHasDiagSubscribers();
+            case M2_PEND_ENTRY:
+                ok = (Mega2Client::pollEntryMatrix() == I2CBus::Result::OK);
+                break;
 
-            for (uint8_t k = 0; k < RR_N; k++)
+            case M2_PEND_ENTRY_PREV:
+                ok = (Mega2Client::pollEntryPreviewMatrix() == I2CBus::Result::OK);
+                break;
+
+            case M2_PEND_BLOCKS:
+                ok = (Mega2Client::pollBlocksStatus() == I2CBus::Result::OK);
+                if (ok) (void)Mega2Client::pollStatus();
+                break;
+
+            case M2_PEND_SHADOW:
+                ok = (Mega2Client::pollShadowStatus() == I2CBus::Result::OK);
+                break;
+
+            case M2_PEND_TURNOUTS:
+                ok = (Mega2Client::pollTurnoutsStatus() == I2CBus::Result::OK);
+                break;
+
+            case M2_PEND_DIAG_SENSORS:
             {
-                const uint8_t idx = (uint8_t)((s_drdyRr + k) % RR_N);
-                if (!diagOn && rrBits[idx] == M2_PEND_DIAG_SENSORS) continue;
-                if (s_m2PendMask & rrBits[idx]) { chosen = idx; break; }
+                Mega2DiagSensorsPayload p{};
+                ok = (Mega2Client::pollDiagSensors(p) == I2CBus::Result::OK);
+                if (ok) SystemRuntimeState::updateMega2DiagSensors(p);
+                break;
             }
 
-            if (chosen != 0xFF)
-           {
-                s_drdyRr = (uint8_t)((chosen + 1) % RR_N);
-                switch (rrBits[chosen])
-                {
-                    case M2_PEND_SAFETY:
-                        ok = (Mega2Client::pollSafetyStatus() == I2CBus::Result::OK);
-                        // UI "ACK nötig"/Warnings hängen bei uns an SystemStatus flags/warningMask.
-                        // Daher bei Safety-Änderung zusätzlich Status ziehen, damit das Overlay sofort verschwindet.
-                        if (ok) (void)Mega2Client::pollStatus();
-                        break;
-                    case M2_PEND_ENTRY:       ok = (Mega2Client::pollEntryMatrix() == I2CBus::Result::OK); break;
-                    case M2_PEND_ENTRY_PREV:  ok = (Mega2Client::pollEntryPreviewMatrix() == I2CBus::Result::OK); break;
-                    case M2_PEND_BLOCKS:
-                        ok = (Mega2Client::pollBlocksStatus() == I2CBus::Result::OK);
-                        // Belegung (blockOccupiedMask) sitzt im SystemStatus.
-                        // Damit Blocks instant werden (auch wenn UI noch legacy-Feld nutzt),
-                        // ziehen wir bei Blocks-Änderung einmal Status nach.
-                        if (ok) (void)Mega2Client::pollStatus();
-                        break;
-                    case M2_PEND_SHADOW:      ok = (Mega2Client::pollShadowStatus() == I2CBus::Result::OK); break;
-                    case M2_PEND_TURNOUTS:    ok = (Mega2Client::pollTurnoutsStatus() == I2CBus::Result::OK); break;
-                    case M2_PEND_DIAG_SENSORS:
-                    {
-                        Mega2DiagSensorsPayload p{};
-                        ok = (Mega2Client::pollDiagSensors(p) == I2CBus::Result::OK);
-                        if (ok) SystemRuntimeState::updateMega2DiagSensors(p);
-                        break;
-                    }
-                    default: break;
-                }
-            }
+            default:
+                break;
+        }
 
-            if (ok)
-            {
-                // Erfolg -> online, und latch ggf. später löschen wenn Pin HIGH & mask leer
-                const bool wasOnline = s_mega2Online;
-                s_mega2Online  = true;
-                s_lastOkMsLink = now;
-                if (!wasOnline) DBG_PRINTLN("[M2LINK] online=1");
-            }
-            else
-            {
-                DBG_PRINTLN("[M2LINK][DRDY] payload read FAILED");
-            }
+        if (ok)
+        {
+            const bool wasOnline = s_mega2Online;
+            s_mega2Online  = true;
+            s_lastOkMsLink = now;
+            if (!wasOnline) DBG_PRINTLN("[M2LINK] online=1");
         }
         else
         {
-            DBG_PRINTLN("[M2LINK][DRDY] pendingMask read FAILED");
+            DBG_PRINTLN("[M2LINK][DRDY] payload read FAILED");
+        }
+
+        // Wichtig: Wenn Pin HIGH ist, ist der Burst vorbei -> Latch löschen,
+        // sonst bleibt der Code künstlich im DRDY-Pfad hängen.
+        if (!drdyLevelLow)
+        {
+            s_drdyLatched = false;
         }
     }
+    else
+    {
+        DBG_PRINTLN("[M2LINK][DRDY] pendingMask read FAILED");
+    }
+}
     // --------------------------------------------------------
     // Diag keepalive/prime:
     // Wenn diag WS offen ist, lesen wir diagSensors periodisch,

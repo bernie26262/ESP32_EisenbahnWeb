@@ -357,97 +357,113 @@ void Mega1Link::update()
     // This avoids the "needs next click" symptom when the main loop is busy.
     // --------------------------------------------------
 
-    bool didI2cRead = false;
+bool didI2cRead = false;
 
-    const bool drdyLevelLow = (digitalRead(PIN_DATAREADY_1) == LOW);
-    const bool drdyActive   = drdyLevelLow || s_drdyLatched;
-    const bool wasLatched   = s_drdyLatched;
+const bool drdyLevelLow = (digitalRead(PIN_DATAREADY_1) == LOW);
+const bool drdyActive   = drdyLevelLow || s_drdyLatched;
+const bool wasLatched   = s_drdyLatched;
 
-    if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
+if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
+{
+    s_lastDrdyPollMs = now;
+
+    uint16_t pm = 0;
+    const auto pr = Mega1Client::pollPendingMask(pm);
+    didI2cRead = true; // we did at least one I2C transaction in this tick
+
+    if (pr == I2CBus::Result::OK)
     {
-        s_lastDrdyPollMs = now;
-        s_drdyLatched    = false;
+        // Log inkl. Mask (sonst sieht man im DRDY-Log nicht, *was* ansteht)
+        DBG_PRINTF("[M1LINK][DRDY] irq=%lu pin=%u latched=%u mask=0x%04X\n",
+                   (unsigned long)s_drdyIrqCount,
+                   drdyLevelLow ? 0u : 1u,
+                   wasLatched ? 1u : 0u,
+                   (unsigned)pm);
 
-        uint16_t pm = 0;
-        const auto pr = Mega1Client::pollPendingMask(pm);
-        didI2cRead = true; // we did at least one I2C transaction in this tick
-
-        if (pr == I2CBus::Result::OK)
+        if (pm)
         {
-            // Log inkl. Mask (sonst sieht man im DRDY-Log nicht, *was* ansteht)
-            DBG_PRINTF("[M1LINK][DRDY] irq=%lu pin=%u latched=%u mask=0x%04X\n",
-                       (unsigned long)s_drdyIrqCount,
-                       drdyLevelLow ? 0u : 1u,
-                       wasLatched ? 1u : 0u,
-                        (unsigned)pm);
+            DBG_PRINTF("[M1LINK] pending=0x%04X\n", (unsigned)pm);
+        }
 
-            if (pm)
+        s_cachedPendingMask = pm;
+        s_havePendingMask   = true;
+        s_lastPendReadMs    = now;
+
+        // Heartbeat: pending-mask OK means Mega1 is alive (update online timeout)
+        SystemRuntimeState::noteMega1LinkActivity();
+
+        // === WICHTIG: Burst-Ende sauber erkennen ===
+        // pin HIGH + mask==0 => nichts pending und DRDY ist vorbei -> latch MUSS weg.
+        if (!drdyLevelLow && s_cachedPendingMask == 0)
+        {
+            s_drdyLatched = false;
+            s_nextFastMs  = 0;
+            return;
+        }
+
+        // Wenn wir hier sind, ist entweder pin LOW oder mask!=0 (oder beides):
+        // Latch aktiv halten, damit wir den Burst nicht verlieren.
+        s_drdyLatched = true;
+
+        if (s_cachedPendingMask != 0)
+        {
+            // One RR payload read per DRDY tick
+            I2CBus::Result rr = I2CBus::Result::ERROR;
+
+            const bool hasStatus = (s_cachedPendingMask & Mega1Client::M1_PEND_STATUS) != 0;
+            const bool hasDiag   = (s_cachedPendingMask & Mega1Client::M1_PEND_DIAG)   != 0;
+
+            if ((s_rrPreferStatus && hasStatus) || (!hasDiag && hasStatus))
             {
-                DBG_PRINTF("[M1LINK] pending=0x%04X\n", (unsigned)pm);
+                DBG_PRINTLN("[M1LINK] read STATUS...");
+                rr = Mega1Client::pollStatus();
+                if (rr == I2CBus::Result::OK) DBG_PRINTLN("[M1LINK] read STATUS ok");
+                if (rr == I2CBus::Result::OK) s_cachedPendingMask &= ~Mega1Client::M1_PEND_STATUS;
+            }
+            else if (hasDiag)
+            {
+                DBG_PRINTLN("[M1LINK] read DIAG...");
+                rr = Mega1Client::pollDiag();
+                if (rr == I2CBus::Result::OK) DBG_PRINTLN("[M1LINK] read DIAG ok");
+                if (rr == I2CBus::Result::OK) s_cachedPendingMask &= ~Mega1Client::M1_PEND_DIAG;
             }
 
-            s_cachedPendingMask = pm;
-            s_havePendingMask   = true;
-            s_lastPendReadMs    = now;
+            s_rrPreferStatus = !s_rrPreferStatus;
 
-            // Heartbeat: pending-mask OK means Mega1 is alive (update online timeout)
-            SystemRuntimeState::noteMega1LinkActivity();
-
-            // If mask==0 and pin is HIGH again -> nothing to do.
-            if (s_cachedPendingMask == 0 && !drdyLevelLow)
+            if (rr == I2CBus::Result::OK)
             {
-                s_nextFastMs = 0;
+                s_pollFailCount  = 0;
+                s_pollIntervalMs = POLL_STATUS_MS;
+                s_nextFastMs     = 0;
+                s_nextPollMs     = now + POLL_STATUS_MS;
+
+                // Immediate WS push after RR (changed data actually read)
+                g_stateDirty     = true;
             }
-            else if (s_cachedPendingMask != 0)
-            {   
-                // One RR payload read per DRDY tick
-                I2CBus::Result rr = I2CBus::Result::ERROR;
-
-                const bool hasStatus = (s_cachedPendingMask & Mega1Client::M1_PEND_STATUS) != 0;
-                const bool hasDiag   = (s_cachedPendingMask & Mega1Client::M1_PEND_DIAG)   != 0;
-
-                if ((s_rrPreferStatus && hasStatus) || (!hasDiag && hasStatus))
-                {
-                    DBG_PRINTLN("[M1LINK] read STATUS...");
-                    rr = Mega1Client::pollStatus();
-                    if (rr == I2CBus::Result::OK) DBG_PRINTLN("[M1LINK] read STATUS ok");
-                    if (rr == I2CBus::Result::OK) s_cachedPendingMask &= ~Mega1Client::M1_PEND_STATUS;
-                }
-                else if (hasDiag)
-                {
-                    DBG_PRINTLN("[M1LINK] read DIAG...");
-                    rr = Mega1Client::pollDiag();
-                    if (rr == I2CBus::Result::OK) DBG_PRINTLN("[M1LINK] read DIAG ok");
-                    if (rr == I2CBus::Result::OK) s_cachedPendingMask &= ~Mega1Client::M1_PEND_DIAG;
-                }
-
-                s_rrPreferStatus = !s_rrPreferStatus;
-
-                if (rr == I2CBus::Result::OK)
-                {
-                    s_pollFailCount  = 0;
-                    s_pollIntervalMs = POLL_STATUS_MS;
-                    s_nextFastMs     = 0;
-                    s_nextPollMs     = now + POLL_STATUS_MS;
-                    g_stateDirty     = true; // immediate WS push after RR
-                }
-                else if (rr == I2CBus::Result::BUSY)
-                {
-                    // retry soon (but don't block full poll)
-                    s_nextFastMs = now + BUSY_RETRY_MS;
-                    s_nextPollMs = now + POLL_STATUS_MS;
-                }
-                else
-                {
-                    // Payload reject/ERROR: drop cached mask so we re-sync on next DRDY tick
-                    // (matches Mega2 behavior: always refresh pendingMask before next payload read)
-                    s_havePendingMask   = false;
-                    s_cachedPendingMask = 0;
-                    s_nextFastMs        = now + BUSY_RETRY_MS;
-                }
+            else if (rr == I2CBus::Result::BUSY)
+            {
+                // retry soon (but don't block full poll)
+                s_nextFastMs = now + BUSY_RETRY_MS;
+                s_nextPollMs = now + POLL_STATUS_MS;
+            }
+            else
+            {
+                // Payload reject/ERROR: drop cached mask so we re-sync on next DRDY tick
+                s_havePendingMask   = false;
+                s_cachedPendingMask = 0;
+                s_nextFastMs        = now + BUSY_RETRY_MS;
             }
         }
+
+        // Wenn Pin wieder HIGH ist, ist der DRDY-Impulse vorbei -> latch weg.
+        // (Auch wenn pm!=0 war: wir haben entweder gelesen oder bewusst nicht gelesen,
+        // aber wir dürfen NICHT in einer künstlichen DRDY-Schleife hängen bleiben.)
+        if (!drdyLevelLow)
+        {
+            s_drdyLatched = false;
+        }
     }
+}
 
     // --------------------------------------------------
     // Idle pendingMask poll (Heartbeat baseline)

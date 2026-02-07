@@ -67,24 +67,28 @@ function scheduleDiagRender(){
   if (_diagRenderPending) return;
   _diagRenderPending = true;
   setTimeout(() => {
-    _diagRenderPending = false;
-    const m = _latestDiagMsg;
-    _latestDiagMsg = null;
-    if (!m) return;
+  _diagRenderPending = false;
+  const m = _latestDiagMsg;
+  _latestDiagMsg = null;
+  if (!m) return;
 
-    // Digital sensor tables (heavy DOM)
-    try { initM2PrevFromFirstPacket(m); } catch(e){ console.error("[diag] initM2PrevFromFirstPacket failed", e); }
-    try { renderM2Sensors(m); } catch(e){ console.error("[diag] renderM2Sensors failed", e); }
-    try { renderM1Sensors(m); } catch(e){ console.error("[diag] renderM1Sensors failed", e); }
+  const t0 = performance.now();
 
-    // Quick visibility in console (helps catch path/ID issues)
-    try {
-      const a1 = m?.mega1?.sensors ?? m?.mega1?.diag?.sensors;
-      if (Array.isArray(a1)) console.log("[diag] m1 sensors:", a1.length);
-      const tb1 = qs("diag-m1-sensors");
-      if (!tb1) console.warn("[diag] missing tbody #diag-m1-sensors");
-    } catch(_) {}
-  }, DIAG_RENDER_INTERVAL_MS);
+  try { initM2PrevFromFirstPacket(m); } catch(e){ console.error("[diag] initM2PrevFromFirstPacket failed", e); }
+  const t1 = performance.now();
+
+  try { renderM2Sensors(m); } catch(e){ console.error("[diag] renderM2Sensors failed", e); }
+  const t2 = performance.now();
+
+  try { renderM1Sensors(m); } catch(e){ console.error("[diag] renderM1Sensors failed", e); }
+  const t3 = performance.now();
+
+  console.log("[DIAG-RENDER]",
+              "total", (t3 - t0).toFixed(1)+"ms",
+              "init",  (t1 - t0).toFixed(1)+"ms",
+              "m2",    (t2 - t1).toFixed(1)+"ms",
+              "m1",    (t3 - t2).toFixed(1)+"ms");
+}, DIAG_RENDER_INTERVAL_MS);
 }
 
 
@@ -707,133 +711,166 @@ function connect(){
   };
 
   ws.onmessage = (ev) => {
-    let msg = null;
-    try { msg = JSON.parse(ev.data); } catch(e) { return; }
+  console.log("[WSRX]", Date.now(), ev.data.length);
+  const t0 = performance.now();
 
-    wsLog(msg?.type || "msg", msg);
+  let msg = null;
+  try { msg = JSON.parse(ev.data); } catch(e) { return; }
+  const tParse = performance.now();
 
-    // Dump last diag frame for quick debugging
-    if (msg.type === "diag"){
-        // Drop out-of-order/duplicate diag frames by ts (monotonic on ESP)
-       if (typeof msg.ts === "number"){
-         if (msg.ts <= _lastDiagTs) return;
-         _lastDiagTs = msg.ts;
-       }
- 
-      lastDiagMsg = msg;
-      
-       // Pretty JSON dump is expensive -> throttle + (default) trim payload
-       const now = Date.now();
-       if (now - _lastPreDumpMs > DIAG_JSON_DUMP_MS){
-         _lastPreDumpMs = now;
-         const pre = qs("diag-json");
-         if (pre){
-           if (DIAG_JSON_FULL){
-             pre.textContent = JSON.stringify(msg, null, 2);
-           } else {
-             const d1 = msg?.mega1?.diag;
-             pre.textContent = JSON.stringify({
-               type: msg.type,
-               ts: msg.ts,
-               wsClients: msg.wsClients,
-               diagCtrl: msg.diagCtrl,
-               mega1: d1 ? {
-                 sensorActiveMask: d1.sensorActiveMask,
-                 sensorRiseMask: d1.sensorRiseMask,
-                 sensorFallMask: d1.sensorFallMask,
-                 sensors: d1.sensors
-               } : undefined,
-              mega2: {
-                 analog: msg?.mega2?.analog,
-                 diagSensors: msg?.mega2?.diagSensors
-               }
-             }, null, 2);
-           }
-         }
-       }
+  wsLog(msg?.type || "msg", msg);
 
-
-      // Analog meta (Mega2)
-      const an = msg?.mega2?.analog;
-      if (an){
-        setKpi(an.ageMs, an.hz, an.seq);
-
-        // Preferred: table rows
-        if (!renderAnalogRows(an)){
-          // Fallback to old ids (if someone has an older diag.htm)
-          const vA10 = qs("an-vA10");
-          const vB10 = qs("an-vB10");
-          const imA  = qs("an-imA");
-          if (vA10 && typeof an.vA10 === "number") vA10.textContent = fmtV10(an.vA10);
-          if (vB10 && typeof an.vB10 === "number") vB10.textContent = fmtV10(an.vB10);
-          if (imA && Array.isArray(an.i_mA)) imA.textContent = an.i_mA.join(", ");
-        }
-      }
-
-      // Digital sensor tables (heavy DOM) -> throttle and render only latest
-       _latestDiagMsg = msg;
-       scheduleDiagRender();
-      return;
+  // Dump last diag frame for quick debugging
+  if (msg.type === "diag"){
+    // Drop out-of-order/duplicate diag frames by ts (monotonic on ESP)
+    if (typeof msg.ts === "number"){
+      if (msg.ts <= _lastDiagTs) return;
+      _lastDiagTs = msg.ts;
     }
 
-    if (msg.type === "state"){
-      renderBlocksFromState(msg);
-      return;
-    }
+    lastDiagMsg = msg;
 
-    if (msg.type === "analog"){
-      // Small periodic analog payload (base stream)
-      const an = msg?.mega2?.analog;
-      if (an){
-        if (!renderAnalogRows(an)){
-          const vA10 = qs("an-vA10");
-          const vB10 = qs("an-vB10");
-          const imA  = qs("an-imA");
-          if (vA10) vA10.textContent = fmtV10(an.vA10);
-          if (vB10) vB10.textContent = fmtV10(an.vB10);
-          if (imA && Array.isArray(an.i_mA)) imA.textContent = an.i_mA.join(", ");
-        }
-      }
-      return;
-    }
-
-    // Lease state snapshot that the server mirrors into both state and diag
-    if (msg.diagCtrl){
-      if (msg.diagCtrl.active){
-        if (msg.diagCtrl.ownerId && msg.diagCtrl.ownerId !== 0){
-          setDiagStatus(`Diagnose aktiv (Owner ${msg.diagCtrl.ownerId})`);
+    // Pretty JSON dump is expensive -> throttle + (default) trim payload
+    const now = Date.now();
+    if (now - _lastPreDumpMs > DIAG_JSON_DUMP_MS){
+      _lastPreDumpMs = now;
+      const pre = qs("diag-json");
+      if (pre){
+        if (DIAG_JSON_FULL){
+          pre.textContent = JSON.stringify(msg, null, 2);
         } else {
-          setDiagStatus("Diagnose aktiv");
+          const d1 = msg?.mega1?.diag;
+          pre.textContent = JSON.stringify({
+            type: msg.type,
+            ts: msg.ts,
+            wsClients: msg.wsClients,
+            diagCtrl: msg.diagCtrl,
+            mega1: d1 ? {
+              sensorActiveMask: d1.sensorActiveMask,
+              sensorRiseMask: d1.sensorRiseMask,
+              sensorFallMask: d1.sensorFallMask,
+              sensors: d1.sensors
+            } : undefined,
+            mega2: {
+              analog: msg?.mega2?.analog,
+              diagSensors: msg?.mega2?.diagSensors
+            }
+          }, null, 2);
         }
-      } else {
-        token = null;
-        stopHeartbeat();
-        qs("diag-exit").disabled = true;
-        qs("diag-enter").disabled = false;
-        setDiagStatus("Diagnose inaktiv");
       }
-      return;
     }
 
-    if (msg.type === "diagControl"){
-      if (msg.isOwner && msg.token){
-        token = msg.token;
-        qs("diag-enter").disabled = true;
-        qs("diag-exit").disabled = false;
-        setWarnStatus("");
-        setDiagStatus(`Diagnose aktiv (Owner ${msg.ownerId})`);
-        startHeartbeat();
-      } else {
-        setDiagStatus(`Diagnose belegt (Owner ${msg.ownerId})`);
+    // Analog meta (Mega2)
+    const an = msg?.mega2?.analog;
+    if (an){
+      setKpi(an.ageMs, an.hz, an.seq);
+
+      // Preferred: table rows
+      if (!renderAnalogRows(an)){
+        // Fallback to old ids (if someone has an older diag.htm)
+        const vA10 = qs("an-vA10");
+        const vB10 = qs("an-vB10");
+        const imA  = qs("an-imA");
+        if (vA10 && typeof an.vA10 === "number") vA10.textContent = fmtV10(an.vA10);
+        if (vB10 && typeof an.vB10 === "number") vB10.textContent = fmtV10(an.vB10);
+        if (imA && Array.isArray(an.i_mA)) imA.textContent = an.i_mA.join(", ");
       }
-      return;
     }
 
-    if (msg.type === "error" && msg.code === "DIAG_ACTIVE"){
-      setWarnStatus("DIAG_ACTIVE: Schreibzugriff gesperrt (du bist nicht Owner)");
-      return;
+    // Digital sensor tables (heavy DOM) -> throttle and render only latest
+    _latestDiagMsg = msg;
+    scheduleDiagRender();
+
+    const tEnd = performance.now();
+    console.log("[WSRX-T]", "len", ev.data.length,
+                "parse", (tParse - t0).toFixed(2) + "ms",
+                "total", (tEnd - t0).toFixed(2) + "ms");
+    return;
+  }
+
+  if (msg.type === "state"){
+    renderBlocksFromState(msg);
+    const tEnd = performance.now();
+    console.log("[WSRX-T]", "len", ev.data.length,
+                "parse", (tParse - t0).toFixed(2) + "ms",
+                "total", (tEnd - t0).toFixed(2) + "ms");
+    return;
+  }
+
+  if (msg.type === "analog"){
+    // Small periodic analog payload (base stream)
+    const an = msg?.mega2?.analog;
+    if (an){
+      if (!renderAnalogRows(an)){
+        const vA10 = qs("an-vA10");
+        const vB10 = qs("an-vB10");
+        const imA  = qs("an-imA");
+        if (vA10) vA10.textContent = fmtV10(an.vA10);
+        if (vB10) vB10.textContent = fmtV10(an.vB10);
+        if (imA && Array.isArray(an.i_mA)) imA.textContent = an.i_mA.join(", ");
+      }
     }
-  };
+    const tEnd = performance.now();
+    console.log("[WSRX-T]", "len", ev.data.length,
+                "parse", (tParse - t0).toFixed(2) + "ms",
+                "total", (tEnd - t0).toFixed(2) + "ms");
+    return;
+  }
+
+  // Lease state snapshot that the server mirrors into both state and diag
+  if (msg.diagCtrl){
+    if (msg.diagCtrl.active){
+      if (msg.diagCtrl.ownerId && msg.diagCtrl.ownerId !== 0){
+        setDiagStatus(`Diagnose aktiv (Owner ${msg.diagCtrl.ownerId})`);
+      } else {
+        setDiagStatus("Diagnose aktiv");
+      }
+    } else {
+      token = null;
+      stopHeartbeat();
+      qs("diag-exit").disabled = true;
+      qs("diag-enter").disabled = false;
+      setDiagStatus("Diagnose inaktiv");
+    }
+    const tEnd = performance.now();
+    console.log("[WSRX-T]", "len", ev.data.length,
+                "parse", (tParse - t0).toFixed(2) + "ms",
+                "total", (tEnd - t0).toFixed(2) + "ms");
+    return;
+  }
+
+  if (msg.type === "diagControl"){
+    if (msg.isOwner && msg.token){
+      token = msg.token;
+      qs("diag-enter").disabled = true;
+      qs("diag-exit").disabled = false;
+      setWarnStatus("");
+      setDiagStatus(`Diagnose aktiv (Owner ${msg.ownerId})`);
+      startHeartbeat();
+    } else {
+      setDiagStatus(`Diagnose belegt (Owner ${msg.ownerId})`);
+    }
+    const tEnd = performance.now();
+    console.log("[WSRX-T]", "len", ev.data.length,
+                "parse", (tParse - t0).toFixed(2) + "ms",
+                "total", (tEnd - t0).toFixed(2) + "ms");
+    return;
+  }
+
+  if (msg.type === "error" && msg.code === "DIAG_ACTIVE"){
+    setWarnStatus("DIAG_ACTIVE: Schreibzugriff gesperrt (du bist nicht Owner)");
+    const tEnd = performance.now();
+    console.log("[WSRX-T]", "len", ev.data.length,
+                "parse", (tParse - t0).toFixed(2) + "ms",
+                "total", (tEnd - t0).toFixed(2) + "ms");
+    return;
+  }
+
+  const tEnd = performance.now();
+  console.log("[WSRX-T]", "len", ev.data.length,
+              "parse", (tParse - t0).toFixed(2) + "ms",
+              "total", (tEnd - t0).toFixed(2) + "ms");
+};
 }
 
 window.addEventListener("load", () => {

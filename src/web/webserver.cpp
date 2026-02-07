@@ -49,6 +49,14 @@ static void dbgHeap(const char* tag)
 static AsyncWebServer server(80);
 static AsyncWebSocket ws("/ws");
 
+// IMPORTANT: Diese Symbole werden (derzeit) auch aus anderen Modulen referenziert.
+volatile bool g_stateDirty = true;
+
+// Diag hat eine eigene Dirty-Quelle: diag-only Clients sollen NICHT an stateDirty gekoppelt sein.
+volatile bool g_diagDirty  = true;
+
+static bool s_loggedSkipBeforeFull = false;
+
 // ---------------------------------------------------------
 // WS Client Subscriptions + Diag-Control Lease (exclusive writer)
 // ---------------------------------------------------------
@@ -140,6 +148,7 @@ static void diagRevertToNormal(const char* reason) {
     s_diag = DiagLease{};
     // Trigger a fresh state push so all UIs see diagActive=false immediately.
     g_stateDirty = true;
+    g_diagDirty  = true;
 }
 
 static void diagLeaseTick() {
@@ -166,8 +175,7 @@ static void wsTextToDiag(const String& payload) {
 }
 
 
-// IMPORTANT: Dieses Symbol wird (derzeit) auch aus anderen Modulen referenziert.
-volatile bool g_stateDirty = true;
+
 
 // ---------------------------------------------------------
 // WebSocket State JSON
@@ -181,7 +189,12 @@ static String buildWsStateJson(bool includeAnalog)
 
     doc["type"] = "state";
     doc["full"] = includeAnalog;
-    doc["ts"]   = (uint32_t)millis();
+
+    // 'ts' ist volatil: im Delta würde das immer "Änderung" simulieren.
+    // Daher nur im Full pushen.
+    if (includeAnalog) {
+        doc["ts"] = (uint32_t)millis();
+    }
 
     doc["eth"]["connected"] = Net::EthManager::isConnected();
     doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
@@ -225,12 +238,15 @@ static String buildWsStateJson(bool includeAnalog)
     startup["ready"] = (m1Ok && m2Ok);
 
     // Optional Debug: BootId/Uptime sichtbar machen (sehr hilfreich fürs Verifizieren)
-    const auto& m1dbg = SystemRuntimeState::mega1Status();
-    const auto& m2dbg = SystemRuntimeState::mega2Status();
-    startup["m1BootId"]   = (unsigned)m1dbg.bootId;
-    startup["m2BootId"]   = (unsigned)m2dbg.bootId;
-    startup["m1UptimeMs"] = (uint32_t)m1dbg.uptimeMs;
-    startup["m2UptimeMs"] = (uint32_t)m2dbg.uptimeMs;
+    // ABER: uptimeMs ist volatil -> nur im Full pushen, sonst triggert es Delta-Spam.
+    if (includeAnalog) {
+        const auto& m1dbg = SystemRuntimeState::mega1Status();
+        const auto& m2dbg = SystemRuntimeState::mega2Status();
+        startup["m1BootId"]   = (unsigned)m1dbg.bootId;
+        startup["m2BootId"]   = (unsigned)m2dbg.bootId;
+        startup["m1UptimeMs"] = (uint32_t)m1dbg.uptimeMs;
+        startup["m2UptimeMs"] = (uint32_t)m2dbg.uptimeMs;
+    }
 
     const auto& m1s = SystemRuntimeState::mega1Status();
     JsonObject m1st = doc["mega1"]["status"].to<JsonObject>();
@@ -747,7 +763,7 @@ static void onWsEvent(AsyncWebSocket* server,
                       uint8_t* data,
                       size_t len)
 {
-    if (type == WS_EVT_CONNECT)
+if (type == WS_EVT_CONNECT)
 {
     const uint32_t cid = client ? client->id() : 0;
     Serial.printf("[WS] client connected id=%u\n", (unsigned)cid);
@@ -757,12 +773,12 @@ static void onWsEvent(AsyncWebSocket* server,
     if (client) {
         auto *ci = upsertWsClient(cid);
         ci->lastSeenMs = (uint32_t)millis();
-        // Default: base subscribed, diag not subscribed.
-        ci->subBase = true;
+
+        // IMPORTANT:
+        // Beim CONNECT NICHT sofort große Payloads senden.
+        // Subscription wird explizit durch action:"subscribe" gesetzt.
+        ci->subBase = false;
         ci->subDiag = false;
-        // Initial state/analog snapshot to the new client only (base).
-        client->text(buildWsStateJson(true));
-        client->text(buildWsAnalogJson());
     }
     return;
 }
@@ -806,25 +822,37 @@ if (type != WS_EVT_DATA)
     // action:"subscribe", base:true/false, diag:true/false
     // -------------------------------------------------
     if (!strcmp(action, "subscribe"))
-    {
-        bool subBase = true;
-        bool subDiag = false;
-        if (!cmd["base"].isNull()) subBase = cmd["base"].as<bool>();
-        if (!cmd["diag"].isNull()) subDiag = cmd["diag"].as<bool>();
-        if (client) {
-            auto *ci = upsertWsClient(client->id());
-            ci->subBase = subBase;
-            ci->subDiag = subDiag;
-            ci->lastSeenMs = (uint32_t)millis();
-            Serial.printf("[WS] subscribe id=%u base=%d diag=%d\n", (unsigned)client->id(), subBase?1:0, subDiag?1:0);
-            // Send a fresh base snapshot so the client is immediately consistent.
-            if (subBase) {
-                client->text(buildWsStateJson(true));
-                client->text(buildWsAnalogJson());
-            }
+{
+    bool subBase = true;
+    bool subDiag = false;
+    if (!cmd["base"].isNull()) subBase = cmd["base"].as<bool>();
+    if (!cmd["diag"].isNull()) subDiag = cmd["diag"].as<bool>();
+
+    if (client) {
+        auto *ci = upsertWsClient(client->id());
+
+        const bool oldBase = ci->subBase;
+        const bool oldDiag = ci->subDiag;
+
+        ci->subBase = subBase;
+        ci->subDiag = subDiag;
+        ci->lastSeenMs = (uint32_t)millis();
+
+        Serial.printf("[WS] subscribe id=%u base=%d diag=%d\n",
+                      (unsigned)client->id(), subBase?1:0, subDiag?1:0);
+
+        // Snapshot NUR wenn base gerade aktiviert wurde (false -> true).
+        // So vermeiden wir Doppel-Sends bei reconnect/mehrfach-subscribe.
+        if (subBase && !oldBase) {
+            client->text(buildWsStateJson(true));
+            // Analog NICHT hier sofort senden (siehe unten: wird periodisch gepusht)
+            //client->text(buildWsAnalogJson());
         }
-        return;
+
+        (void)oldDiag; // aktuell nicht genutzt, aber bewusst gelesen
     }
+    return;
+}
 
     // -------------------------------------------------
     // Diag-Control (exclusive writer) : enter/exit/heartbeat
@@ -855,6 +883,7 @@ if (type != WS_EVT_DATA)
             serializeJson(reply, out);
             if (client) client->text(out);
             g_stateDirty = true;
+            g_diagDirty  = true;
         } else {
             reply["active"] = true;
             reply["ownerId"] = s_diag.ownerId;
@@ -1138,56 +1167,137 @@ void Web::loop()
 
 // ---------------------------------------------------------
 // Web::pushStateIfDirty (laut webserver.h)
+// Policy (DoD):
+//  - delta push: nur wenn g_stateDirty == true UND der Delta-Payload sich wirklich geändert hat
+//  - full push: alle 8s (ground truth), unabhängig von dirty
+//  - kein Push im Idle dazwischen
 // ---------------------------------------------------------
 void Web::pushStateIfDirty()
 {
-    // WS policy:
-    // - On-change push, but throttled to avoid bursts that can fragment heap.
-    // - Ground-truth full push every WS_FULL_MS even without changes.
-    //   (Client can recover from missed frames / reconnects.)
     static uint32_t s_lastSendMs = 0;
     static uint32_t s_nextFullMs = 0;
+    static uint32_t s_dirtySinceMs = 0;
+
+    // Dedupe für Delta: wenn dirty permanent gesetzt wird, aber Payload gleich bleibt -> nicht senden.
+    static uint32_t s_lastDeltaHash = 0;
+    static bool     s_hasDeltaHash  = false;
 
     const uint32_t now = (uint32_t)millis();
 
     // No clients => nothing to send (also avoids allocating JSON Strings).
     if (countSubBase() == 0)
     {
-        // Still clear dirty if nothing is connected to prevent "burst" right after connect.
-        // The CONNECT handler sends a full state anyway.
+        // Wenn nur Diag-Clients da sind, trotzdem Diag anstoßen.
+        if (countSubDiag() > 0 && g_stateDirty) {
+            g_diagDirty = true;
+        }
+
+        // Wichtig: Dirty löschen, sonst Burst direkt nach Connect.
         g_stateDirty = false;
         return;
     }
 
-    constexpr uint32_t WS_MIN_SEND_MS = 120;   // throttle on-change frames
-    constexpr uint32_t WS_FULL_MS     = 5000;  // ground-truth interval (start value)
+    constexpr uint32_t WS_MIN_SEND_MS = 30;   // throttle delta bursts
+    constexpr uint32_t WS_FULL_MS     = 8000;  // DoD: ground-truth full push alle 8s
 
     const bool wantFull  = (s_nextFullMs == 0) || ((int32_t)(now - s_nextFullMs) >= 0);
     const bool wantDirty = g_stateDirty;
+    if (wantDirty && s_dirtySinceMs == 0) s_dirtySinceMs = now;
+    if (!wantDirty) s_dirtySinceMs = 0;
 
-    // Nothing to do.
+    // Wenn State dirty ist, soll auch Diag "instant" werden (Diag-Seite rendert Sensor-Tabellen aus diag).
+    if (wantDirty) {
+        g_diagDirty = true;
+    }
+
+    // Idle: weder full noch dirty -> nichts tun.
     if (!wantFull && !wantDirty)
         return;
 
-    // Throttle bursts (but do NOT delay the periodic ground-truth indefinitely).
-    if (!wantFull && (now - s_lastSendMs) < WS_MIN_SEND_MS)
+    // ---------------------------------------------------------
+    // NEU: Full schlägt Delta (verhindert Delta kurz vor fälligem Full)
+    // Wenn Full in Kürze sowieso kommt, sparen wir das Delta komplett.
+    // Dirty bleibt stehen und wird vom Full "abgeräumt".
+    // ---------------------------------------------------------
+    if (!wantFull && wantDirty && s_nextFullMs != 0)
+    {
+        const int32_t msToFull = (int32_t)(s_nextFullMs - now);
+        if (msToFull >= 0 && msToFull <= 12)
+        {
+#if defined(DEBUG_WS_PUSH)
+        if (!s_loggedSkipBeforeFull) {
+            Serial.printf("[WS] skip state delta (full due in %ldms)\n", (long)msToFull);
+            s_loggedSkipBeforeFull = true;
+        }
+#endif
+        return;
+        }
+    }
+
+    // Throttle: nur Delta-Frames drosseln, Full darf nie "weg-gedrosselt" werden.
+    if (!wantFull && (uint32_t)(now - s_lastSendMs) < WS_MIN_SEND_MS)
         return;
 
-    // Full (ground truth) includes analog, on-change does not.
-    // Full (ground truth) includes analog, on-change does not.
-    const bool includeAnalog = wantFull;
+    // FULL: immer senden (ground truth)
+    if (wantFull)
+    {
 #if defined(DEBUG_WS_PUSH)
-    Serial.printf("[WS] push state full=%d dirty=%d clients=%u\n", includeAnalog?1:0, wantDirty?1:0, (unsigned)ws.count());
+        Serial.printf("[WS] push state full=1 dirty=%d clients=%u\n",
+                      wantDirty ? 1 : 0, (unsigned)ws.count());
 #endif
-    const String payload = buildWsStateJson(includeAnalog);
-#if defined(DEBUG_WS_PUSH)
-    Serial.printf("[WS] push state full=%d dirty=%d len=%u\n",
-                  includeAnalog ? 1 : 0, wantDirty ? 1 : 0, (unsigned)payload.length());
-#endif
-    wsTextToBase(payload);
+        const String payload = buildWsStateJson(true);
+        wsTextToBase(payload);
 
-    s_lastSendMs = now;
-    s_nextFullMs = now + WS_FULL_MS;
+        s_lastSendMs = now;
+        s_nextFullMs = now + WS_FULL_MS;
+
+        // Full deckt alles ab -> dirty gilt als abgearbeitet.
+        g_stateDirty = false;
+
+        // Optional: Delta-dedupe Reset (wir wollen nach Full nicht "alte" Delta-Hashes blocken)
+        // s_hasDeltaHash = false;
+
+        // NEU: Skip-Log wieder freigeben für den nächsten Full-Zyklus
+        s_loggedSkipBeforeFull = false;
+
+        return;
+    }
+
+    // DELTA: nur senden, wenn Payload wirklich anders ist als zuletzt gesendetes Delta
+    // (damit g_stateDirty-Spam aus anderen Modulen nicht zu WS-Flood führt)
+    const String delta = buildWsStateJson(false);
+
+    // FNV-1a 32-bit hash (schnell, ausreichend als Dedupe)
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < delta.length(); ++i) {
+        h ^= (uint8_t)delta[i];
+        h *= 16777619u;
+    }
+
+    if (s_hasDeltaHash && h == s_lastDeltaHash)
+    {
+#if defined(DEBUG_WS_PUSH)
+        Serial.printf("[WS] skip state delta (no semantic change) len=%u\n", (unsigned)delta.length());
+#endif
+        // Wichtig: dirty löschen, sonst versucht es sofort wieder.
+        g_stateDirty = false;
+        return;
+    }
+
+#if defined(DEBUG_WS_PUSH)
+    Serial.printf("[WS] push state full=0 dirty=1 clients=%u hash=%08lx len=%u\n",
+              (unsigned)ws.count(), (unsigned long)h, (unsigned)delta.length());
+#endif
+    Serial.printf("[WSLAT] delta latency=%ums len=%u\n",
+              (unsigned)(now - s_dirtySinceMs),
+              (unsigned)delta.length());
+    wsTextToBase(delta);
+
+    s_lastSendMs   = now;
+    s_lastDeltaHash = h;
+    s_hasDeltaHash  = true;
+
+    // Delta abgearbeitet
     g_stateDirty = false;
 }
 
@@ -1216,50 +1326,71 @@ void Web::pushAnalogTick()
 
 // ---------------------------------------------------------
 // Web::pushDiagIfNeeded
-// Policy:
-//  - on-change push (throttled to DIAG_MIN_MS)
-//  - periodic full/ground-truth every DIAG_FULL_MS
-//  - only when there is at least one diag-subscribed client
+// Policy (DoD):
+//  - delta push: nur wenn g_diagDirty == true UND Payload wirklich geändert
+//  - full push: alle 4s
+//  - nur wenn mind. ein Client diag subscribed hat
 // ---------------------------------------------------------
 void Web::pushDiagIfNeeded()
 {
     if (countSubDiag() == 0)
         return;
 
-    static bool     s_diagDirty = true;     // first diag client should get a frame quickly
     static uint32_t s_lastSendMs = 0;
     static uint32_t s_nextFullMs = 0;
-    static bool     s_lastLeaseActive = false;
+
+    // Dedupe für Delta
+    static uint32_t s_lastDeltaHash = 0;
+    static bool     s_hasDeltaHash  = false;
 
     const uint32_t now = (uint32_t)millis();
 
-    // Variant A (start): couple to base dirty (later we can refine -> Variant B via dedicated hooks)
-    if (g_stateDirty)
-        s_diagDirty = true;
-
-    // Also treat lease state changes as "diag change" (so banner/owner/timeout updates show up)
-    if (s_diag.active != s_lastLeaseActive) {
-        s_lastLeaseActive = s_diag.active;
-        s_diagDirty = true;
-    }
-
-    constexpr uint32_t DIAG_MIN_MS  = 250;   // throttle on-change frames
-    constexpr uint32_t DIAG_FULL_MS = 1000;  // periodic ground-truth
+    constexpr uint32_t DIAG_MIN_MS  = 80;   // delta throttle
+    constexpr uint32_t DIAG_FULL_MS = 4000;  // DoD: full alle 4s
 
     const bool wantFull  = (s_nextFullMs == 0) || ((int32_t)(now - s_nextFullMs) >= 0);
-    const bool wantDirty = s_diagDirty;
+    const bool wantDirty = g_diagDirty;
 
     if (!wantFull && !wantDirty)
         return;
 
-    // Throttle bursts; but don't delay periodic full indefinitely.
-    if (!wantFull && (now - s_lastSendMs) < DIAG_MIN_MS)
+    if (!wantFull && (uint32_t)(now - s_lastSendMs) < DIAG_MIN_MS)
         return;
 
-    const String payload = buildWsDiagJson();
-    wsTextToDiag(payload);
+    // FULL: immer senden
+    if (wantFull)
+    {
+        const String payload = buildWsDiagJson();
+        wsTextToDiag(payload);
 
-    s_lastSendMs = now;
-    if (wantFull) s_nextFullMs = now + DIAG_FULL_MS;
-    s_diagDirty = false;
+        s_lastSendMs = now;
+        s_nextFullMs = now + DIAG_FULL_MS;
+
+        g_diagDirty = false;
+        s_hasDeltaHash = false;
+        return;
+    }
+
+    // DELTA: nur senden, wenn wirklich geändert
+    const String delta = buildWsDiagJson();
+
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < delta.length(); ++i) {
+        h ^= (uint8_t)delta[i];
+        h *= 16777619u;
+    }
+
+    if (s_hasDeltaHash && h == s_lastDeltaHash)
+    {
+        g_diagDirty = false;
+        return;
+    }
+
+    wsTextToDiag(delta);
+
+    s_lastSendMs    = now;
+    s_lastDeltaHash = h;
+    s_hasDeltaHash  = true;
+
+    g_diagDirty = false;
 }
