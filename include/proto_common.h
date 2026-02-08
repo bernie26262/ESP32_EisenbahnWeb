@@ -27,9 +27,9 @@ enum : uint8_t
     M2_CMD_GET_ENTRY_MATRIX  = 0x23, // -> uint16_t[9] (AllowedNow: FROM->TO)
     M2_CMD_GET_ENTRY_PREVIEW_MATRIX = 0x24,  // -> uint16_t[9] (Preview: FROM->TO)
     M2_CMD_GET_ANALOG = 0x25,  // -> Mega2AnalogPayload
-    M2_CMD_GET_PENDING_MASK = 0x26 // -> Mega2PendingMaskPayload
-    ,    M2_CMD_GET_TURNOUTS = 0x27 // -> Mega2TurnoutsPayload
-    ,    M2_CMD_GET_DIAG_SENSORS = 0x28 // -> Mega2DiagSensorsPayload (kontakt+schalt, read-only)
+    M2_CMD_GET_PENDING_MASK = 0x26, // -> Mega2PendingMaskPayload
+    M2_CMD_GET_TURNOUTS = 0x27, // -> Mega2TurnoutsPayload
+    M2_CMD_GET_DIAG_SENSORS = 0x28 // -> Mega2DiagSensorsPayload (kontakt+schalt, read-only)
 };
 
 // =====================================================

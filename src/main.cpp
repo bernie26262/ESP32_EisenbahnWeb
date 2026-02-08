@@ -16,6 +16,8 @@
 #include <esp_wifi.h>
 #include <esp_bt.h>
 
+#include "debug.h"
+
 static void disableWirelessHard()
 {
   WiFi.persistent(false);
@@ -41,10 +43,10 @@ void setup()
     delay(200);
 
     // Bestätigung, dass WiFi/BT wirklich hart deaktiviert wurde (vor Netzwerk-Init)
-    Serial.println(F("[HW] WiFi/BT hard-off (disableWirelessHard ran)"));
+    EE_LOGI("HW", "WiFi/BT hard-off (disableWirelessHard ran)");
 
-    Serial.println();
-    Serial.println(F("===== ESP32-S3 Eisenbahn (core2) ====="));
+    
+    EE_LOGI("BOOT", "===== ESP32-S3 Eisenbahn (core2) =====");
 
     Net::EthManager::begin();
     Web::begin();
@@ -57,32 +59,34 @@ void setup()
 
     delay(2);
 
-    Serial.printf("[I2C] SDA=%d SCL=%d (after begin)\n", digitalRead(PIN_I2C_SDA), digitalRead(PIN_I2C_SCL));
-    Serial.println("[I2C] scan...");
+#if EE_DEBUG_I2C
+    LOG_I2C("[I2C] SDA=%d SCL=%d (after begin)",
+            digitalRead(PIN_I2C_SDA), digitalRead(PIN_I2C_SCL));
+    LOG_I2C("[I2C] scan...");
     int found = 0;
     for (uint8_t a = 1; a < 127; a++) {
-    Wire.beginTransmission(a);
-    uint8_t err = Wire.endTransmission();
-    if (err == 0) {
-        Serial.printf("  - addr 0x%02X\n", a);
-        found++;
+        Wire.beginTransmission(a);
+        uint8_t err = Wire.endTransmission();
+        if (err == 0) {
+            LOG_I2C("  - addr 0x%02X", a);
+            found++;
+        }
     }
-    }
-    Serial.printf("[I2C] scan done, found=%d\n", found);
-
+    LOG_I2C("[I2C] scan done, found=%d", found);
+#endif
 
 
     Ui::OledStatus::begin(0x3C); // 0x78 (8-bit) => 0x3C (7-bit)
 
-
-    Serial.printf("[I2C] SDA=%d SCL=%d (before links)\n", digitalRead(PIN_I2C_SDA), digitalRead(PIN_I2C_SCL));
-    
+#if EE_DEBUG_I2C
+    LOG_I2C("[I2C] SDA=%d SCL=%d (before links)", digitalRead(PIN_I2C_SDA), digitalRead(PIN_I2C_SCL));
+#endif
     
     
     Mega2Link::begin();
 
     Mega1Link::begin();
-    Serial.println(F("[ESP] Setup abgeschlossen"));
+    EE_LOGI("BOOT", "Setup abgeschlossen");
 }
 
 // ============================================================================

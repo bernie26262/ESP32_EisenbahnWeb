@@ -1,4 +1,5 @@
 #include "webserver.h"
+#include "debug.h"
 
 #include <ArduinoJson.h>
 #include <stdint.h>
@@ -24,20 +25,20 @@ static void warnJsonOverflowThrottled(const char* tag, const JsonDocument& doc)
     const uint32_t now = (uint32_t)millis();
     if ((uint32_t)(now - s_lastWarnMs) < 5000) return; // max 1x/5s
     s_lastWarnMs = now;
-    Serial.printf("[AJ] WARNING: JsonDocument overflow in %s (memory allocation failed / fields may be dropped)\n", tag);
+    EE_LOGW("AJ", "JsonDocument overflow in %s (allocation failed / fields may be dropped)", tag);
 }
 
 
 // ---------------------------------------------------------
 // Heap debug (helps diagnose [AWS] _ack malloc failed)
-// Enable by defining DEBUG_AWS_HEAP in platformio.ini build_flags.
+// Enable heap debug via -DEE_DEBUG_HEAP=1 (and -DEE_LOG_ENABLE_DEBUG=1) in platformio.ini build_flags.
 // ---------------------------------------------------------
 static void dbgHeap(const char* tag)
 {
 #if defined(ESP32)
     const uint32_t free8    = heap_caps_get_free_size(MALLOC_CAP_8BIT);
     const uint32_t largest8 = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    Serial.printf("[HEAP] %s free8=%lu largest8=%lu\n", tag, (unsigned long)free8, (unsigned long)largest8);
+    LOG_HEAP("%s free8=%lu largest8=%lu", tag, (unsigned long)free8, (unsigned long)largest8);
 #else
     (void)tag;
 #endif
@@ -155,7 +156,7 @@ static void diagLeaseTick() {
     if (!s_diag.active) return;
     const uint32_t now = (uint32_t)millis();
     if ((int32_t)(now - s_diag.expiresMs) >= 0) {
-        Serial.println("[DIAG] lease timeout -> revert to normal");
+        EE_LOGW("DIAG", "lease timeout -> revert to normal");
         diagRevertToNormal("timeout");
     }
 }
@@ -501,7 +502,7 @@ static String buildWsStateJson(bool includeAnalog)
 
     
 
-#if defined(DEBUG_WS_SIZE)
+#if EE_DEBUG_WS
     // Throttled debug: payload size + overflow
     {
         static uint32_t s_lastLogMs = 0;
@@ -518,8 +519,7 @@ static String buildWsStateJson(bool includeAnalog)
         {
             s_lastLogMs = now;
             s_lastLen   = len;
-            Serial.printf("[WS] state json len=%lu overflow=%d\n",
-                          (unsigned long)len, overflow ? 1 : 0);
+            LOG_WS("state json len=%lu overflow=%d", (unsigned long)len, overflow ? 1 : 0);
         }
     }
 #endif
@@ -558,7 +558,7 @@ static String buildWsAnalogJson()
     warnJsonOverflowThrottled("buildWsAnalogJson", doc);
     serializeJson(doc, out);
 
-#if defined(DEBUG_WS_SIZE)
+#if EE_DEBUG_WS
     // Throttled debug: payload size + overflow
     {
         static uint32_t s_lastLogMs = 0;
@@ -575,8 +575,7 @@ static String buildWsAnalogJson()
         {
             s_lastLogMs = now;
             s_lastLen   = len;
-            Serial.printf("[WS] analog json len=%lu overflow=%d\n",
-                          (unsigned long)len, overflow ? 1 : 0);
+            LOG_WS("analog json len=%lu overflow=%d", (unsigned long)len, overflow ? 1 : 0);
         }
     }
 #endif
@@ -766,8 +765,8 @@ static void onWsEvent(AsyncWebSocket* server,
 if (type == WS_EVT_CONNECT)
 {
     const uint32_t cid = client ? client->id() : 0;
-    Serial.printf("[WS] client connected id=%u\n", (unsigned)cid);
-#if defined(DEBUG_AWS_HEAP)
+    LOG_WS("client connected id=%u", (unsigned)cid);
+#if EE_DEBUG_HEAP
     dbgHeap("ws connect");
 #endif
     if (client) {
@@ -786,10 +785,10 @@ if (type == WS_EVT_CONNECT)
 if (type == WS_EVT_DISCONNECT)
 {
     const uint32_t cid = client ? client->id() : 0;
-    Serial.printf("[WS] client disconnected id=%u\n", (unsigned)cid);
+    LOG_WS("client disconnected id=%u", (unsigned)cid);
     eraseWsClient(cid);
     if (s_diag.active && cid && (cid == s_diag.ownerId)) {
-        Serial.println("[DIAG] owner disconnected -> revert to normal");
+        EE_LOGW("DIAG", "owner disconnected -> revert to normal");
         diagRevertToNormal("disconnect");
     }
     return;
@@ -810,7 +809,7 @@ if (type != WS_EVT_DATA)
     if (!action)
         return;
 
-    Serial.printf("[WS] action rx: %s\n", action);
+    LOG_WS("action rx: %s", action);
 
     // Update lastSeen for this client (used for diag lease + presence)
     if (client) {
@@ -838,8 +837,8 @@ if (type != WS_EVT_DATA)
         ci->subDiag = subDiag;
         ci->lastSeenMs = (uint32_t)millis();
 
-        Serial.printf("[WS] subscribe id=%u base=%d diag=%d\n",
-                      (unsigned)client->id(), subBase?1:0, subDiag?1:0);
+        LOG_WS("subscribe id=%u base=%d diag=%d",
+               (unsigned)client->id(), subBase?1:0, subDiag?1:0);
 
         // Snapshot NUR wenn base gerade aktiviert wurde (false -> true).
         // So vermeiden wir Doppel-Sends bei reconnect/mehrfach-subscribe.
@@ -909,7 +908,7 @@ if (type != WS_EVT_DATA)
     {
         const char* token = cmd["token"] | nullptr;
         if (isDiagOwner(client, token)) {
-            Serial.println("[DIAG] lease released by owner -> revert to normal");
+            EE_LOGI("DIAG", "lease released by owner -> revert to normal");
             diagRevertToNormal("exit");
         }
         return;
@@ -958,12 +957,12 @@ if (type != WS_EVT_DATA)
         }
 
         SystemRuntimeState::setBypassSbhfSelftest(en);
-        Serial.printf("[SIM] setBypassSbhfSelftest(enable=%s) -> now=%s\n",
-                      en ? "true" : "false",
-                      SystemRuntimeState::bypassSbhfSelftest() ? "true" : "false");
+        LOG_WS("[SIM] setBypassSbhfSelftest(enable=%s) -> now=%s",
+                en ? "true" : "false",
+                SystemRuntimeState::bypassSbhfSelftest() ? "true" : "false");
         g_stateDirty = true;
 #else
-        Serial.println("[SIM] setBypassSbhfSelftest ignored (not a sim build)");
+        LOG_WS("[SIM] setBypassSbhfSelftest ignored (not a sim build)");
 #endif
         return;
     }
@@ -1034,7 +1033,7 @@ if (type != WS_EVT_DATA)
     {
         const uint8_t mode = (uint8_t)(cmd["mode"] | 0);
         const bool ok = Mega1Link::queueSetMode(mode);
-        if (!ok) Serial.println("[WS] m1SetMode rejected (args/queue full)");
+        if (!ok) LOG_WS("m1SetMode rejected (args/queue full)");
         g_stateDirty = true;
         return;
     }
@@ -1044,7 +1043,7 @@ if (type != WS_EVT_DATA)
         const uint8_t idxW = (uint8_t)(cmd["idx"] | 0);
         const bool gerade = (bool)(cmd["gerade"] | 0);
         const bool ok = Mega1Link::queueTurnoutSet(idxW, gerade);
-        if (!ok) Serial.println("[WS] m1TurnoutSet rejected (args/queue full)");
+        if (!ok) LOG_WS("m1TurnoutSet rejected (args/queue full)");
         g_stateDirty = true;
         return;
     }
@@ -1053,7 +1052,7 @@ if (type != WS_EVT_DATA)
     {
         const int bhf_i = cmd["bhf"] | -1;
         if (bhf_i < 0 || bhf_i > 3) {
-            Serial.printf("[WS] m1PowerSet reject: bhf=%d out of range\n", bhf_i);
+            LLOG_WS("m1PowerSet reject: bhf=%d out of range", bhf_i);
             return;
         }
         const uint8_t bhf = (uint8_t)bhf_i;
@@ -1070,10 +1069,10 @@ if (type != WS_EVT_DATA)
             if (s) on = (!strcasecmp(s, "true") || !strcasecmp(s, "on") || !strcmp(s, "1"));
         }
 
-        Serial.printf("[WS] m1PowerSet bhf=%u on=%s\n", bhf, on ? "true" : "false");
+        LOG_WS("m1PowerSet bhf=%u on=%s", bhf, on ? "true" : "false");
 
         const bool ok = Mega1Link::queueBhfPowerSet(bhf, on);
-        if (!ok) Serial.println("[WS] m1PowerSet rejected (args/queue full)");
+        if (!ok) LOG_WS("m1PowerSet rejected (args/queue full)");
         g_stateDirty = true;
         return;
     }
@@ -1081,14 +1080,14 @@ if (type != WS_EVT_DATA)
     if (!strcmp(action, "m1SelftestStart"))
     {
         const bool ok = Mega1Link::queueStartSelftest();
-        if (!ok) Serial.println("[WS] m1SelftestStart rejected (queue full)");
+        if (!ok) LOG_WS("m1SelftestStart rejected (queue full)");
         g_stateDirty = true;
         return;
     }
 
     if (!strcmp(action, "pollNow"))
     {
-        Serial.println("[WS] -> Mega2Link::requestPollNow()");
+        LOG_WS("-> Mega2Link::requestPollNow()");
         Mega2Link::requestPollNow();
         g_stateDirty = true;
         return;
@@ -1097,7 +1096,7 @@ if (type != WS_EVT_DATA)
     // SBHF selftest retry (explicit command, NOT mapped to safetyAck)
     if (!strcmp(action, "sbhfSelftestRetry"))
     {
-        Serial.println("[WS] -> SBHF Selftest Retry");
+        LOG_WS("-> SBHF Selftest Retry");
         Mega2Link::sbhfSelftestRetry();
         g_stateDirty = true;
         return;
@@ -1105,7 +1104,7 @@ if (type != WS_EVT_DATA)
     
     if (!strcmp(action, "sbhfSelftestStartup"))
     {
-        Serial.println("[WS] -> SBHF Selftest Startup");
+        LOG_WS("-> SBHF Selftest Startup");
         Mega2Link::sbhfSelftestStartup();
         g_stateDirty = true;
         return;
@@ -1119,7 +1118,7 @@ void Web::begin()
 {
     if (!LittleFS.begin(true))
     {
-        Serial.println("[WEB] LittleFS mount FAILED!");
+        EE_LOGE("WEB", "LittleFS mount FAILED!");
         return;
     }
 
@@ -1132,11 +1131,11 @@ void Web::begin()
 
     server.begin();
 
-#if defined(DEBUG_AWS_HEAP)
+#if EE_DEBUG_HEAP
     dbgHeap("web.begin");
 #endif
 
-    Serial.println("[WEB] HTTP server started");
+    EE_LOGI("WEB", "HTTP server started");
 }
 
 // ---------------------------------------------------------
@@ -1144,7 +1143,7 @@ void Web::begin()
 // ---------------------------------------------------------
 void Web::loop()
 {
-#if defined(DEBUG_AWS_HEAP)
+#if EE_DEBUG_HEAP
     static uint32_t s_lastHeapMs = 0;
     const uint32_t nowMs = (uint32_t)millis();
     if ((uint32_t)(nowMs - s_lastHeapMs) >= 10000u)
@@ -1224,9 +1223,9 @@ void Web::pushStateIfDirty()
         const int32_t msToFull = (int32_t)(s_nextFullMs - now);
         if (msToFull >= 0 && msToFull <= 12)
         {
-#if defined(DEBUG_WS_PUSH)
+#if EE_DEBUG_WS
         if (!s_loggedSkipBeforeFull) {
-            Serial.printf("[WS] skip state delta (full due in %ldms)\n", (long)msToFull);
+            LOG_WS("skip state delta (full due in %ldms)", (long)msToFull);
             s_loggedSkipBeforeFull = true;
         }
 #endif
@@ -1241,8 +1240,8 @@ void Web::pushStateIfDirty()
     // FULL: immer senden (ground truth)
     if (wantFull)
     {
-#if defined(DEBUG_WS_PUSH)
-        Serial.printf("[WS] push state full=1 dirty=%d clients=%u\n",
+#if EE_DEBUG_WS
+        LOG_WS("push state full=1 dirty=%d clients=%u",
                       wantDirty ? 1 : 0, (unsigned)ws.count());
 #endif
         const String payload = buildWsStateJson(true);
@@ -1276,19 +1275,19 @@ void Web::pushStateIfDirty()
 
     if (s_hasDeltaHash && h == s_lastDeltaHash)
     {
-#if defined(DEBUG_WS_PUSH)
-        Serial.printf("[WS] skip state delta (no semantic change) len=%u\n", (unsigned)delta.length());
+#if EE_DEBUG_WS
+        LOG_WS("skip state delta (no semantic change) len=%u", (unsigned)delta.length());
 #endif
         // Wichtig: dirty löschen, sonst versucht es sofort wieder.
         g_stateDirty = false;
         return;
     }
 
-#if defined(DEBUG_WS_PUSH)
-    Serial.printf("[WS] push state full=0 dirty=1 clients=%u hash=%08lx len=%u\n",
+#if EE_DEBUG_WS
+    LOG_WS("push state full=0 dirty=1 clients=%u hash=%08lx len=%u",
               (unsigned)ws.count(), (unsigned long)h, (unsigned)delta.length());
 #endif
-    Serial.printf("[WSLAT] delta latency=%ums len=%u\n",
+    LOG_WSLAT("delta latency=%ums len=%u",
               (unsigned)(now - s_dirtySinceMs),
               (unsigned)delta.length());
     wsTextToBase(delta);

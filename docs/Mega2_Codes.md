@@ -126,6 +126,9 @@ Aus `include/proto_common.h`:
 - `M2_CMD_GET_ENTRY_MATRIX` = `0x23`  (-> uint16_t[M2_NUM_BLOCKS] (FROM->TO))
 - `M2_CMD_GET_ENTRY_PREVIEW_MATRIX` = `0x24`  (-> uint16_t[M2_NUM_BLOCKS] (preview))
 - `M2_CMD_GET_ANALOG` = `0x25`  (-> Mega2AnalogPayload (fixed point))
+- `M2_CMD_GET_PENDING_MASK` = `0x26` (-> Mega2PendingMaskPayload)
+- `M2_CMD_GET_TURNOUTS` = `0x27` (-> Mega2TurnoutsPayload)
+- `M2_CMD_GET_DIAG_SENSORS` = `0x28` (-> Mega2DiagSensorsPayload (kontakt+schalt, read-only))
 
 ## 7) I2C Payload-Strukturen (proto_common.h)
 
@@ -206,3 +209,4 @@ Neben den Legacy-Namen `M2_CMD_*` existiert die kanonische Enum `Mega2Command`:
 - `CMD_GET_M2_ANALOG` = `0x25`
 - `CMD_GET_M2_PENDING_MASK` = `0x26`
 - `CMD_GET_M2_TURNOUTS` = `0x27`
+- `CMD_GET_M2_DIAG_SENSORS` = `0x28`
