@@ -11,9 +11,7 @@ bool EthManager::begin()
   
   EE_LOGI("BOOT", "EthManager: ESP32-S3 + W5500 initialisieren");
 
-  EE_LOGI("BOOT", "SPI: MOSI=%d MISO=%d SCK=%d CS=%d INT=%d RST=%d HOST=%d CLK=%dMHz",
-        MOSI_GPIO, MISO_GPIO, SCK_GPIO, CS_GPIO, INT_GPIO, RST_GPIO,
-        SPI_HOST, SPI_CLK / 1000000);
+  EE_LOGI("ETH", "EthManager begin()");
 
   // W5500-Reset-Pin kurz betätigen (Low-Active, je nach Board; Waveshare nutzt i.d.R. LOW = reset)
   pinMode(RST_GPIO, OUTPUT);
@@ -29,8 +27,7 @@ bool EthManager::begin()
   uint16_t macIndex = millis() % NUMBER_OF_MAC;
   uint8_t* macAddr  = MAC_POOL[macIndex];
 
-  EE_LOGI("ETH", "MAC %02X:%02X:%02X:%02X:%02X:%02X",
-        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  EE_LOGI("ETH", "MAC: (logged elsewhere)");
 
   // ETH.begin(MISO, MOSI, SCK, CS, INT, CLK_MHz, HOST, MAC)
   bool ok = ETH.begin(MISO_GPIO, MOSI_GPIO, SCK_GPIO, CS_GPIO, INT_GPIO,

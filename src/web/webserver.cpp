@@ -1052,7 +1052,7 @@ if (type != WS_EVT_DATA)
     {
         const int bhf_i = cmd["bhf"] | -1;
         if (bhf_i < 0 || bhf_i > 3) {
-            LLOG_WS("m1PowerSet reject: bhf=%d out of range", bhf_i);
+            LOG_WS("m1PowerSet reject: bhf=%d out of range", bhf_i);
             return;
         }
         const uint8_t bhf = (uint8_t)bhf_i;

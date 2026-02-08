@@ -4,7 +4,9 @@
 
 // Log-Level der AsyncWebServer_ESP32_SC_W5500-Library
 // 0 = aus, 4 = sehr viel
-#define _ASYNC_WEBSERVER_LOGLEVEL_ 3
+#ifndef _ASYNC_WEBSERVER_LOGLEVEL_
+  #define _ASYNC_WEBSERVER_LOGLEVEL_ 0
+#endif
 
 // -----------------------------------------------------------------------------
 // W5500-Pinbelegung für dein Waveshare ESP32-S3 ETH
