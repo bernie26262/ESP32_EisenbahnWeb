@@ -2358,6 +2358,30 @@ function renderSbhfLeft(msg) {
     el.innerHTML = "<em>keine Daten</em>";
     return;
   }
+  // Build stable DOM once (avoid “disappearing” UI)
+   if (!el.__built) {
+     el.__built = true;
+     el.innerHTML = `
+       <div class="info-row"><span>State:</span><strong id="m2-sbhf-state">—</strong></div>
+       <div class="info-row"><span>Ausfahr-Gleis:</span><strong id="m2-sbhf-gleis">—</strong></div>
+       <div class="info-row"><span>Belegt:</span><strong id="m2-sbhf-occ">—</strong></div>
+       <div class="info-row"><span>Erlaubt:</span><strong id="m2-sbhf-allow">—</strong></div>
+       <div class="info-row"><span>Restricted:</span><strong id="m2-sbhf-restr">—</strong></div>
+     `;
+   }
+ 
+   // Offline/NoData -> keep symbols, grey out
+   const have = (online && !!sb);
+   el.classList.toggle("no-data", !have);
+   if (!have) {
+     const set = (id, txt) => { const n = document.getElementById(id); if (n && n.textContent !== txt) n.textContent = txt; };
+     set("m2-sbhf-state", "—");
+     set("m2-sbhf-gleis", "—");
+     set("m2-sbhf-occ", "—");
+     set("m2-sbhf-allow", "—");
+     set("m2-sbhf-restr", "—");
+     return;
+   }
 
   const state = sb.state ?? 0;
   const g = sb.currentGleis ?? 0;
@@ -2375,13 +2399,12 @@ function renderSbhfLeft(msg) {
   if (allowed & 0x02) allowList.push("G2");
   if (allowed & 0x04) allowList.push("G3");
 
-  el.innerHTML = `
-    <div class="info-row"><span>State:</span><strong>${state}</strong></div>
-    <div class="info-row"><span>Ausfahr-Gleis:</span><strong>${g}</strong></div>
-    <div class="info-row"><span>Belegt:</span><strong>${occList.length ? occList.join(", ") : "-"}</strong></div>
-    <div class="info-row"><span>Erlaubt:</span><strong>${allowList.length ? allowList.join(", ") : "-"}</strong></div>
-    <div class="info-row"><span>Restricted:</span><strong>${restricted ? "ja" : "nein"}</strong></div>
-  `;
+  const set = (id, txt) => { const n = document.getElementById(id); if (n && n.textContent !== txt) n.textContent = txt; };
+   set("m2-sbhf-state", String(state));
+   set("m2-sbhf-gleis", String(g));
+   set("m2-sbhf-occ", (occList.length ? occList.join(", ") : "-"));
+   set("m2-sbhf-allow", (allowList.length ? allowList.join(", ") : "-"));
+   set("m2-sbhf-restr", (restricted ? "ja" : "nein"));
 }
 
 function renderTurnoutsLeft(msg) {
@@ -2462,19 +2485,51 @@ function renderBlocksLeft(msg) {
   el.classList.add("mega2-info");
 
   const online = !!msg?.mega2?.online;
-  if (!online) {
-    el.innerHTML = "<em>keine Daten</em>";
-    return;
-  }
+ 
+   // Build stable sub-layout once (avoid flicker / disappearing UI)
+   if (!el.__stableBuilt) {
+     el.__stableBuilt = true;
+     el.innerHTML = `<div id="m2-occ-wrap"></div><div id="m2-sig-wrap" style="margin-top:0.8rem;"></div>`;
+   }
+   const occWrap = el.querySelector("#m2-occ-wrap");
+   const sigWrap = el.querySelector("#m2-sig-wrap");
+   if (!occWrap || !sigWrap) return;
+ 
+   // Offline/NoData -> show placeholders but keep layout + grey out
+   el.classList.toggle("no-data", !online);
+   if (!online) {
+     // Occupancy placeholders B1..B9
+     let html = `<div><b>Belegung:</b></div><div class="badge-wrap">`;
+     for (let i = 0; i < 9; i++) {
+       html += `<span class="badge badge-info">` +
+               `<span class="label">B${i+1} —</span>` +
+               `<span class="num">I=— mA</span>` +
+               `</span>`;
+     }
+     html += `</div>`;
+     occWrap.innerHTML = html;
+ 
+     // Signals placeholders (keep heading visible)
+     if (!sigWrap.__gridBuilt) {
+       sigWrap.__gridBuilt = true;
+       sigWrap.innerHTML = `<div><b>Signale (FROM -&gt; TO):</b></div><div class="badge-wrap" id="m2-sig-grid"></div>`;
+     }
+     const grid = sigWrap.querySelector("#m2-sig-grid");
+     if (grid && !grid.__placeholderBuilt) {
+       grid.__placeholderBuilt = true;
+       // show the standard pairs as grey placeholders
+       const pairs = [
+         [1,2],[2,3],[3,4],[4,1],[4,5],[5,7],[5,8],[5,9],[7,6],[8,6],[9,6],[6,4],
+       ];
+       grid.innerHTML = pairs.map(([f,t]) =>
+         `<span class="badge badge-info"><span class="label">B${f}→B${t}</span><span class="num">—</span></span>`
+       ).join("");
+     }
+     return;
+   }
 
-  // Build stable sub-layout once to avoid flicker (images not recreated each WS tick)
-  if (!el.__stableBuilt) {
-    el.__stableBuilt = true;
-    el.innerHTML = `<div id="m2-occ-wrap"></div><div id="m2-sig-wrap" style="margin-top:0.8rem;"></div>`;
-  }
-  const occWrap = el.querySelector("#m2-occ-wrap");
-  const sigWrap = el.querySelector("#m2-sig-wrap");
-  if (!occWrap || !sigWrap) return;
+  // online -> clear grey look + allow real rendering
+  el.classList.remove("no-data");
 
   const occMask = msg?.mega2?.blocks?.occupiedMask ?? msg?.mega2?.blockOccupiedMask ?? 0;
   const entryNow = msg?.mega2?.entryAllowed;

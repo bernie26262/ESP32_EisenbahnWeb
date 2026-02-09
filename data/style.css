@@ -6,12 +6,19 @@
     --panel: #ffffff;
     --border: #d0d7de;
 
+    /* Chat62: unified icon sizes (signal must be same in badges + buttons) */
+    --signal-size: clamp(18px, 3.2vw, 26px);
+    --turnout-size: clamp(44px, 9vw, 96px);
+
     --ok: #2da44e;
     --warn: #d29922;
     --err: #cf222e;
 
     --text: #1f2328;
     --subtext: #57606a;
+
+    
+    /* (dup removed) */
 }
 
 * { box-sizing: border-box; }
@@ -251,7 +258,7 @@ h2 {
     font-size: 0.95rem;
 }
 
-/* Badges (simple) */
+/* Badges (generic) */
 .badge-wrap {
     display: flex;
     flex-wrap: wrap;
@@ -261,20 +268,36 @@ h2 {
 .badge {
     display: inline-flex;
     align-items: center;
-    justify-content: space-between;
     padding: 0.2rem 0.45rem;
     border-radius: 999px;
     border: 1px solid var(--border);
     font-size: 0.85rem;
     background: #fff;
-    
-    /* --- ruhig & stabil --- */
     box-sizing: border-box;
     white-space: nowrap;
-    
-    /* alle Badges exakt gleich breit (kein Springen) */
-    flex: 0 0 9.6rem;   /* ggf. feinjustieren */
     gap: 0.45rem;
+}
+
+/* Chat62: schneller Status-Scan in badge-wrap (Belegung/Signale) via farbigem Punkt */
+.badge-wrap .badge.badge-ok::before,
+.badge-wrap .badge.badge-warn::before,
+.badge-wrap .badge.badge-err::before{
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.05) inset;
+}
+.badge-wrap .badge.badge-ok::before{  background: var(--ok); }
+.badge-wrap .badge.badge-warn::before{ background: var(--warn); }
+.badge-wrap .badge.badge-err::before{ background: var(--err); }
+
+/* Nur “Belegung”-Badges (die wirklich eine .num haben) bekommen das 2-Spalten Layout */
+.badge:has(.num){
+    justify-content: space-between;
+    flex: 0 0 auto;
+    width: auto;
 }
 
 /* linker Teil: Label */
@@ -287,9 +310,24 @@ h2 {
 
 /* rechter Teil: Zahlenteil */
 .badge .num {
-    flex: 0 0 4.9rem;             /* reservierter Platz für "I=1234 mA" */
+    flex: 0 0 5.2rem;  /* darf wieder größer sein, weil 2 Spalten */
     text-align: right;
     font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================
+ * Chat62: Belegung (Mega2) immer 2 Pills pro Zeile
+ * (nur im Occupancy-Bereich, nicht bei Signalen)
+ * ========================================================= */
+#ov-blocks #m2-occ-wrap .badge-wrap{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+/* Jede Belegungs-Pill füllt genau eine Grid-Spalte */
+#ov-blocks #m2-occ-wrap .badge-wrap .badge{
+  width: 100%;
 }
 
 
@@ -298,7 +336,7 @@ h2 {
 
 
 /* =========================================================
-   Status Badges (oben rechts)
+   Status Badges (rechts) – NICHT die gleichen Regeln wie .badge (Belegung/Signale)
    ========================================================= */
 .status-badges{
     position: fixed;
@@ -317,7 +355,8 @@ h2 {
 
 .badge-row{ display:flex; gap:8px; flex-wrap:wrap; }
 
-.badge{
+/* -> um Konflikte zu vermeiden, scopen wir die “Status-Badges” */
+.status-badges .badge{
     display:inline-flex;
     align-items:center;
     gap:6px;
@@ -330,13 +369,13 @@ h2 {
     background: #fff;
 }
 
-.badge-ok{ border-color: rgba(45,164,78,0.35); }
-.badge-warn{ border-color: rgba(210,153,34,0.35); }
-.badge-err{ border-color: rgba(207,34,46,0.35); }
+.status-badges .badge-ok{ border-color: rgba(45,164,78,0.35); }
+.status-badges .badge-warn{ border-color: rgba(210,153,34,0.35); }
+.status-badges .badge-err{ border-color: rgba(207,34,46,0.35); }
 
-.badge-ok::before{ content:"🟢"; }
-.badge-warn::before{ content:"🟡"; }
-.badge-err::before{ content:"🔴"; }
+.status-badges .badge-ok::before{ content:"🟢"; }
+.status-badges .badge-warn::before{ content:"🟡"; }
+.status-badges .badge-err::before{ content:"🔴"; }
 
 /* =========================================================
    Buttons: POWER (grün an/aus), STOP neutral
@@ -724,13 +763,53 @@ button, .toggle-btn {
  *  PNG Assets (Weichen/Signale)
  * ========================================================= */
 .turnout-img{
-  width: 96px;      /* ~2x (vorher typ. ~48) */
+  width: var(--turnout-size);
+  max-width: 100%;
   height: auto;
   display: block;
+  object-fit: contain;
 }
 .signal-img{
-  width: 26px;
+  width: var(--signal-size);
+  max-width: 100%;
   height: auto;
+  display: block;
+  object-fit: contain;
+}
+
+/* Signal-Badges (FROM->TO): Bild fix, Text darf schrumpfen */
+.badge > img.signal-img{
+  flex: 0 0 auto;
+}
+.badge > span{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+ /* =========================================================
+  *  NoData/Offline “greyed but visible”
+  * ========================================================= */
+ .no-data{
+   opacity: .55;
+   filter: grayscale(0.9);
+ }
+ .no-data .badge,
+ .no-data .pill{
+   opacity: .85; /* badges bleiben lesbar */
+ }
+
+/* Zusätzlich: Bilder in Tiles/Buttons dürfen nie "Layout sprengen" */
+.m2-turnout-tile img,
+.toggle-btn img,
+.m1-sig-btn img,
+.pill img{
+  max-width: 100%;
+  max-height: 100%;
+  height: auto;
+  width: auto;
+  object-fit: contain;
   display: block;
 }
 
@@ -776,6 +855,7 @@ button, .toggle-btn {
   text-align: left;
   cursor: pointer;
   min-height: 72px;
+  overflow: hidden;          /* verhindert “Text hängt raus” */
   transition: box-shadow .12s ease, transform .06s ease;
 }
 .m1-sig-btn:hover{ box-shadow: 0 8px 18px rgba(0,0,0,0.08); }
@@ -787,8 +867,28 @@ button, .toggle-btn {
   display:flex;
   align-items:center;
   gap: 8px;
+  min-width: 0;            /* <-- erlaubt Shrink in Grid-Kacheln */
+  justify-content: space-between;
 }
-.m1-sig-text{ font-weight: 900; }
+.m1-sig-text{
+  font-weight: 900;
+  min-width: 0;            /* <-- wichtig für ellipsis */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  text-align: right;
+}
+
+.m1-sig-row img.signal-img{
+  flex: 0 0 auto;
+}
+
+/* Bei sehr schmalen Tiles: Text bleibt drin (statt überzulaufen) */
+@media (max-width: 420px){
+  .m1-sig-title{ font-size: .92rem; }
+  .m1-sig-text{ font-size: .92rem; }
+}
 
 /* dezente Status-Kodierung ohne Hintergrund */
 .m1-sig-btn.state-g{ border-color: rgba(45,164,78,0.45); }

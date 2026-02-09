@@ -1,6 +1,14 @@
 let ws = null;
 let token = null;
 let hbTimer = null;
+let leaseCountdownTimer = null;
+
+// Optional lease countdown (server may or may not provide TTL fields)
+const leaseModel = {
+  active: false,
+  ownerId: 0,
+  expiresAtMs: 0, // epoch ms
+};
 let lastDiagMsg = null;
  
  // ------------------------------------------------------------
@@ -384,6 +392,36 @@ function setDiagStatus(t){
 function setWarnStatus(t){
   statusModel.warnText = t || "";
   renderStatus();
+}
+
+function stopLeaseCountdown(){
+  if (leaseCountdownTimer){
+    clearInterval(leaseCountdownTimer);
+    leaseCountdownTimer = null;
+  }
+}
+
+function startLeaseCountdown(){
+  stopLeaseCountdown();
+  leaseCountdownTimer = setInterval(() => {
+    // force periodic refresh of diag text that includes remaining time
+    if (!leaseModel.active) return;
+    setDiagStatus(buildDiagLeaseText());
+  }, 1000);
+}
+
+function buildDiagLeaseText(){
+  if (!leaseModel.active) return "Diagnose inaktiv";
+  const ownerPart = (leaseModel.ownerId && leaseModel.ownerId !== 0) ? `Owner ${leaseModel.ownerId}` : "";
+  let ttlPart = "";
+  if (leaseModel.expiresAtMs && leaseModel.expiresAtMs > 0){
+    const now = Date.now();
+    const remMs = Math.max(0, leaseModel.expiresAtMs - now);
+    const remS  = Math.ceil(remMs / 1000);
+    ttlPart = `TTL ${remS}s`;
+  }
+  const extras = [ownerPart, ttlPart].filter(Boolean).join(", ");
+  return extras ? `Diagnose aktiv (${extras})` : "Diagnose aktiv";
 }
 
 // ------------------------------------------------------------
@@ -820,14 +858,28 @@ function connect(){
   // Lease state snapshot that the server mirrors into both state and diag
   if (msg.diagCtrl){
     if (msg.diagCtrl.active){
-      if (msg.diagCtrl.ownerId && msg.diagCtrl.ownerId !== 0){
-        setDiagStatus(`Diagnose aktiv (Owner ${msg.diagCtrl.ownerId})`);
+      leaseModel.active = true;
+      leaseModel.ownerId = msg.diagCtrl.ownerId || 0;
+      // Support multiple possible field names (optional)
+      // Preferred: expiresAtMs (epoch ms). Alternatives: leaseUntilMs, ttlMs (relative).
+      if (typeof msg.diagCtrl.expiresAtMs === "number") {
+        leaseModel.expiresAtMs = msg.diagCtrl.expiresAtMs;
+      } else if (typeof msg.diagCtrl.leaseUntilMs === "number") {
+        leaseModel.expiresAtMs = msg.diagCtrl.leaseUntilMs;
+      } else if (typeof msg.diagCtrl.ttlMs === "number") {
+        leaseModel.expiresAtMs = Date.now() + msg.diagCtrl.ttlMs;
       } else {
-        setDiagStatus("Diagnose aktiv");
+        leaseModel.expiresAtMs = 0;
       }
+      setDiagStatus(buildDiagLeaseText());
+      startLeaseCountdown();
     } else {
       token = null;
       stopHeartbeat();
+      leaseModel.active = false;
+      leaseModel.ownerId = 0;
+      leaseModel.expiresAtMs = 0;
+      stopLeaseCountdown();
       qs("diag-exit").disabled = true;
       qs("diag-enter").disabled = false;
       setDiagStatus("Diagnose inaktiv");
@@ -933,8 +985,19 @@ window.addEventListener("load", () => {
   });
 
   qs("diag-exit").addEventListener("click", () => {
-    if (token) wsSend({ action:"diagExit", token });
-    window.location.href = "index.htm";
+    // Release lease only; stay on diag.htm
+    if (token) {
+      wsSend({ action:"diagExit", token });
+    }
+    // Optimistic UI update (server will also broadcast diagCtrl inactive)
+    token = null;
+    stopHeartbeat();
+    const exitBtn  = qs("diag-exit");
+    const enterBtn = qs("diag-enter");
+    if (exitBtn)  exitBtn.disabled = true;
+    if (enterBtn) enterBtn.disabled = false;
+    setWarnStatus("");
+    setDiagStatus("Diagnose inaktiv");
   });
 
   connect();
