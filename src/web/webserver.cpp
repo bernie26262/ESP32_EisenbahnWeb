@@ -16,6 +16,15 @@
 #include <LittleFS.h>
 
 // ---------------------------------------------------------
+// Test switch: minimize DIAG JSON to isolate crash cause
+// Enable via build flag: -DEE_TEST_DIAGJSON_MINIMAL=1
+// ---------------------------------------------------------
+#ifndef EE_TEST_DIAGJSON_MINIMAL
+#define EE_TEST_DIAGJSON_MINIMAL 0
+#endif
+
+
+// ---------------------------------------------------------
 // ArduinoJson overflow warning (throttled)
 // ---------------------------------------------------------
 static void warnJsonOverflowThrottled(const char* tag, const JsonDocument& doc)
@@ -57,6 +66,29 @@ volatile bool g_stateDirty = true;
 volatile bool g_diagDirty  = true;
 
 static bool s_loggedSkipBeforeFull = false;
+
+// ---------------------------------------------------------
+// WS stage markers (Crash-Bisection)
+// Enable via -DEE_DEBUG_WS_STAGE=1
+// ---------------------------------------------------------
+#if EE_DEBUG_WS_STAGE
+volatile uint32_t g_wsStage = 0;
+static inline void wsStage(uint32_t s) { g_wsStage = s; }
+#define WS_STAGE(n) wsStage((n))
+#else
+#define WS_STAGE(n) do{}while(0)
+#endif
+
+// Optional: heap integrity checks (very cheap, good signal for UB)
+// Enable via -DEE_DEBUG_HEAP_INTEGRITY=1
+static inline void wsHeapCheck(const char* tag) {
+#if defined(ESP32) && EE_DEBUG_HEAP_INTEGRITY
+    const bool ok = heap_caps_check_integrity_all(true);
+    if (!ok) EE_LOGE("HEAP", "integrity FAILED at %s (wsStage=%lu)", tag, (unsigned long)g_wsStage);
+#else
+    (void)tag;
+#endif
+}
 
 // ---------------------------------------------------------
 // WS Client Subscriptions + Diag-Control Lease (exclusive writer)
@@ -102,7 +134,6 @@ static uint8_t countSubDiag() {
 // Exported helper for link-layer gating: only read diag-only payloads when at least one diag WS subscriber exists.
 bool webserverHasDiagSubscribers()
 {
-    return countSubDiag() > 0;
     return countSubDiag() > 0;
 }
 
@@ -183,6 +214,7 @@ static void wsTextToDiag(const String& payload) {
 // ---------------------------------------------------------
 static String buildWsStateJson(bool includeAnalog)
 {
+    WS_STAGE(10); wsHeapCheck("state:enter");
     // NOTE: This payload grew over time (mega1 diag, startup, entry matrices, sim flags, ...).
     // Keep this generously sized to avoid ArduinoJson overflow (which would silently drop fields
     // and look like "random" UI state glitches).
@@ -190,6 +222,7 @@ static String buildWsStateJson(bool includeAnalog)
 
     doc["type"] = "state";
     doc["full"] = includeAnalog;
+    WS_STAGE(20);
 
     // 'ts' ist volatil: im Delta würde das immer "Änderung" simulieren.
     // Daher nur im Full pushen.
@@ -199,6 +232,7 @@ static String buildWsStateJson(bool includeAnalog)
 
     doc["eth"]["connected"] = Net::EthManager::isConnected();
     doc["eth"]["ip"]        = Net::EthManager::localIP().toString();
+    WS_STAGE(30);
 
     // Simulation flags (UI/Debug)
 #if defined(EE_SIM_NO_HW)
@@ -214,6 +248,7 @@ static String buildWsStateJson(bool includeAnalog)
 
     doc["mega2"]["online"] = m2online;
     doc["mega1"]["online"] = m1online;
+    WS_STAGE(40);
 
     // --- Compatibility + Debug (damit WebUI sicher etwas findet) ---
     doc["mega1Online"] = m1online;  // Legacy: falls script.js das so erwartet
@@ -232,6 +267,7 @@ static String buildWsStateJson(bool includeAnalog)
     startup["m2Needs"] = m2Needs;
     startup["m2SelftestDone"] = SystemRuntimeState::mega2SelftestDone();
     startup["m1SelftestDone"] = SystemRuntimeState::mega1SelftestDone();
+    WS_STAGE(50);
 
     // ready: only when required checklists have their selftest-step done
     const bool m1Ok = (!m1Needs) || SystemRuntimeState::mega1SelftestDone();
@@ -259,6 +295,7 @@ static String buildWsStateJson(bool includeAnalog)
 
     // Mega1 warning mask (normativ): low byte of SystemStatus.reserved
     doc["mega1"]["warningMask"] = (uint8_t)(m1s.reserved & 0xFFu);
+    WS_STAGE(60);
 
     // Optional: rxAge als Debug (wenn du s_lastRxMsM1 nicht exposen willst, dann erstmal weglassen)
     // m1st["rxAgeMs"] = SystemRuntimeState::mega1RxAgeMs();
@@ -269,6 +306,7 @@ static String buildWsStateJson(bool includeAnalog)
     JsonObject s = doc["safety"].to<JsonObject>();
 
     const auto& m2 = SystemRuntimeState::mega2Status();
+    WS_STAGE(70);
 
     s["lock"]        = SystemRuntimeState::safetyLock();
     s["blockReason"] = SystemRuntimeState::safetyBlockReason();
@@ -311,14 +349,17 @@ static String buildWsStateJson(bool includeAnalog)
     // -----------------------------
     if (m2online)
     {
+        WS_STAGE(100);
         const auto& m2s = SystemRuntimeState::mega2Status();
 
         doc["mega2"]["flags"]             = m2s.flags;
         doc["mega2"]["blockOccupiedMask"] = m2s.blockOccupiedMask;
+        WS_STAGE(110);
 
 
         // DRDY-fast: expose detailed blocks[] + a fast occupancy mask WITHOUT overriding legacy mask.
         {
+            WS_STAGE(120);
             const BlockStatus* bs = SystemRuntimeState::mega2BlockStatus();
             // IMPORTANT: Use SystemStatus.blockOccupiedMask as single source of truth for occupancy.
             // BlockStatus[].besetzt may be derived/temporary and can mismatch the final occupiedMask.
@@ -330,6 +371,8 @@ static String buildWsStateJson(bool includeAnalog)
             b["occupiedMask"] = occFast;
 
             JsonArray bst = b["status"].to<JsonArray>();
+            // TEST ONLY: no bs==NULL guard here. If crash returns, bs was NULL and was the cause.
+            b["valid"] = true;
             for (uint8_t i = 0; i < M2_NUM_BLOCKS; i++)
             {
                 JsonObject o = bst.add<JsonObject>();
@@ -340,7 +383,8 @@ static String buildWsStateJson(bool includeAnalog)
                 o["nothalt"]     = (uint8_t)bs[i].nothalt;
                 o["stromRaw"]    = bs[i].stromRaw;
             }
-        }     
+        }    
+        WS_STAGE(130); 
 
         // reserved = (allowedMask<<8) | warningMask
         const uint8_t allowedMask = (uint8_t)((m2s.reserved >> 8) & 0xFF);
@@ -421,6 +465,7 @@ static String buildWsStateJson(bool includeAnalog)
          
         if (includeAnalog)
         {
+            WS_STAGE(160);
             // Mega2 Analog (Trafo + Blockströme) – only for ground-truth "full" state
             const auto& an = SystemRuntimeState::mega2Analog();
             JsonObject a = doc["mega2"]["analog"].to<JsonObject>();
@@ -436,15 +481,23 @@ static String buildWsStateJson(bool includeAnalog)
         }
 
         // Step 3.5: Entry-Matrix (FROM->TO)
+        WS_STAGE(170);
+        // TEST ONLY: no ea==NULL guard here. If crash returns, ea was NULL and was the cause.
         JsonArray entry = doc["mega2"]["entryAllowed"].to<JsonArray>();
         const uint16_t* ea = SystemRuntimeState::mega2EntryAllowed();
+        doc["mega2"]["entryAllowedValid"] = true;
         for (uint8_t i = 0; i < 9; i++)
             entry.add(ea[i]);
+ 
+        WS_STAGE(180);
 
+        // TEST ONLY: no ep==NULL guard here. If crash returns, ep was NULL and was the cause.
         JsonArray entryPrev = doc["mega2"]["entryPreview"].to<JsonArray>();
         const uint16_t* ep = SystemRuntimeState::mega2EntryPreview();
+        doc["mega2"]["entryPreviewValid"] = true;
         for (uint8_t i = 0; i < 9; i++)
             entryPrev.add(ep[i]);
+        WS_STAGE(190);
     }
 
     // -----------------------------
@@ -498,7 +551,9 @@ static String buildWsStateJson(bool includeAnalog)
     }
 
     warnJsonOverflowThrottled("buildWsStateJson", doc);
+    WS_STAGE(900); wsHeapCheck("state:pre-serialize");
     serializeJson(doc, out);
+    WS_STAGE(910); wsHeapCheck("state:post-serialize");
 
     
 
@@ -524,6 +579,7 @@ static String buildWsStateJson(bool includeAnalog)
     }
 #endif
 
+    WS_STAGE(999);
     return out;
 }
 
@@ -588,6 +644,16 @@ static String buildWsAnalogJson()
 // ---------------------------------------------------------
 static String buildWsDiagJson()
 {
+
+#if EE_TEST_DIAGJSON_MINIMAL
+    StaticJsonDocument<128> doc;
+    doc["type"]  = "diag";
+    doc["valid"] = true;
+    String out;
+    serializeJson(doc, out);
+    return out;
+#else
+
     // Read-only diagnostics snapshot. Keep modest in size; we can extend later.
     JsonDocument doc;
 
@@ -748,6 +814,7 @@ static String buildWsDiagJson()
     warnJsonOverflowThrottled("buildWsDiagJson", doc);
     serializeJson(doc, out);
     return out;
+#endif
 }
 
 
