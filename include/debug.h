@@ -49,27 +49,27 @@
 
 // ---------- internal helpers ----------
 #if EE_LOG_ENABLE_ERROR
-  #define EE_LOGE(tag, ...) do { Serial.printf("[E][%s] " __VA_ARGS__, tag); Serial.println(); } while (0)
+  #define EE_LOGE(tag, fmt, ...) do { Serial.printf("[E][%s] " fmt, tag, ##__VA_ARGS__); Serial.println(); } while (0)
 #else
-  #define EE_LOGE(tag, ...) do {} while (0)
+  #define EE_LOGE(tag, fmt, ...) do {} while (0)
 #endif
 
 #if EE_LOG_ENABLE_WARN
-  #define EE_LOGW(tag, ...) do { Serial.printf("[W][%s] " __VA_ARGS__, tag); Serial.println(); } while (0)
+  #define EE_LOGW(tag, fmt, ...) do { Serial.printf("[W][%s] " fmt, tag, ##__VA_ARGS__); Serial.println(); } while (0)
 #else
-  #define EE_LOGW(tag, ...) do {} while (0)
+  #define EE_LOGW(tag, fmt, ...) do {} while (0)
 #endif
 
 #if EE_LOG_ENABLE_INFO
-  #define EE_LOGI(tag, ...) do { Serial.printf("[I][%s] " __VA_ARGS__, tag); Serial.println(); } while (0)
+  #define EE_LOGI(tag, fmt, ...) do { Serial.printf("[I][%s] " fmt, tag, ##__VA_ARGS__); Serial.println(); } while (0)
 #else
-  #define EE_LOGI(tag, ...) do {} while (0)
+  #define EE_LOGI(tag, fmt, ...) do {} while (0)
 #endif
 
 #if EE_LOG_ENABLE_DEBUG
-  #define EE_LOGD(tag, ...) do { Serial.printf("[D][%s] " __VA_ARGS__, tag); Serial.println(); } while (0)
+  #define EE_LOGD(tag, fmt, ...) do { Serial.printf("[D][%s] " fmt, tag, ##__VA_ARGS__); Serial.println(); } while (0)
 #else
-  #define EE_LOGD(tag, ...) do {} while (0)
+  #define EE_LOGD(tag, fmt, ...) do {} while (0)
 #endif
 
 // ---------- category macros (DEBUG-level by default) ----------
@@ -121,6 +121,17 @@
 #define DBG_PRINT(x)    do { if (EE_LOG_ENABLE_DEBUG) Serial.print(x); } while (0)
 #define DBG_PRINTLN(x)  do { if (EE_LOG_ENABLE_DEBUG) Serial.println(x); } while (0)
 #define DBG_PRINTF(...) do { if (EE_LOG_ENABLE_DEBUG) Serial.printf(__VA_ARGS__); } while (0)
+
+// ---------- Compatibility aliases ----------
+// Manche Stellen nutzen LOG_I/LOG_E printf-artig (fmt, ...), inkl. "[TAG]" im Formatstring.
+// EE_LOGI/EE_LOGE erwarten (tag, fmt, ...). Wir verwenden deshalb einen festen Tag.
+#ifndef LOG_I
+  #define LOG_I(fmt, ...) EE_LOGI("LOG", fmt, ##__VA_ARGS__)
+#endif
+#ifndef LOG_E
+  #define LOG_E(fmt, ...) EE_LOGE("LOG", fmt, ##__VA_ARGS__)
+#endif
+
 
 #ifndef DEBUG_WS_PUSH
   #define DEBUG_WS_PUSH EE_DEBUG_WS
