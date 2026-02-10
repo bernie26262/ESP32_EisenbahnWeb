@@ -437,6 +437,10 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
                 s_nextFastMs     = 0;
                 s_nextPollMs     = now + POLL_STATUS_MS;
 
+                // Heartbeat: any successful RR read (STATUS or DIAG) proves Mega1 is alive.
+                // This prevents "phantom offline" when we read DIAG frequently via DRDY.
+                SystemRuntimeState::noteMega1LinkActivity();
+
                 // Immediate WS push after RR (changed data actually read)
                 g_stateDirty     = true;
             }
@@ -470,7 +474,13 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
     // When DRDY is HIGH (pending==0), we still want periodic "alive" confirmation.
     // This is cheap (1 byte) and avoids going offline after ~8s of silence.
     // --------------------------------------------------
-    if (!didI2cRead && !drdyActive && (uint32_t)(now - s_lastPendReadMs) >= PEND_POLL_IDLE_MS)
+    // IMPORTANT:
+    // Do NOT starve the full poll (STATUS/DIAG every 8s). If full poll is due,
+    // we must not consume the "one I2C op per tick" budget with pendingMask.
+    const bool fullPollDue = (now >= s_nextPollMs);
+
+    if (!didI2cRead && !drdyActive && !fullPollDue &&
+        (uint32_t)(now - s_lastPendReadMs) >= PEND_POLL_IDLE_MS)
     {
         uint16_t pm = 0;
         const auto pr = Mega1Client::pollPendingMask(pm);
@@ -517,6 +527,10 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
         if (rr == I2CBus::Result::OK)
         {
             didI2cRead = true;
+            // Heartbeat: any successful RR read proves Mega1 is alive.
+            // (Even if a payload is rejected later, link is still physically present.)
+            SystemRuntimeState::noteMega1LinkActivity();
+
 
             // Debug (temporär): zeigt sofort, dass RR wirklich passiert
             static uint32_t s_lastRrLog = 0;
@@ -599,11 +613,28 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
         }
 
         // Zusätzlich: Diagnosepaket (read-only, <=32B)
-        if (SystemRuntimeState::mega1Online() && now >= s_nextDiagPollMs)
+        //
+        // IMPORTANT:
+        // Do NOT gate this by mega1Online(). Otherwise we get a deadlock:
+        // - payloadOk times out -> mega1Online() becomes false
+        // - DIAG poll is skipped -> payloadOk can never recover
+        // Result: Mega1 stays offline even while link/pendingMask is still alive.
+        if (now >= s_nextDiagPollMs)
         {
             s_nextDiagPollMs = now + POLL_DIAG_MS;
-            (void)Mega1Client::pollDiag();
+            const I2CBus::Result dr = Mega1Client::pollDiag();
+            if (dr != I2CBus::Result::OK)
+            {
+                static uint32_t s_lastDiagErrLog = 0;
+                if ((uint32_t)(now - s_lastDiagErrLog) >= 1000)
+                {
+                    s_lastDiagErrLog = now;
+                    DBG_PRINTF("[M1LINK] diag poll %s\n", (dr == I2CBus::Result::BUSY) ? "BUSY" : "ERROR");
+                }
+            }
         }
+        // Schedule next full poll only after we actually attempted the full poll.
+        s_nextPollMs = now + s_pollIntervalMs;
     }
 
     // --------------------------------------------------
@@ -650,11 +681,6 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
             }
         }
     }
-
-    // --------------------------------------------------
-    // Scheduling / Online status (after polling + commands)
-    // --------------------------------------------------
-    s_nextPollMs = now + s_pollIntervalMs;
 
     const bool online = SystemRuntimeState::mega1Online();
     static bool s_prevOnline = false;

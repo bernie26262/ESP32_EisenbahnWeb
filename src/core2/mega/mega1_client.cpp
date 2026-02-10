@@ -6,6 +6,61 @@
 #include "debug.h"
 #include "system/system_status_payload.h"
 #include "system/mega1_diag_payload.h"
+#include <string.h>
+
+
+// ------------------------------------------------------------
+// Minimal instrumentation: accepted vs dropped (rate-limited)
+// ------------------------------------------------------------
+namespace
+{
+    static inline bool rl(uint32_t& lastMs, uint32_t now, uint32_t periodMs)
+    {
+        if ((uint32_t)(now - lastMs) >= periodMs) { lastMs = now; return true; }
+        return false;
+    }
+
+    static const char* i2cResultStr(I2CBus::Result r)
+    {
+        switch (r)
+        {
+            case I2CBus::Result::OK:   return "OK";
+            case I2CBus::Result::BUSY: return "BUSY";
+            default:                  return "ERROR";
+        }
+    }
+
+    // per-category rate limiters (max ~1/s)
+    static uint32_t s_lastStatusAcceptedMs = 0;
+    static uint32_t s_lastStatusDroppedMs  = 0;
+    static uint32_t s_lastDiagAcceptedMs   = 0;
+    static uint32_t s_lastDiagDroppedMs    = 0;
+    
+    static bool isAllZero8(const void* p)
+    {
+        const uint8_t* b = static_cast<const uint8_t*>(p);
+        for (int i = 0; i < 8; ++i) if (b[i] != 0) return false;
+        return true;
+    }
+
+    static void dump8(const void* p, char* out, size_t outSz)
+    {
+        // Writes up to 8 bytes as hex into out (e.g. "00 1A FF ...")
+        if (!out || outSz == 0) return;
+        const uint8_t* b = static_cast<const uint8_t*>(p);
+        // Each byte uses 3 chars incl space, plus NUL => need >= 3*8+1 = 25
+        // If buffer is smaller, we still write a truncated string safely.
+        size_t pos = 0;
+        for (int i = 0; i < 8; ++i)
+        {
+            if (pos + 4 > outSz) break;
+            const int n = snprintf(out + pos, outSz - pos, "%02X%s",
+                                   (unsigned)b[i], (i == 7) ? "" : " ");
+            if (n <= 0) break;
+            pos += (size_t)n;
+        }
+    }
+} // namespace
 
 static constexpr uint8_t MEGA1_ADDR = 0x10;
 
@@ -38,27 +93,86 @@ I2CBus::Result pollPendingMask(uint16_t& outMask)
     I2CBus::Result pollStatus()
     {
         SystemStatus tmpStatus{};
+        SystemStatus tmpStatus2{};
         constexpr uint16_t expected = sizeof(SystemStatus);
 
         const auto r = I2CBus::readEx(MEGA1_ADDR, &tmpStatus, expected);
         if (r != I2CBus::Result::OK)
+        {
+            const uint32_t now = millis();
+            if (rl(s_lastStatusDroppedMs, now, 1000))
+            {
+                DBG_PRINTF("[M1] STATUS dropped: i2c=%s\n", i2cResultStr(r));
+            }
             return r;
+        }
 
     if (tmpStatus.version != SYSTEM_STATUS_VERSION ||
-            tmpStatus.size != expected ||
-            tmpStatus.nodeId != NODE_MEGA1)
+            tmpStatus.size    != expected ||
+            tmpStatus.nodeId  != NODE_MEGA1)
         {
-            DBG_PRINTF(
-                "[M1] Status reject: ver=%u(exp %u) size=%u(exp %u) node=%u\n",
-                (unsigned)tmpStatus.version, (unsigned)SYSTEM_STATUS_VERSION,
-                (unsigned)tmpStatus.size, (unsigned)expected,
-                (unsigned)tmpStatus.nodeId);
+            const uint32_t now = millis();
+            if (rl(s_lastStatusDroppedMs, now, 1000))
+            {
+                char raw8[32] = {0};
+                dump8(&tmpStatus, raw8, sizeof(raw8));
+                DBG_PRINTF("[M1] STATUS dropped: reason=validate ver=%u(exp %u) size=%u(exp %u) node=%u(exp %u) raw8=%s\n",
+                           (unsigned)tmpStatus.version, (unsigned)SYSTEM_STATUS_VERSION,
+                           (unsigned)tmpStatus.size,    (unsigned)expected,
+                           (unsigned)tmpStatus.nodeId,  (unsigned)NODE_MEGA1,
+                           raw8);
+            }
+
+            // Special case: header is all zero -> attempt one immediate retry and log whether it recovers.
+            // This is diagnostic + minimal self-heal, not a behavioral change beyond a single extra read.
+            if (isAllZero8(&tmpStatus))
+            {
+                const auto r2 = I2CBus::readEx(MEGA1_ADDR, &tmpStatus2, expected);
+                bool recovered = false;
+                if (r2 == I2CBus::Result::OK)
+                {
+                    recovered = (tmpStatus2.version == SYSTEM_STATUS_VERSION &&
+                                 tmpStatus2.size    == expected &&
+                                 tmpStatus2.nodeId  == NODE_MEGA1);
+                    if (recovered)
+                    {
+                        SystemRuntimeState::updateMega1Status(tmpStatus2);
+                        const uint32_t now2 = millis();
+                        if (rl(s_lastStatusAcceptedMs, now2, 1000))
+                        {
+                            DBG_PRINTF("[M1] STATUS accepted (retryRecovered=1): ver=%u size=%u node=%u\n",
+                                       (unsigned)tmpStatus2.version,
+                                       (unsigned)tmpStatus2.size,
+                                       (unsigned)tmpStatus2.nodeId);
+                        }
+                        return I2CBus::Result::OK;
+                    }
+                }
+                // Retry did not recover -> one extra diagnostic line (rate-limited together with dropped).
+                const uint32_t now2 = millis();
+                if (rl(s_lastStatusDroppedMs, now2, 1000))
+                {
+                    char raw8b[32] = {0};
+                    dump8(&tmpStatus2, raw8b, sizeof(raw8b));
+                    DBG_PRINTF("[M1] STATUS retryRecovered=0 i2c=%s raw8=%s\n",
+                               i2cResultStr(r2), raw8b);
+                }
+            }
             return I2CBus::Result::ERROR;
         }
 
-    SystemRuntimeState::updateMega1Status(tmpStatus);
+    // Accepted: only log if we really publish into SystemRuntimeState
+        SystemRuntimeState::updateMega1Status(tmpStatus);
+        const uint32_t now = millis();
+        if (rl(s_lastStatusAcceptedMs, now, 1000))
+        {
+            DBG_PRINTF("[M1] STATUS accepted: ver=%u size=%u node=%u\n",
+                       (unsigned)tmpStatus.version,
+                       (unsigned)tmpStatus.size,
+                       (unsigned)tmpStatus.nodeId);
+        }
         return I2CBus::Result::OK;
-}
+    }
 
     I2CBus::Result pollDiag()
     {
@@ -69,16 +183,37 @@ I2CBus::Result pollPendingMask(uint16_t& outMask)
         const uint8_t cmd = CMD_GET_DIAG;
         const auto r = I2CBus::writeReadEx(MEGA1_ADDR, &cmd, 1, &d, expected);
         if (r != I2CBus::Result::OK)
+        {
+            const uint32_t now = millis();
+            if (rl(s_lastDiagDroppedMs, now, 1000))
+            {
+                DBG_PRINTF("[M1] DIAG dropped: i2c=%s\n", i2cResultStr(r));
+            }
             return r;
+        }
 
+        // Minimal validator (current protocol): version==1 and VALID flag bit0
         if (d.version != 1 || (d.flags & 0x01) == 0)
         {
-            DBG_PRINTF("[M1] Diag reject: ver=%u flags=0x%02X size=%u\n",
-                       (unsigned)d.version, (unsigned)d.flags, (unsigned)expected);
+            const uint32_t now = millis();
+            if (rl(s_lastDiagDroppedMs, now, 1000))
+            {
+                char raw8[32] = {0};
+                dump8(&d, raw8, sizeof(raw8));
+                DBG_PRINTF("[M1] DIAG dropped: reason=validate ver=%u flags=0x%02X (expected size=%u) raw8=%s\n",
+                           (unsigned)d.version, (unsigned)d.flags, (unsigned)expected, raw8);
+            }
             return I2CBus::Result::ERROR;
         }
 
+        // Accepted: only log if we really publish into SystemRuntimeState
         SystemRuntimeState::updateMega1Diag(d);
+        const uint32_t now = millis();
+        if (rl(s_lastDiagAcceptedMs, now, 1000))
+        {
+            DBG_PRINTF("[M1] DIAG accepted: ver=%u flags=0x%02X\n",
+                       (unsigned)d.version, (unsigned)d.flags);
+        }
         return I2CBus::Result::OK;
     }
 
