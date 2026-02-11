@@ -1784,6 +1784,48 @@ function escapeHtml(str) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+// Inject small UI CSS helpers once (keeps index.htm/style.css untouched)
+function ensureUiCssOnce(id, cssText) {
+  try {
+    if (document.getElementById(id)) return;
+    const st = document.createElement("style");
+    st.id = id;
+    st.textContent = String(cssText || "");
+    document.head.appendChild(st);
+  } catch (_) {}
+}
+
+// For Mega2 FROM->TO signals: make pills align like "Belegung" (2 columns, same width)
+function ensureSignalGridCss() {
+  ensureUiCssOnce("ui-m2-siggrid-css", `
+    /* 2-column pill grid (like occupancy) */
+    .badge-wrap.badge-2col{
+      display:flex;
+      flex-wrap:wrap;
+      gap:0.6rem;
+    }
+    .badge-wrap.badge-2col .badge{
+      box-sizing:border-box;
+      flex:0 0 calc(50% - 0.3rem);
+      display:flex;
+      align-items:center;
+      justify-content:flex-start;
+      gap:0.55rem;
+      white-space:nowrap;
+    }
+    /* If the screen is narrow -> 1 column (prevents squashing) */
+    @media (max-width: 560px){
+      .badge-wrap.badge-2col .badge{ flex-basis: 100%; }
+    }
+    .badge-wrap.badge-2col .badge .signal-img{
+      flex:0 0 auto;
+    }
+    .badge-wrap.badge-2col .badge .sig-label{
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+  `);
+}
 
 /* =========================================================
  *  Schritt 2: POWER / WARNINGS / EMERGENCIES (rechts)
@@ -2018,7 +2060,23 @@ const actionsHtml = (retryBtn || retryBtnM1)
   ? `<div class="msg-actions">${retryBtn}${retryBtn ? " " : ""}${retryBtnM1}</div>`
   : "";
 
-  const html = (items.length ? items.map(t => `<div>${t}</div>`).join("") : "<em>Keine Meldungen</em>") + actionsHtml;
+  // Render messages without "i/!/¡" text prefixes (avoid weird glyphs)
+  // items contains strings like: "i <text>" or "! <text>"
+  ensureUiCssOnce("ui-messages-icons-css", `
+    .msg-line{ display:flex; gap:.55rem; align-items:flex-start; }
+    .msg-ico{ width:1.25rem; flex:0 0 1.25rem; text-align:center; line-height:1.2; }
+    .msg-txt{ flex:1 1 auto; }
+  `);
+
+  const renderMsg = (t) => {
+    const s = String(t || "");
+    const pre = s.length ? s[0] : "";
+    const txt = (s.length >= 2 && s[1] === " ") ? s.slice(2) : s;
+    const ico = (pre === "!") ? "⚠️" : (pre === "i") ? "ℹ️" : "•";
+    return `<div class="msg-line"><span class="msg-ico">${ico}</span><span class="msg-txt">${txt}</span></div>`;
+  };
+
+  const html = (items.length ? items.map(renderMsg).join("") : "<em>Keine Meldungen</em>") + actionsHtml;
 
   // If user is currently clicking in this area, defer DOM replacement
   if (el.__ptrDown === true) {
@@ -2242,7 +2300,7 @@ function renderMega1TurnoutsLeft(msg) {
       b.setAttribute("data-m1cmd", "weicheToggle");
       b.setAttribute("data-idx", String(i));
       b.innerHTML = `
-        <div class="toggle-title">W ${i}</div>
+        <div class="toggle-title">W${i}</div>
         <div class="toggle-sub turnout-col">
           <img class="turnout-img" alt="">
           <span class="m1-w-soll"></span>
@@ -2506,6 +2564,18 @@ function renderTurnoutsLeft(msg) {
 
 }
 
+// Mega2 blocks: use SAFETY_UI_TEXTS.blockName() for special naming (e.g. SBHF-Gl.1..3)
+// Fallback keeps classic "B1..B6" style.
+function m2BlockLabel(n) {
+  const id = Number(n);
+  try {
+    if (window.SAFETY_UI_TEXTS && typeof window.SAFETY_UI_TEXTS.blockName === "function") {
+      return window.SAFETY_UI_TEXTS.blockName(id, "B");
+    }
+  } catch (_) {}
+  return "B" + id;
+}
+
 function renderBlocksLeft(msg) {
   const el = document.getElementById("ov-blocks");
   if (!el) return;
@@ -2529,7 +2599,7 @@ function renderBlocksLeft(msg) {
      let html = `<div><b>Belegung:</b></div><div class="badge-wrap">`;
      for (let i = 0; i < 9; i++) {
        html += `<span class="badge badge-info">` +
-               `<span class="label">B${i+1} —</span>` +
+               `<span class="label">${m2BlockLabel(i+1)} —</span>` +
                `<span class="num">I=— mA</span>` +
                `</span>`;
      }
@@ -2538,8 +2608,9 @@ function renderBlocksLeft(msg) {
  
      // Signals placeholders (keep heading visible)
      if (!sigWrap.__gridBuilt) {
+       ensureSignalGridCss();
        sigWrap.__gridBuilt = true;
-       sigWrap.innerHTML = `<div><b>Signale (FROM -&gt; TO):</b></div><div class="badge-wrap" id="m2-sig-grid"></div>`;
+       sigWrap.innerHTML = `<div><b>Signale (FROM -&gt; TO):</b></div><div class="badge-wrap badge-2col" id="m2-sig-grid"></div>`;
      }
      const grid = sigWrap.querySelector("#m2-sig-grid");
      if (grid && !grid.__placeholderBuilt) {
@@ -2549,7 +2620,7 @@ function renderBlocksLeft(msg) {
          [1,2],[2,3],[3,4],[4,1],[4,5],[5,7],[5,8],[5,9],[7,6],[8,6],[9,6],[6,4],
        ];
        grid.innerHTML = pairs.map(([f,t]) =>
-         `<span class="badge badge-info"><span class="label">B${f}→B${t}</span><span class="num">—</span></span>`
+         `<span class="badge badge-info"><img class="signal-img" alt="Signal ${m2BlockLabel(f)}→${m2BlockLabel(t)}"><span class="sig-label">${m2BlockLabel(f)}→${m2BlockLabel(t)}</span></span>`
        ).join("");
      }
      return;
@@ -2575,7 +2646,7 @@ function renderBlocksLeft(msg) {
     const occ = (Array.isArray(bs) && bs.length >= 9)
       ? !!(bs[i] && bs[i].besetzt)
       : bit(occMask, i);
-    const labelText = `B${i + 1} ${occ ? "belegt" : "frei"}`;
+    const labelText = `${m2BlockLabel(i + 1)} ${occ ? "belegt" : "frei"}`;
 
     // Strom immer anzeigen (ruhig/stabil); bei unbekannt: "—"
     let iText = "I=— mA";
@@ -2622,8 +2693,9 @@ function renderBlocksLeft(msg) {
     ];
 
     if (!sigWrap.__gridBuilt) {
+      ensureSignalGridCss();
       sigWrap.__gridBuilt = true;
-      sigWrap.innerHTML = `<div><b>Signale (FROM -&gt; TO):</b></div><div class="badge-wrap" id="m2-sig-grid"></div>`;
+      sigWrap.innerHTML = `<div><b>Signale (FROM -&gt; TO):</b></div><div class="badge-wrap badge-2col" id="m2-sig-grid"></div>`;
     }
     const grid = sigWrap.querySelector("#m2-sig-grid");
     if (!grid) return;
@@ -2647,20 +2719,20 @@ function renderBlocksLeft(msg) {
       let node = grid.querySelector(`#${id}`);
       const sigImg = resolveSignalImg(nowOk ? "G" : "R");
       const cls = `badge ${prevOk ? "badge-ok" : "badge-err"}`;
-      const label = `B${from}→B${to}`;
+      const label = `${m2BlockLabel(from)}→${m2BlockLabel(to)}`;
 
       if (!node) {
         node = document.createElement("span");
         node.id = id;
         node.className = cls;
-        node.innerHTML = `<img class="signal-img" alt=""><span></span>`;
+        node.innerHTML = `<img class="signal-img" alt=""><span class="sig-label"></span>`;
         grid.appendChild(node);
       }
       if (node.className !== cls) node.className = cls;
       const imgEl = node.querySelector("img");
       if (imgEl && imgEl.getAttribute("src") !== sigImg) imgEl.setAttribute("src", sigImg);
       if (imgEl && imgEl.getAttribute("alt") !== `Signal ${label}`) imgEl.setAttribute("alt", `Signal ${label}`);
-      const tEl = node.querySelector("span");
+      const tEl = node.querySelector(".sig-label");
       if (tEl && tEl.textContent !== label) tEl.textContent = label;
     }
 

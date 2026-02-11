@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Diagnose</title>
-  <link rel="stylesheet" href="style.css?v=20260209120406">
+  <link rel="stylesheet" href="style.css?v=20260211162225">
   <link rel="stylesheet" href="diagstyle.css">
 
 </head>
-<body>
+<body class="diag-page">
   <main class="container">
     <h1>Diagnose</h1>
 
@@ -20,35 +20,10 @@
       <a class="btn" href="index.htm">Zur Hauptseite</a>
     </div>
 
-    <hr>
     <p><strong>Hinweis:</strong> Solange Diagnose aktiv ist, sind Schreibaktionen für andere Clients gesperrt.</p>
 
-    <h2 style="margin-top:1rem;">Diag-Stream</h2>
-    
-    <!-- KPI / Ampel für Analog-Updatequalität -->
-    <div class="status-box kpi-warn" id="diag-analog-kpi">Analog: (warte auf Daten ...)</div>
-
-    <!-- Kleine Tabelle: Spannung/Ströme -->
-    <table class="diag-table small" id="diag-analog-table">
-      <thead>
-        <tr><th>Signal</th><th>Wert</th></tr>
-      </thead>
-      <tbody id="diag-analog-body">
-        <tr><td>vA10</td><td class="mono">–</td></tr>
-        <tr><td>vB10</td><td class="mono">–</td></tr>
-        <tr><td>i_mA B1</td><td class="mono">–</td></tr>
-        <tr><td>i_mA B2</td><td class="mono">–</td></tr>
-        <tr><td>i_mA B3</td><td class="mono">–</td></tr>
-        <tr><td>i_mA B4</td><td class="mono">–</td></tr>
-        <tr><td>i_mA B5</td><td class="mono">–</td></tr>
-        <tr><td>i_mA B6</td><td class="mono">–</td></tr>
-        <tr><td>i_mA SBHF1</td><td class="mono">–</td></tr>
-        <tr><td>i_mA SBHF2</td><td class="mono">–</td></tr>
-        <tr><td>i_mA SBHF3</td><td class="mono">–</td></tr>
-      </tbody>
-    </table>
-
-    <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:1rem;">
+    <h2 style="margin-top:1rem;">Kontakt- &amp; Schaltgleise</h2>
+    <div class="diag-headrow diag-headrow-m2" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:1rem; clear:both;">
       <h3 style="margin:0;">Kontakt- &amp; Schaltgleise (Mega2)</h3>
       <button class="btn" id="m2-reset" type="button">Counter reset</button>
     </div>
@@ -70,9 +45,10 @@
       <tbody id="diag-m2-schalt"></tbody>
     </table>
 
+    <h2 style="margin-top:1.25rem;">Schaltgleise Mega1</h2>
     <!-- Mega1 Sensoren: linksbündiger Block + Reset für Browser-Counter -->
     <div class="diag-block-left">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:1rem;">
+      <div class="diag-headrow diag-headrow-m1" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:1rem; clear:both;">
         <h3 style="margin:0;">Sensoren (Mega1) – S0..S10, S18, S19, S22, S23</h3>
         <button class="btn" id="m1-reset" type="button">Counter reset</button>
       </div>
@@ -91,6 +67,32 @@
         <tbody id="diag-m1-sensors"></tbody>
       </table>
     </div>
+    <h2 style="margin-top:1.25rem;">Analog (Mega2)</h2>
+    <!-- Kleine Tabelle: Spannung/Ströme -->
+    <table class="diag-table small" id="diag-analog-table">
+     <thead>
+        <tr><th>Signal</th><th>Wert</th></tr>
+      </thead>
+      <tbody id="diag-analog-body">
+        <tr><td>vA10</td><td class="mono">–</td></tr>
+        <tr><td>vB10</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B1</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B2</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B3</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B4</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B5</td><td class="mono">–</td></tr>
+        <tr><td>i_mA B6</td><td class="mono">–</td></tr>
+        <tr><td>i_mA SBHF1</td><td class="mono">–</td></tr>
+        <tr><td>i_mA SBHF2</td><td class="mono">–</td></tr>
+        <tr><td>i_mA SBHF3</td><td class="mono">–</td></tr>
+      </tbody>
+    </table>
+
+    <h2 style="margin-top:1.25rem;">Status</h2>
+    <!-- KPI / Ampel für Analog-Updatequalität -->
+    <div class="status-box kpi-warn" id="diag-analog-kpi">Analog: (warte auf Daten ...)</div>
+
+    <h2 style="margin-top:1.25rem;">Diag JSON</h2>
 
 
     <pre id="diag-json" class="diag-pre">(warte auf type:"diag" ...)</pre>

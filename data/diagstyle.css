@@ -1,4 +1,5 @@
 /* diagstyle.css - only used by diag.htm */
+:root{ --diag-table-w: 980px; }
 .kpi-ok   { border-left: 6px solid #2e7d32; background: rgba(46,125,50,.08); }
 .kpi-warn { border-left: 6px solid #f9a825; background: rgba(249,168,37,.12); }
 .kpi-err  { border-left: 6px solid #c62828; background: rgba(198,40,40,.10); }
@@ -28,7 +29,7 @@
 
 /* ---- Blocks: left aligned (Sensor tables etc.) ---- */
 .diag-block-left{
-  max-width: 760px;
+  max-width: var(--diag-table-w);
   margin: 0 0 1rem 0;    /* linksbündig */
 }
 
@@ -60,3 +61,58 @@
   box-shadow: none;
   opacity: .65;
 }
+
+
+/* ============================================================
+ * Diagnose: konsolidiertes Layout (1 Spalte) + konsistente Breite
+ * ============================================================ */
+
+body.diag-page main.container{
+  display:block !important;
+  grid-template-columns:none !important;
+  grid-template-rows:none !important;
+  grid-template-areas:none !important;
+  gap:0 !important;
+  align-items:stretch !important;
+  justify-content:flex-start !important;
+}
+
+/* Diagnose-Flow: keine Floats/Sidebars */
+body.diag-page main.container > *{
+  float:none !important;
+  clear:both !important;
+}
+
+/* Tabellen + Headrow: exakt gleiche Breite, linksbündig */
+body.diag-page .diag-table.small,
+body.diag-page .diag-headrow{
+  width:100% !important;
+  max-width: var(--diag-table-w) !important;
+  margin: 0 !important;
+}
+
+/* Headrow: Titel links, Button rechts */
+body.diag-page .diag-headrow{
+  display:flex !important;
+  align-items:center !important;
+  justify-content:space-between !important;
+  gap:.75rem !important;
+}
+body.diag-page .diag-headrow h3{ flex: 1 1 auto; min-width: 0; }
+body.diag-page .diag-headrow .btn{ flex: 0 0 auto; }
+
+/* Mega1: stabile Spalten (gegen Flattern) */
+body.diag-page #diag-m1-sensors th:nth-child(1),
+body.diag-page #diag-m1-sensors td:nth-child(1){ width: 70px; } /* Sensor */
+body.diag-page #diag-m1-sensors th:nth-child(3),
+body.diag-page #diag-m1-sensors td:nth-child(3){ width: 90px; } /* Pin */
+body.diag-page #diag-m1-sensors th:nth-child(4),
+body.diag-page #diag-m1-sensors td:nth-child(4){ width: 130px; white-space: nowrap; } /* Level */
+body.diag-page #diag-m1-sensors th:nth-child(5),
+body.diag-page #diag-m1-sensors td:nth-child(5),
+body.diag-page #diag-m1-sensors th:nth-child(6),
+body.diag-page #diag-m1-sensors td:nth-child(6){ width: 80px; } /* Rise/Fall */
+
+/* Optional: keine Umbrüche in Tabellen (HIGH/LOW bleibt stabil) */
+body.diag-page .diag-table th,
+body.diag-page .diag-table td{ white-space: nowrap; }
