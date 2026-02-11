@@ -18,3 +18,7 @@ namespace Web
 
 // IMPORTANT: Dieses Symbol wird (derzeit) auch aus anderen Modulen referenziert.
 extern volatile bool g_stateDirty;
+
+// IMPORTANT: Diag-Dirty Flag (für diag.htm / diag.js Instant-Updates).
+// Wird von Core-Modulen gesetzt, wenn neue Diag-Sensor-Daten verfügbar sind.
+extern volatile bool g_diagDirty;

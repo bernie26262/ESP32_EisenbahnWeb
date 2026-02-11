@@ -160,6 +160,8 @@ static uint8_t      s_blockReasonUi = SAFETY_BLOCK_NONE;
 
 // Dirty-Flag (extern definiert)
 extern volatile bool g_stateDirty;
+// Diag-Dirty Flag (extern definiert, WebSocket diag channel)
+extern volatile bool g_diagDirty;
 
 // ----------------------------------------------------
 // Interne Ableitung (Debug / Diagnose)
@@ -431,10 +433,19 @@ void SystemRuntimeState::mega2GetSchaltgleise6(uint8_t sid[6], uint8_t level[6],
 // =====================================================
 void SystemRuntimeState::updateMega2DiagSensors(const Mega2DiagSensorsPayload& p)
 {
+    // Instant UI update trigger (diag.htm): only if payload advanced.
+    const bool changed = (!s_m2DiagSensValid) || (p.seq != s_m2DiagSensSeq);
+
     s_m2DiagSens = p;
     s_m2DiagSensSeq = p.seq;
     s_m2DiagSensLastMs = (uint32_t)millis();
     s_m2DiagSensValid = true;
+    
+    if (changed) {
+        // NOTE: This follows the same on-change/instant pattern used for other
+        // "spritzig" diag elements (coalesced by Web::pushDiagIfNeeded()).
+        g_diagDirty = true;
+    }
 }
 
 bool SystemRuntimeState::mega2DiagSensorsValid()
