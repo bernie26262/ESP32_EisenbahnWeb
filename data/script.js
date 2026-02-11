@@ -328,13 +328,40 @@ let ackPending = false;
  *  INIT
  * ========================================================= */
 
-window.addEventListener("load", () => {
+// Guard against double initialization:
+// - script included twice
+// - both DOMContentLoaded and load (or other code paths) calling init
+// - hot reload / partial reload scenarios
+//
+// Note: We guard the *main* init only. Other load handlers (e.g. safety message pointer guard)
+// may still run; they should be independently idempotent.
+function uiInitOnce() {
+  // Create guard object if missing
+  const g = (window.__EE_UI_INIT_GUARD__ ||= { inited: false, calls: 0 });
+  g.calls++;
+  if (g.inited) {
+    console.warn("[UI] init called twice -> ignored. calls=", g.calls);
+    return;
+  }
+  g.inited = true;
+
   const v = document.getElementById("ui-version");
   if (v) v.textContent = UI_VERSION;
   console.log("[UI] version", UI_VERSION);
+
   bindMega1DelegatedClicks();
+
+  // Extra safety: avoid opening multiple WS connections if someone calls uiInitOnce again
+  try {
+    if (typeof socket !== "undefined" && socket && (socket.readyState === 0 || socket.readyState === 1)) {
+      // CONNECTING(0) or OPEN(1)
+      return;
+    }
+  } catch (_) {}
   connectWebSocket();
-});
+ }
+
+window.addEventListener("load", uiInitOnce, { once: true });
 
 /* =========================================================
  *  WS CONNECT
@@ -2600,6 +2627,14 @@ function renderBlocksLeft(msg) {
     }
     const grid = sigWrap.querySelector("#m2-sig-grid");
     if (!grid) return;
+    
+    // If we previously rendered the offline placeholder badges (badge-info),
+    // make sure they are removed once we are online again.
+    // Otherwise the placeholder stays above the real signals and looks like duplicates.
+    if (grid.__placeholderBuilt) {
+      grid.replaceChildren();
+      delete grid.__placeholderBuilt;
+    }
 
     for (const [from, to] of pairs) {
       const maskPrev = entryPrev[from - 1] ?? 0;
