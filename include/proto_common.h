@@ -19,6 +19,9 @@ enum : uint8_t
     M2_CMD_POWER_ON           = 0x13,   // explizit: Leistung EIN
     M2_CMD_SBH_SELFTEST_RETRY  = 0x14, // [cmd] -> 0/1 (start SBHF selftest again)
     M2_CMD_SBH_SELFTEST_STARTUP = 0x15,
+    // --- Betriebsmodus (Automation vs Diagnose/Test) ---
+    // Payload: [cmd, mode]  mode: 0=AUTOMATIK, 1=DIAG_TEST
+    M2_CMD_SET_RUNMODE        = 0x16,
 
     // --- Status Abfragen (read-only) ---
     M2_CMD_GET_SAFETY_STATUS  = 0x20, // -> Mega2SafetyStatus

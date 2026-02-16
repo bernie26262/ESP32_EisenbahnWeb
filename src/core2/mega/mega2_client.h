@@ -37,6 +37,8 @@ namespace Mega2Client
     bool sbhfSelftestStartup();
     bool setNotaus(bool on);
     bool powerOn();
+    // Mega2 Betriebsmodus: 0=AUTOMATIK, 1=DIAG_TEST
+    bool setRunMode(uint8_t mode);
 
     bool powerOff();
     bool setSsr(uint8_t idx, bool on);

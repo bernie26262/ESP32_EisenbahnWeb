@@ -21,16 +21,20 @@ extern bool webserverHasDiagSubscribers();
   static portMUX_TYPE s_actionMux = portMUX_INITIALIZER_UNLOCKED;
 #endif
 
-static volatile uint8_t s_pendingActions = 0;
-static constexpr uint8_t ACT_ACK      = 0x01;
-static constexpr uint8_t ACT_NOTHALT  = 0x02;
-static constexpr uint8_t ACT_PON      = 0x04;
-static constexpr uint8_t ACT_REL      = 0x08;
-static constexpr uint8_t ACT_POFF     = 0x10;
-static constexpr uint8_t ACT_STRETRY  = 0x20;
-static constexpr uint8_t ACT_STSTART  = 0x40;
+static volatile uint16_t s_pendingActions = 0;
+static constexpr uint16_t ACT_ACK      = 0x0001;
+static constexpr uint16_t ACT_NOTHALT  = 0x0002;
+static constexpr uint16_t ACT_PON      = 0x0004;
+static constexpr uint16_t ACT_REL      = 0x0008;
+static constexpr uint16_t ACT_POFF     = 0x0010;
+static constexpr uint16_t ACT_STRETRY  = 0x0020;
+static constexpr uint16_t ACT_STSTART  = 0x0040;
 
-static inline void queueAction(uint8_t mask)
+// NEW: Mega2 RunMode switch
+static constexpr uint16_t ACT_MODE_DIAG = 0x0080; // -> setRunMode(1)
+static constexpr uint16_t ACT_MODE_AUTO = 0x0100; // -> setRunMode(0);
+
+static inline void queueAction(uint16_t mask)
 {
 #if defined(ESP32)
     portENTER_CRITICAL(&s_actionMux);
@@ -41,7 +45,7 @@ static inline void queueAction(uint8_t mask)
 #endif
 }
 
-static inline uint8_t takeActions()
+static inline uint16_t takeActions()
 {
 #if defined(ESP32)
     portENTER_CRITICAL(&s_actionMux);
@@ -279,7 +283,7 @@ void update()
     }
 
     // 0) Pending Actions (nur hier -> keine I2C Calls aus WS/ISR Kontext)
-    const uint8_t act = takeActions();
+    const uint16_t act = takeActions();
     if (act)
     {
         if (act & ACT_ACK)
@@ -300,6 +304,20 @@ void update()
             (void)Mega2Client::sbhfSelftestStartup();
             requestPollNow();
         }
+
+        if (act & ACT_MODE_DIAG)
+        {
+            DBG_PRINTLN("[M2LINK] sending cmd: RUNMODE=DIAG_TEST");
+            (void)Mega2Client::setRunMode(1);
+            requestPollNow();
+        }
+        if (act & ACT_MODE_AUTO)
+        {
+            DBG_PRINTLN("[M2LINK] sending cmd: RUNMODE=AUTOMATIK");
+            (void)Mega2Client::setRunMode(0);
+            requestPollNow();
+        }
+
         if (act & ACT_NOTHALT)
         {
             DBG_PRINTLN("[M2LINK] sending cmd: NOTHALT=ON");
@@ -535,6 +553,14 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
 bool safetyAck()     { queueAction(ACT_ACK);     return true; }
 bool sbhfSelftestRetry() { queueAction(ACT_STRETRY); return true; }
 bool sbhfSelftestStartup() { queueAction(ACT_STSTART); return true; }
+
+bool queueSetRunMode(uint8_t mode)
+{
+    if (mode == 1) { queueAction(ACT_MODE_DIAG); return true; }
+    if (mode == 0) { queueAction(ACT_MODE_AUTO); return true; }
+    return false;
+}
+
 bool nothalt()       { queueAction(ACT_NOTHALT); return true; }
 bool releaseNotaus() { queueAction(ACT_REL);     return true; }
 bool powerOff()      { queueAction(ACT_POFF);    return true; }

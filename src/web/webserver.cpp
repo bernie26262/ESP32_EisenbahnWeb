@@ -194,6 +194,11 @@ static void diagRevertToNormal(const char* reason) {
     // Safety/comfort: leaving diag should restore Mega1 AUTOMATIK immediately.
     // (We intentionally do NOT restore a previous mode.)
     const bool ok = Mega1Link::queueSetMode(1 /*AUTOMATIK*/);
+    // Safety/comfort: leaving diag should restore Mega2 AUTOMATIK immediately.
+    const bool ok2 = Mega2Link::queueSetRunMode(0 /*AUTOMATIK*/);
+    if (!ok2) {
+        EE_LOGW("DIAG", "diagRevertToNormal: failed to queue Mega2 AUTOMATIK (offline/queue full?)");
+    }
     if (!ok) {
         EE_LOGW("DIAG", "diagRevertToNormal: failed to queue Mega1 AUTOMATIK (offline/queue full?)");
     }
@@ -1029,6 +1034,11 @@ if (type != WS_EVT_DATA)
             // Entering diag: force Mega1 into MANUELL to avoid any automatic actions during diagnosis.
             // This is intentionally unconditional (no "restore previous mode").
             const bool okMode = Mega1Link::queueSetMode(0 /*MANUELL*/);
+            // Entering diag: force Mega2 into DIAG_TEST to pause automation while diagnosing.
+            const bool okM2 = Mega2Link::queueSetRunMode(1 /*DIAG_TEST*/);
+            if (!okM2) {
+                EE_LOGW("DIAG", "diagEnter: failed to queue Mega2 DIAG_TEST (offline/queue full?)");
+            }
             if (!okMode) {
                 EE_LOGW("DIAG", "diagEnter: failed to queue Mega1 MANUELL (offline/queue full?)");
             }

@@ -251,6 +251,22 @@ bool Mega2Client::setNotaus(bool on)
 
     return (resp == 1);
 }
+
+bool Mega2Client::setRunMode(uint8_t mode)
+{
+    uint8_t buf[2];
+    buf[0] = M2_CMD_SET_RUNMODE;
+    buf[1] = mode; // 0=AUTOMATIK, 1=DIAG_TEST
+
+    uint8_t resp = 0;
+    const auto r = writeReadRetry(MEGA2_ADDR, buf, sizeof(buf), &resp, sizeof(resp), 8000);
+    if (r != I2CBus::Result::OK)
+        return false;
+
+    DBG_PRINTF(resp ? "[M2] RUNMODE %u OK\n" : "[M2] RUNMODE %u FAIL\n", (unsigned)mode);
+    return (resp == 1);
+}
+
 bool Mega2Client::powerOn()
 {
     const uint8_t cmd = M2_CMD_POWER_ON;

@@ -25,6 +25,10 @@ namespace Mega2Link
     bool safetyAck();
     bool sbhfSelftestRetry();
     bool sbhfSelftestStartup();
+
+    // Mega2 Betriebsmodus: 0=AUTOMATIK, 1=DIAG_TEST
+    bool queueSetRunMode(uint8_t mode);
+    
     bool nothalt();     // setzt NOTAUS (true)
     bool powerOn();
     bool powerOff();    // UI-STOP / SSR_MAIN_ENABLE aus
