@@ -461,6 +461,28 @@ const statusModel = {
   diagText: "",
   warnText: ""
 };
+// Mega2: flags bit for DIAG_TEST/Testmode (SYS_MODE_DIAG = 1<<5)
+const SYS_MODE_DIAG = 0x20;
+
+function renderMega2Mode(msg){
+  const el = qs("m2-mode");
+  if (!el) return;
+
+  const m2 = msg?.mega2;
+  if (!m2 || !m2.online){
+    el.textContent = "Mega2: offline";
+    return;
+  }
+
+  const flags = (typeof m2.flags === "number") ? m2.flags : 0;
+  const isDiagTest = ((flags & SYS_MODE_DIAG) !== 0);
+
+  if (isDiagTest){
+    el.textContent = "Mega2: Testmode AKTIV (DIAG_TEST – Automatik pausiert)";
+  } else {
+    el.textContent = "Mega2: Automatik";
+  }
+}
 
 function renderStatus(){
   const el = qs("diag-status");
@@ -1053,6 +1075,9 @@ function connect(){
   const tParse = performance.now();
 
   wsLog(msg?.type || "msg", msg);
+  
+  // Update Mega2 mode badge on every frame (diag/state/analog)
+  renderMega2Mode(msg);
 
   // ------------------------------------------------------------
   // IMPORTANT: Handle diagControl + diagCtrl BEFORE returning from
