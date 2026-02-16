@@ -116,3 +116,119 @@ body.diag-page #diag-m1-sensors td:nth-child(6){ width: 80px; } /* Rise/Fall */
 /* Optional: keine Umbrüche in Tabellen (HIGH/LOW bleibt stabil) */
 body.diag-page .diag-table th,
 body.diag-page .diag-table td{ white-space: nowrap; }
+
+.diag-relay-actions{
+  display:flex;
+  gap:.4rem;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.btn-mini{
+  padding: .22rem .5rem;
+  font-size: .85rem;
+  line-height: 1.2;
+}
+.btn-mini[disabled]{
+  opacity:.55;
+  cursor:not-allowed;
+}
+
+.diag-sep-row td{
+  padding: .35rem .4rem;
+  opacity: .6;
+  font-size: .92rem;
+  border-top: 1px solid rgba(0,0,0,.12);
+}
+
+.hint-pill{
+  display:inline-block;
+  padding:.08rem .45rem;
+  border-radius:999px;
+  border:1px solid rgba(0,0,0,.14);
+  background: rgba(0,0,0,.04);
+  font-size:.82rem;
+  opacity:.85;
+}
+
+/* ============================================================
+ * Mega1 Relais: Pill/Grid (Read-Only)
+ * ============================================================ */
+
+.diag-relays{
+  width: 100%;
+  max-width: var(--diag-table-w);
+  margin: .5rem 0 0 0;
+}
+
+.diag-relay-group{
+  margin: .5rem 0 0.9rem 0;
+  padding-top: .6rem;
+  border-top: 1px solid rgba(0,0,0,.10);
+}
+
+.diag-relay-title{
+  font-weight: 600;
+  margin: 0 0 .5rem 0;
+}
+
+.diag-pills-row{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(90px, 1fr));
+  gap: .45rem;
+}
+
+.relay-weichen{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: .5rem;
+}
+
+.pill{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  padding: .35rem .55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,.18);
+  background: rgba(0,0,0,.03);
+  font-size: .92rem;
+  user-select: none;
+}
+
+.pill.on{
+  font-weight: 700;
+  border-color: rgba(0,0,0,.30);
+  background: rgba(46,125,50,.10); /* dezent grün */
+}
+.pill.off{
+  opacity: .65;
+}
+
+.pill-group{
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: .35rem;
+  align-items: center;
+  padding: .35rem .45rem;
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 10px;
+  background: rgba(0,0,0,.02);
+}
+
+.pill-label{
+ font-weight: 600;
+  white-space: nowrap;
+}
+
+.pill-mini{
+  min-width: 44px;
+  padding: .25rem .45rem;
+  font-size: .86rem;
+}
+
+.pill-sep{
+  height: 1px;
+  background: rgba(0,0,0,.10);
+  margin: .75rem 0;
+}

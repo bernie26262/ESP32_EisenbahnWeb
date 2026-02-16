@@ -15,6 +15,14 @@
 
 #include <LittleFS.h>
 
+// Exported by mega1_link.cpp (read-only relays snapshot for diag WS)
+extern bool mega1Link_getRelaysRO(uint8_t* outSeq,
+                                  uint32_t* outAgeMs,
+                                  uint16_t* outWeicheGMask,
+                                  uint16_t* outWeicheAMask,
+                                  uint16_t* outWeicheRedMask,
+                                  uint8_t*  outBhfPowerMask);
+
 // ---------------------------------------------------------
 // Test switch: minimize DIAG JSON to isolate crash cause
 // Enable via build flag: -DEE_TEST_DIAGJSON_MINIMAL=1
@@ -143,6 +151,7 @@ struct DiagLease {
     uint32_t sinceMs = 0;
     uint32_t expiresMs = 0;   // millis deadline
     char token[33] = {0};     // 32 hex + NUL
+    uint32_t lastHbMs = 0;    // last accepted heartbeat (millis)
 };
 static DiagLease s_diag;
 
@@ -167,10 +176,14 @@ static void genToken32(char out[33]) {
 }
 
 static bool isDiagOwner(AsyncWebSocketClient* client, const char* token) {
-    if (!client) return false;
+    (void)client;                  // clientId nicht mehr zur Autorisierung nutzen
     if (!s_diag.active) return false;
-    if (client->id() != s_diag.ownerId) return false;
     if (!token) return false;
+
+    // Token is a 32-hex string. Require exact length to avoid partial matches.
+    if (strlen(token) != 32) return false;
+    if (strlen(s_diag.token) != 32) return false;
+
     return (strncmp(token, s_diag.token, 32) == 0);
 }
 
@@ -178,6 +191,13 @@ static void diagRevertToNormal(const char* reason) {
     // Option A: revert to normal operation. (Currently: release lease only; future: clear manual overrides.)
     (void)reason;
     s_diag = DiagLease{};
+    // Safety/comfort: leaving diag should restore Mega1 AUTOMATIK immediately.
+    // (We intentionally do NOT restore a previous mode.)
+    const bool ok = Mega1Link::queueSetMode(1 /*AUTOMATIK*/);
+    if (!ok) {
+        EE_LOGW("DIAG", "diagRevertToNormal: failed to queue Mega1 AUTOMATIK (offline/queue full?)");
+    }
+
     // Trigger a fresh state push so all UIs see diagActive=false immediately.
     g_stateDirty = true;
     g_diagDirty  = true;
@@ -524,6 +544,8 @@ static String buildWsStateJson(bool includeAnalog)
         d["selftestFailMask"]   = (uint16_t)m1d.selftestFailMask;
         d["selftestCurrentIdx"] = (uint8_t)m1d.selftestCurrentIdx;
 
+        // NOTE: Mega1 relays are diagnose-only -> emitted in WS type:"diag" only (buildWsDiagJson()).
+
         doc["mega1"]["hasDiag"] = true;
     }
 
@@ -642,12 +664,13 @@ static String buildWsAnalogJson()
 // ---------------------------------------------------------
 // WS Diag JSON (read-only, only for diag subscribers)
 // ---------------------------------------------------------
-static String buildWsDiagJson()
+static String buildWsDiagJson(bool full)
 {
 
 #if EE_TEST_DIAGJSON_MINIMAL
     StaticJsonDocument<128> doc;
     doc["type"]  = "diag";
+    if (full) doc["ts"] = (uint32_t)millis();
     doc["valid"] = true;
     String out;
     serializeJson(doc, out);
@@ -658,23 +681,32 @@ static String buildWsDiagJson()
     JsonDocument doc;
 
     doc["type"] = "diag";
-    doc["ts"]   = (uint32_t)millis();
+    if (full) {
+        doc["ts"] = (uint32_t)millis();
+    }
 
-    // WS client counts + diag control status (same shape as in state)
+    // WS client counts only in FULL (volatile)
+    if (full)
     {
         JsonObject wsC = doc["wsClients"].to<JsonObject>();
         wsC["base"] = countSubBase();
         wsC["diag"] = countSubDiag();
     }
+
+    // diag control: stable fields always; volatile countdown only in FULL
     {
         JsonObject d = doc["diagCtrl"].to<JsonObject>();
-        d["active"] = s_diag.active;
+        d["active"]  = s_diag.active;
         d["ownerId"] = s_diag.active ? s_diag.ownerId : 0;
         d["sinceMs"] = s_diag.active ? s_diag.sinceMs : 0;
-        const uint32_t nowMs = (uint32_t)millis();
-        d["expiresInMs"] = s_diag.active
-            ? (uint32_t)((s_diag.expiresMs > nowMs) ? (s_diag.expiresMs - nowMs) : 0)
-            : 0;
+
+        if (full)
+        {
+            const uint32_t nowMs = (uint32_t)millis();
+            d["expiresInMs"] = s_diag.active
+                ? (uint32_t)((s_diag.expiresMs > nowMs) ? (s_diag.expiresMs - nowMs) : 0)
+                : 0;
+        }
     }
 
     const bool m2online = Mega2Link::mega2Online();
@@ -736,6 +768,25 @@ static String buildWsDiagJson()
             doc["mega1"]["sensorRiseMask"]   = m1d.sensorRiseMask;
             doc["mega1"]["sensorFallMask"]   = m1d.sensorFallMask;
 
+            // Mega1 Relais / Outputs (read-only, CMD_GET_RELAYS 0xD2)
+            {
+                uint8_t  rSeq = 0;
+                uint32_t rAge = 0;
+                uint16_t gMask = 0, aMask = 0, redMask = 0;
+                uint8_t  bhfMask = 0;
+
+                if (mega1Link_getRelaysRO(&rSeq, &rAge, &gMask, &aMask, &redMask, &bhfMask))
+                {
+                    JsonObject r = doc["mega1"]["relays"].to<JsonObject>();
+                    r["seq"] = rSeq;
+                    if (full) r["ageMs"] = rAge;
+                    r["weicheGMask"]   = gMask;
+                    r["weicheAMask"]   = aMask;
+                    r["weicheRedMask"] = redMask;
+                    r["bhfPowerMask"]  = bhfMask;
+                }
+            }
+
             doc["mega1"]["hasDiag"] = true;
     
         }
@@ -754,7 +805,7 @@ static String buildWsDiagJson()
         const auto& an = SystemRuntimeState::mega2Analog();
         doc["mega2"]["analog"]["seq"] = an.seq;
         doc["mega2"]["analog"]["tsMs"]  = SystemRuntimeState::mega2AnalogLastUpdateMs();
-        doc["mega2"]["analog"]["ageMs"] = SystemRuntimeState::mega2AnalogAgeMs();
+        if (full) doc["mega2"]["analog"]["ageMs"] = SystemRuntimeState::mega2AnalogAgeMs();
         doc["mega2"]["analog"]["hz"]    = SystemRuntimeState::mega2AnalogHz();
         
         // Mega2 Schaltgleise S11..S16 (level + rise/fall counters) – only if provided by Mega2 FW + ESP link
@@ -805,7 +856,7 @@ static String buildWsDiagJson()
                 f.add(p.schaltFall[i]);
             }
 
-            ds["ageMs"] = SystemRuntimeState::mega2DiagSensorsAgeMs();
+            if (full) ds["ageMs"] = SystemRuntimeState::mega2DiagSensorsAgeMs();
         }
     }
 
@@ -854,10 +905,10 @@ if (type == WS_EVT_DISCONNECT)
     const uint32_t cid = client ? client->id() : 0;
     LOG_WS("client disconnected id=%u", (unsigned)cid);
     eraseWsClient(cid);
-    if (s_diag.active && cid && (cid == s_diag.ownerId)) {
-        EE_LOGW("DIAG", "owner disconnected -> revert to normal");
-        diagRevertToNormal("disconnect");
-    }
+//    if (s_diag.active && cid && (cid == s_diag.ownerId)) {
+//        EE_LOGW("DIAG", "owner disconnected -> revert to normal");
+//       diagRevertToNormal("disconnect");
+//    }
     return;
 }
 
@@ -888,7 +939,7 @@ if (type != WS_EVT_DATA)
     // action:"subscribe", base:true/false, diag:true/false
     // -------------------------------------------------
     if (!strcmp(action, "subscribe"))
-{
+    {
     bool subBase = true;
     bool subDiag = false;
     if (!cmd["base"].isNull()) subBase = cmd["base"].as<bool>();
@@ -928,33 +979,83 @@ if (type != WS_EVT_DATA)
     {
         const uint32_t now = (uint32_t)millis();
         const uint32_t cid = client ? client->id() : 0;
+        // NOTE: Use a String here to avoid JsonVariant->const char* edge cases.
+        String tokIn;
+        if (!cmd["token"].isNull()) {
+            tokIn = cmd["token"].as<String>();
+        }
+        const char* tokenIn = (tokIn.length() > 0) ? tokIn.c_str() : nullptr;
+
         JsonDocument reply;
         reply["type"] = "diagControl";
-        if (!s_diag.active || (cid && cid == s_diag.ownerId)) {
-            if (!s_diag.active) {
-                s_diag.active = true;
+
+        constexpr uint32_t LEASE_MS = 180000;
+        constexpr uint32_t HB_DEAD_MS = 35000; // NEW: if no valid heartbeat for 35s -> release ghost lease
+
+        // NEW: Ghost-lease protection. If the current lease has not been refreshed by a valid heartbeat
+        // for a while, consider it dead and release it so a new owner can enter.
+        if (s_diag.active && s_diag.lastHbMs != 0) {
+            const uint32_t hbAge = (uint32_t)(now - s_diag.lastHbMs);
+            if (hbAge > HB_DEAD_MS) {
+                EE_LOGW("DIAG", "lease hb-dead (age=%lu ms) -> revert to normal",
+                        (unsigned long)hbAge);
+                diagRevertToNormal("hb-dead");
+            }
+        }
+
+        const bool canResumeByToken =
+            (s_diag.active && tokenIn && (strncmp(tokenIn, s_diag.token, 32) == 0));
+
+        if (!s_diag.active || canResumeByToken)
+        {
+            if (!s_diag.active)
+            {
+                s_diag.active  = true;
                 s_diag.ownerId = cid;
                 s_diag.sinceMs = now;
                 genToken32(s_diag.token);
+                s_diag.lastHbMs = now;
+                
             }
-            constexpr uint32_t LEASE_MS = 10000; // 10s without heartbeat -> auto revert
+            else
+            {   
+                // Resume: owner rebind to current WS client id
+                if (cid) s_diag.ownerId = cid;
+                s_diag.lastHbMs = now; // NEW (treat resume as liveness)
+            }
+
             s_diag.expiresMs = now + LEASE_MS;
+
+            // Entering diag: force Mega1 into MANUELL to avoid any automatic actions during diagnosis.
+            // This is intentionally unconditional (no "restore previous mode").
+            const bool okMode = Mega1Link::queueSetMode(0 /*MANUELL*/);
+            if (!okMode) {
+                EE_LOGW("DIAG", "diagEnter: failed to queue Mega1 MANUELL (offline/queue full?)");
+            }
+
+
             reply["active"] = true;
             reply["ownerId"] = s_diag.ownerId;
             reply["isOwner"] = true;
             reply["token"] = s_diag.token;
-            reply["expiresInMs"] = LEASE_MS;
+            reply["expiresInMs"] = (int32_t)(s_diag.expiresMs - now);
+
             String out;
             warnJsonOverflowThrottled("onWsMessage/diagEnter", reply);
             serializeJson(reply, out);
             if (client) client->text(out);
+
             g_stateDirty = true;
             g_diagDirty  = true;
-        } else {
+        }
+        else
+        {
             reply["active"] = true;
             reply["ownerId"] = s_diag.ownerId;
             reply["isOwner"] = false;
             reply["error"] = "busy";
+            reply["expiresInMs"] = (int32_t)(s_diag.expiresMs - now);
+
             String out;
             warnJsonOverflowThrottled("onWsMessage/diagEnterBusy", reply);
             serializeJson(reply, out);
@@ -962,18 +1063,65 @@ if (type != WS_EVT_DATA)
         }
         return;
     }
-    if (!strcmp(action, "diagHeartbeat"))
-    {
-        const char* token = cmd["token"] | nullptr;
-        if (isDiagOwner(client, token)) {
-            constexpr uint32_t LEASE_MS = 10000;
-            s_diag.expiresMs = (uint32_t)millis() + LEASE_MS;
+    if (!strcmp(action, "diagHeartbeat")) {
+        // NOTE: Use a String here to avoid JsonVariant->const char* edge cases.
+        // We have seen cases where the browser clearly sent a token, but cmd["token"] evaluated to NULL.
+        String tokIn;
+        if (!cmd["token"].isNull()) {
+            tokIn = cmd["token"].as<String>();
         }
-        return;
+        const char* token = (tokIn.length() > 0) ? tokIn.c_str() : nullptr;
+
+        EE_LOGI("DIAG", "HB tokenIn=%s (len=%u) stored=%s active=%d ownerId=%u",
+            token ? token : "NULL",
+            (unsigned)tokIn.length(),
+            s_diag.token,
+            s_diag.active ? 1 : 0,
+            (unsigned)s_diag.ownerId);
+
+        if (isDiagOwner(client, token)) {
+            constexpr uint32_t LEASE_MS = 180000;
+            const uint32_t now = (uint32_t)millis();
+            s_diag.expiresMs = now + LEASE_MS;
+            s_diag.lastHbMs  = now;
+            if (client) s_diag.ownerId = client->id();   // rebind
+            g_stateDirty = true;
+            g_diagDirty  = true;
+        } else {
+            // Help debugging: distinguish "missing token" vs "mismatch/inactive"
+            EE_LOGW("DIAG", "HB REJECTED (%s)",
+                    (!s_diag.active ? "lease inactive" : (!token ? "missing token" : "token mismatch")));
+
+            JsonDocument err;
+            err["type"]   = "error";
+            err["code"]   = "DIAG_HB_REJECT";
+            err["active"] = s_diag.active;
+            err["ownerId"] = s_diag.ownerId;
+            err["tokenIn"] = token ? token : "";
+            err["tokenExpected"] = s_diag.token;
+            if (!s_diag.active) {
+                err["msg"] = "diagHeartbeat rejected (lease inactive)";
+            } else if (!token) {
+                err["msg"] = "diagHeartbeat rejected (missing token)";
+            } else {
+                err["msg"] = "diagHeartbeat rejected (token mismatch)";
+            }
+            String out;
+            warnJsonOverflowThrottled("onWsMessage/DIAG_HB_REJECT", err);
+            serializeJson(err, out);
+            if (client) client->text(out);
+        }
+       return;
     }
+
     if (!strcmp(action, "diagExit"))
     {
-        const char* token = cmd["token"] | nullptr;
+        // NOTE: Use a String here to avoid JsonVariant->const char* edge cases.
+        String tokIn;
+        if (!cmd["token"].isNull()) {
+            tokIn = cmd["token"].as<String>();
+        }
+        const char* token = (tokIn.length() > 0) ? tokIn.c_str() : nullptr;
         if (isDiagOwner(client, token)) {
             EE_LOGI("DIAG", "lease released by owner -> revert to normal");
             diagRevertToNormal("exit");
@@ -986,22 +1134,62 @@ if (type != WS_EVT_DATA)
     // This prevents accidental conflicts (e.g. Torben drives while Bernhard diagnoses).
     // -------------------------------------------------
     auto isProtectedAction = [&](const char* a) -> bool {
-        return (!strcmp(a,"powerOff") || !strcmp(a,"m1PowerSet") || !strcmp(a,"m1SelftestStart") || !strcmp(a,"m1SetMode") || !strcmp(a,"m1TurnoutSet") || !strcmp(a,"sbhfSelftestRetry") || !strcmp(a,"sbhfSelftestStartup"));
+        return (!strcmp(a,"powerOff")
+             || !strcmp(a,"m1PowerSet")
+             || !strcmp(a,"m1SelftestStart")
+             || !strcmp(a,"m1SetMode")
+             || !strcmp(a,"m1TurnoutSet")
+             || !strcmp(a,"m1DiagRelaySet")
+             || !strcmp(a,"sbhfSelftestRetry")
+             || !strcmp(a,"sbhfSelftestStartup"));
     };
     if (s_diag.active && isProtectedAction(action)) {
-        const char* token = cmd["token"] | nullptr;
-        if (!isDiagOwner(client, token)) {
-            JsonDocument err;
-            err["type"] = "error";
-            err["code"] = "DIAG_ACTIVE";
-            err["ownerId"] = s_diag.ownerId;
-            err["msg"] = "diagnose active: write actions allowed only for diag owner";
-            String out;
-            warnJsonOverflowThrottled("onWsMessage/DIAG_ACTIVE", err);
-            serializeJson(err, out);
-            if (client) client->text(out);
-            return;
+
+    // NOTE: Use a String here to avoid JsonVariant->const char* edge cases.
+    // We have seen cases where the browser clearly sent a token, but cmd["token"] evaluated to NULL.
+    String tokIn;
+    if (!cmd["token"].isNull()) {
+        tokIn = cmd["token"].as<String>();
+    }
+    const char* token = (tokIn.length() > 0) ? tokIn.c_str() : nullptr;
+
+    EE_LOGI("DIAG", "WR-GATE action=%s cid=%u tokenIn=%s (len=%u) stored=%s active=%d ownerId=%u",
+        action,
+        (unsigned)(client ? client->id() : 0),
+        token ? token : "NULL",
+        (unsigned)tokIn.length(),
+        s_diag.token,
+        s_diag.active ? 1 : 0,
+        (unsigned)s_diag.ownerId
+    );
+
+    if (!isDiagOwner(client, token)) {
+        JsonDocument err;
+        err["type"] = "error";
+        err["code"] = "DIAG_ACTIVE";
+        err["ownerId"] = s_diag.ownerId;
+        err["msg"] = "diagnose active: write actions allowed only for diag owner";
+
+        // Debug fields (same spirit as DIAG_HB_REJECT)
+        err["action"] = action;
+        err["clientId"] = (uint32_t)(client ? client->id() : 0);
+        err["active"] = s_diag.active ? 1 : 0;
+        err["tokenIn"] = token ? token : "";
+        err["tokenInLen"] = (uint32_t)tokIn.length();
+        err["tokenExpected"] = s_diag.token;
+        err["tokenExpectedLen"] = (uint32_t)strlen(s_diag.token);
+
+        String out;
+        warnJsonOverflowThrottled("onWsMessage/DIAG_ACTIVE", err);
+        serializeJson(err, out);
+        if (client) client->text(out);
+        return;
         }
+    }
+
+    // --- Marker: must show up whenever m1DiagRelaySet is received and passed the gate block ---
+    if (!strcmp(action, "m1DiagRelaySet")) {
+        EE_LOGW("DIAG", "AFTER WR-GATE: reached handler dispatch for m1DiagRelaySet");
     }
 
 
@@ -1096,6 +1284,131 @@ if (type != WS_EVT_DATA)
     // -------------------------------------------------
     // Mega1 Commands
     // -------------------------------------------------
+    EE_LOGW("DIAG", "M1CMD dispatch action='%s' cid=%u", action, (unsigned)(client ? client->id() : 0));
+
+    if (!strcmp(action, "m1DiagRelaySet"))
+    {
+        EE_LOGW("DIAG", "ENTER m1DiagRelaySet");
+
+        // Serial-sure visibility of parsed args
+        const String relayS = cmd["relay"].as<String>();   // <-- robust copy (fixes relay=NULL)
+        const int idx_i = cmd["idx"] | -1;
+        EE_LOGW("DIAG", "m1DiagRelaySet args: relay='%s' idx=%d valType=%s",
+            relayS.c_str(),
+            idx_i,
+            cmd["val"].isNull() ? "NULL" : (cmd["val"].is<bool>() ? "bool" : (cmd["val"].is<int>() ? "int" : (cmd["val"].is<const char*>() ? "str" : "other")))
+        );
+
+        const int idx_i2 = cmd["idx"] | -1;
+        if (relayS.length() == 0 || idx_i2 < 0) {
+            EE_LOGW("DIAG", "m1DiagRelaySet reject: missing relay/idx (relay='%s' idx=%d)",
+                relayS.c_str(), idx_i2);
+            return;
+        }
+        const uint8_t idx = (uint8_t)idx_i2;
+
+        // robust bool parse for "val"
+        bool val = false;
+        JsonVariant vVal = cmd["val"];
+        if (vVal.is<bool>()) {
+            val = vVal.as<bool>();
+        } else if (vVal.is<int>()) {
+            val = (vVal.as<int>() != 0);
+        } else if (vVal.is<const char*>()) {
+            const char* s = vVal.as<const char*>();
+            if (s) val = (!strcasecmp(s,"true") || !strcasecmp(s,"on") || !strcmp(s,"1"));
+        }
+
+        bool ok = false;
+
+        // ---- power (BHF) ----
+        if (relayS == "power")
+        {
+            if (idx > 3) {
+                EE_LOGW("DIAG", "m1DiagRelaySet reject: power idx=%u out of range", (unsigned)idx);
+                return;
+            }
+            EE_LOGW("DIAG", "m1DiagRelaySet(power): idx=%u val=%d -> queueBhfPowerSet()",
+                (unsigned)idx, val ? 1 : 0);
+            ok = Mega1Link::queueBhfPowerSet(idx, val);
+            EE_LOGW("DIAG", "m1DiagRelaySet(power): queue result ok=%d", ok ? 1 : 0);
+            if (!ok) EE_LOGW("DIAG", "m1DiagRelaySet(power) rejected (queue full?)");
+
+            // ACK back to browser so we can see handler execution immediately
+            if (client) {
+                JsonDocument okj;
+                okj["type"]   = "ok";
+                okj["action"] = "m1DiagRelaySet";
+                okj["relay"]  = relayS;
+                okj["idx"]    = idx;
+                okj["val"]    = val;
+                okj["queued"] = ok ? 1 : 0;
+                String out;
+                serializeJson(okj, out);
+                client->text(out);
+            }
+            g_stateDirty = true;
+            g_diagDirty  = true;
+            return;
+        }
+
+        // ---- weiche coils: treat as PULSE command ----
+        // UI currently sends ON then after 0.5s OFF.
+        // We MUST NOT enqueue an "OFF" that could trigger a second coil action.
+        // Therefore: only act on val==true; ignore val==false.
+        if (relayS == "weicheG" || relayS == "weicheA")
+        {
+            if (idx > 11) {
+                EE_LOGW("DIAG", "m1DiagRelaySet reject: weiche idx=%u out of range", (unsigned)idx);
+                return;
+            }
+            if (!val) {
+                // ignore auto-OFF from UI (coil safety is handled inside Mega1)
+                return;
+            }
+            const bool gerade = (relayS == "weicheG");
+            EE_LOGW("DIAG", "m1DiagRelaySet(%s): idx=%u val=%d -> queueTurnoutSet()",
+                relayS.c_str(), (unsigned)idx, val ? 1 : 0);
+            ok = Mega1Link::queueTurnoutSet(idx, gerade);
+            EE_LOGW("DIAG", "m1DiagRelaySet(%s): queue result ok=%d", relayS.c_str(), ok ? 1 : 0);
+            if (!ok) EE_LOGW("DIAG", "m1DiagRelaySet(weiche) rejected (queue full?)");
+
+            if (client) {
+                JsonDocument okj;
+                okj["type"]   = "ok";
+                okj["action"] = "m1DiagRelaySet";
+                okj["relay"]  = relayS;
+                okj["idx"]    = idx;
+                okj["val"]    = val;
+                okj["queued"] = ok ? 1 : 0;
+                String out;
+                serializeJson(okj, out);
+                client->text(out);
+            
+            }
+            g_stateDirty = true;
+            g_diagDirty  = true;
+            return;
+        }
+
+        // ---- reduction relays: not implemented yet (next step) ----
+        if (relayS == "weicheRED")
+        {
+            JsonDocument err;
+            err["type"] = "error";
+            err["code"] = "M1_RED_UNSUPPORTED";
+            err["msg"]  = "weicheRED switching not implemented yet (read-only only)";
+            String out;
+            warnJsonOverflowThrottled("m1DiagRelaySet/weicheRED", err);
+            serializeJson(err, out);
+            if (client) client->text(out);
+            return;
+        }
+
+        EE_LOGW("DIAG", "m1DiagRelaySet reject: unknown relay='%s'", relayS.c_str());
+        return;
+    }
+
     if (!strcmp(action, "m1SetMode"))
     {
         const uint8_t mode = (uint8_t)(cmd["mode"] | 0);
@@ -1195,6 +1508,38 @@ void Web::begin()
     server.serveStatic("/", LittleFS, "/")
         .setDefaultFile("index.htm")
         .setCacheControl("no-store, no-cache, must-revalidate, max-age=0");
+    
+    
+    // -------------------------------------------------
+    // HTTP fallback for releasing diag lease (works even if WS is already gone).
+    // Used by diag.htm via fetch(..., {keepalive:true}) on pagehide/beforeunload.
+    // Token is passed as query parameter: /diag-exit?token=...
+    // -------------------------------------------------
+    server.on("/diag-exit", HTTP_POST, [](AsyncWebServerRequest* req) {
+        String tok;
+        const char* token = nullptr;
+
+        if (req->hasParam("token")) {
+            tok = req->getParam("token")->value();
+            token = tok.c_str();
+        }
+
+        EE_LOGI("DIAG", "HTTP /diag-exit tokenIn=%s (len=%d) stored=%s active=%d ownerId=%u",
+            token ? token : "NULL",
+            token ? (int)strlen(token) : 0,
+            s_diag.token,
+            s_diag.active ? 1 : 0,
+            (unsigned)s_diag.ownerId);
+
+        if (isDiagOwner(nullptr, token)) {
+            EE_LOGI("DIAG", "lease released via HTTP -> revert to normal");
+            diagRevertToNormal("http");
+            req->send(200, "application/json", "{\"ok\":true}");
+        } else {
+            EE_LOGW("DIAG", "HTTP /diag-exit rejected (token mismatch or inactive)");
+            req->send(403, "application/json", "{\"ok\":false}");
+        }
+    });
 
     server.begin();
 
@@ -1426,7 +1771,7 @@ void Web::pushDiagIfNeeded()
     // FULL: immer senden
     if (wantFull)
     {
-        const String payload = buildWsDiagJson();
+        const String payload = buildWsDiagJson(true);
         wsTextToDiag(payload);
 
         s_lastSendMs = now;
@@ -1438,7 +1783,7 @@ void Web::pushDiagIfNeeded()
     }
 
     // DELTA: nur senden, wenn wirklich geändert
-    const String delta = buildWsDiagJson();
+    const String delta = buildWsDiagJson(false);
 
     uint32_t h = 2166136261u;
     for (size_t i = 0; i < delta.length(); ++i) {

@@ -10,8 +10,12 @@
 #include "config/pins.h"
 #include "debug.h"
 
+// (moved into anonymous namespace below to avoid symbol/type ambiguity)
+
 // WebSocket push trigger (defined in webserver.cpp; also set by SystemRuntimeState setters)
 extern volatile bool g_stateDirty;
+// Diag WS push trigger (exists in webserver.cpp)
+extern volatile bool g_diagDirty;
 
 #if defined(ESP32)
   #include "freertos/FreeRTOS.h"
@@ -30,6 +34,78 @@ namespace
     // Mega1 I2C protocol (see Mega1 include/I2CProtocol.h):
     // CMD_START_SELFTEST = 0x07, Mega1 addr = 0x10
     static constexpr uint8_t M1_CMD_START_SELFTEST = 0x07;
+    // ------------------------------------------------------------
+    // Mega1 Diag: Relays/Outputs snapshot (CMD_GET_RELAYS = 0xD2)
+    // Addr = 0x10
+    // ------------------------------------------------------------
+    #pragma pack(push, 1)
+    struct Mega1DiagRelaysV1
+    {
+        uint8_t  version;      // = 1
+        uint8_t  flags;        // bit0: valid
+        uint8_t  seq;          // increments only on change (wrap ok)
+        uint8_t  reserved0;
+
+        uint16_t weicheGMask;
+        uint16_t weicheAMask;
+        uint16_t weicheRedMask;
+
+        uint8_t  bhfPowerMask;
+        uint8_t  reserved1;
+
+        uint16_t uptime16;     // uptime/100ms (optional)
+    };
+    #pragma pack(pop)
+
+    static_assert(sizeof(Mega1DiagRelaysV1) <= 32, "Mega1DiagRelaysV1 must fit into a single I2C frame (<=32B).");
+
+    static constexpr uint8_t M1_CMD_GET_RELAYS = 0xD2;
+    static constexpr uint8_t M1_I2C_ADDR      = 0x10;
+
+    // Latest relays snapshot (updated by polling; served via diag WS)
+    static Mega1DiagRelaysV1 s_m1Relays{};
+    static uint8_t           s_m1RelaysSeqSeen = 0;
+    static uint32_t          s_m1RelaysLastMs  = 0;
+    static bool              s_m1RelaysValid   = false;
+
+    // Expose for webserver.cpp (diag JSON builder)
+    const Mega1DiagRelaysV1* mega1Link_getRelaysSnap(uint32_t* outAgeMs)
+    {
+        if (!s_m1RelaysValid) return nullptr;
+        if (outAgeMs) *outAgeMs = (uint32_t)(millis() - s_m1RelaysLastMs);
+        return &s_m1Relays;
+    }
+    
+    static I2CBus::Result pollMega1RelaysReadOnly()
+    {
+        Mega1DiagRelaysV1 r{};
+        const uint8_t cmd = M1_CMD_GET_RELAYS;
+
+        // In this project, I2CBus::write/read return bool (success/fail).
+        const bool okW = I2CBus::write(M1_I2C_ADDR, &cmd, 1);
+        if (!okW) return I2CBus::Result::ERROR;
+
+        const bool okR = I2CBus::read(M1_I2C_ADDR, (uint8_t*)&r, sizeof(r));
+        if (!okR) return I2CBus::Result::ERROR;
+
+        // Protocol sanity (no dedicated PROTO/FAIL enum here)
+        if (r.version != 1 || (r.flags & 0x01u) == 0)
+            return I2CBus::Result::ERROR;
+
+        s_m1Relays       = r;
+        s_m1RelaysLastMs = (uint32_t)millis();
+        s_m1RelaysValid  = true;
+
+        // spritzig: only on change
+        if (r.seq != s_m1RelaysSeqSeen)
+        {
+            s_m1RelaysSeqSeen = r.seq;
+            g_stateDirty = true;
+            g_diagDirty  = true;
+        }
+
+        return I2CBus::Result::OK;
+    }   
 
 
     struct CmdQItem
@@ -108,6 +184,31 @@ namespace
     }
 } // namespace
 
+// ------------------------------------------------------------
+// Export: Mega1 Relays/Outputs snapshot for webserver.cpp (diag WS)
+// Returns true if a valid snapshot exists.
+// ------------------------------------------------------------
+bool mega1Link_getRelaysRO(uint8_t* outSeq,
+                           uint32_t* outAgeMs,
+                           uint16_t* outWeicheGMask,
+                           uint16_t* outWeicheAMask,
+                           uint16_t* outWeicheRedMask,
+                           uint8_t*  outBhfPowerMask)
+{
+    // NOTE: These symbols live inside the anonymous namespace above.
+    // We can still access them here because we're in the same translation unit.
+    if (!s_m1RelaysValid) return false;
+
+    if (outSeq)           *outSeq           = s_m1Relays.seq;
+    if (outAgeMs)         *outAgeMs         = (uint32_t)(millis() - s_m1RelaysLastMs);
+    if (outWeicheGMask)   *outWeicheGMask   = s_m1Relays.weicheGMask;
+    if (outWeicheAMask)   *outWeicheAMask   = s_m1Relays.weicheAMask;
+    if (outWeicheRedMask) *outWeicheRedMask = s_m1Relays.weicheRedMask;
+    if (outBhfPowerMask)  *outBhfPowerMask  = s_m1Relays.bhfPowerMask;
+
+    return true;
+}
+
 static uint32_t s_nextPollMs      = 0;
 static uint32_t s_nextDiagPollMs  = 0;
 static uint32_t s_pollIntervalMs  = 0;
@@ -169,6 +270,8 @@ static uint32_t s_nextBackoffDiagMs   = 0;
 static uint32_t s_backoffDiagMs       = 250;  // start gently
 static constexpr uint32_t BACKOFF_MIN_MS = 250;
 static constexpr uint32_t BACKOFF_MAX_MS = 1000;
+
+// (removed duplicate relays snapshot; keep the one inside the anonymous namespace above)
 
 // ------------------------------------------------------------
 // Selftest/Startup watchdog:
@@ -327,7 +430,8 @@ void Mega1Link::update()
                 if (s_nextBackoffDiagMs == 0 || (uint32_t)(now - s_nextBackoffDiagMs) >= s_backoffDiagMs)
                 {
                     s_nextBackoffDiagMs = now;
-                    (void)Mega1Client::pollDiag(); // edge-miss-safe
+                    (void)Mega1Client::pollDiag();       // edge-miss-safe
+                    (void)pollMega1RelaysReadOnly();     // outputs/relays snapshot (read-only)
                     SystemRuntimeState::noteMega1LinkActivity();
                     g_stateDirty = true;
 
@@ -424,6 +528,7 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
             {
                 DBG_PRINTLN("[M1LINK] read DIAG...");
                 rr = Mega1Client::pollDiag();
+                (void)pollMega1RelaysReadOnly();
                 if (rr == I2CBus::Result::OK) DBG_PRINTLN("[M1LINK] read DIAG ok");
                 if (rr == I2CBus::Result::OK) s_cachedPendingMask &= ~Mega1Client::M1_PEND_DIAG;
             }
@@ -519,6 +624,7 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
         else
         {
             rr = Mega1Client::pollDiag();
+            (void)pollMega1RelaysReadOnly();
             if (rr == I2CBus::Result::OK) s_cachedPendingMask &= ~Mega1Client::M1_PEND_DIAG;
         }
 
@@ -623,6 +729,7 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
         {
             s_nextDiagPollMs = now + POLL_DIAG_MS;
             const I2CBus::Result dr = Mega1Client::pollDiag();
+            (void)pollMega1RelaysReadOnly();
             if (dr != I2CBus::Result::OK)
             {
                 static uint32_t s_lastDiagErrLog = 0;

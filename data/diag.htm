@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Diagnose</title>
-  <link rel="stylesheet" href="style.css?v=20260211162225">
+  <link rel="stylesheet" href="style.css?v=20260216125854">
   <link rel="stylesheet" href="diagstyle.css">
 
 </head>
@@ -87,6 +87,25 @@
         <tr><td>i_mA SBHF3</td><td class="mono">–</td></tr>
       </tbody>
     </table>
+
+    <h2 style="margin-top:1.25rem;">Relais (Mega1)</h2>
+    <div class="diag-block-left">
+      <div class="diag-headrow" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:.5rem; clear:both;">
+        <h3 style="margin:0;">Relaiszustände (Read-Only)</h3>
+        <div class="mono small" id="diag-m1-relays-sub">seq: – · age: –</div>
+      </div>
+      <table class="diag-table small" id="diag-m1-relays-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Pin</th>
+            <th>Level</th>
+            <th>Aktion</th>
+          </tr>
+        </thead>
+        <tbody id="diag-m1-relays-body"></tbody>
+      </table>
+    </div>
 
     <h2 style="margin-top:1.25rem;">Status</h2>
     <!-- KPI / Ampel für Analog-Updatequalität -->
