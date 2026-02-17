@@ -4,13 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Diagnose</title>
-  <link rel="stylesheet" href="style.css?v=20260216125854">
+  <link rel="stylesheet" href="style.css?v=20260217200755">
   <link rel="stylesheet" href="diagstyle.css">
 
 </head>
 <body class="diag-page">
   <main class="container">
     <h1>Diagnose</h1>
+    <div class="small mono" id="diag-build">build: …</div>
 
     <div class="status-box" id="diag-status">WS: …</div>
 
@@ -45,7 +46,10 @@
         <tr class="diag-section"><td colspan="6"><strong>Schaltgleise S11..S16</strong></td></tr>
       </tbody>
       <tbody id="diag-m2-schalt"></tbody>
+      <tbody><tr class="diag-section"><td colspan="6"><strong>Weichenrückmelder W12..W15 (LOW=Abbiegen, HIGH=Gerade)</strong></td></tr></tbody>
+      <tbody id="diag-m2-turnouts-body"></tbody>
     </table>
+
 
     <h2 style="margin-top:1.25rem;">Schaltgleise Mega1</h2>
     <!-- Mega1 Sensoren: linksbündiger Block + Reset für Browser-Counter -->
@@ -90,6 +94,30 @@
       </tbody>
     </table>
 
+    <h2 style="margin-top:1.25rem;">Relais (Mega2)</h2>
+    <div class="diag-block-left">
+      <div class="diag-headrow" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:.5rem; clear:both;">
+        <h3 style="margin:0;">Relaiszustände (Read-Only)</h3>
+        <div class="mono small" id="diag-m2-relays-sub">telemetry: –</div>
+        </div>
+
+      <table class="diag-table small" id="diag-m2-relays-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Pin</th>
+            <th>Level</th>
+            <th>Aktion</th>
+          </tr>
+        </thead>
+        <tbody id="diag-m2-relays-body"></tbody>
+      </table>
+
+      <div class="small" style="margin-top:.5rem; opacity:.85;">
+        Hinweis: Mega2 liefert Relais-Telemetrie noch nicht im JSON – daher bleiben <span class="mono">Level</span> und <span class="mono">Aktion</span> vorerst “—”.
+      </div>
+    </div>
+    
     <h2 style="margin-top:1.25rem;">Relais (Mega1)</h2>
     <div class="diag-block-left">
       <div class="diag-headrow" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:.5rem; clear:both;">
@@ -127,6 +155,11 @@
         localStorage.removeItem("diagJsonFull"); location.reload();
     -->
   </main>
+
+  <script>
+    // diag.js setzt window.DIAG_BUILD optional – fallback über query param etc.
+    console.log("[DIAGHTM] loaded", new Date().toISOString());
+  </script>
 
   <script src="diag.js"></script>
 </body>

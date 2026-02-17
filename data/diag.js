@@ -1,4 +1,5 @@
-console.log("[DIAGJS] build 2026-02-15 14:59");
+const DIAG_BUILD = "2026-02-17 17:54";
+console.log("[DIAGJS] build", DIAG_BUILD);
 const DIAG_DEBUG = true;
 let ws = null;
 // Diagnose-Owner Token (nur aus type:"diagControl")
@@ -62,6 +63,9 @@ const leaseModel = {
   expiresAtMs: 0, // epoch ms
 };
 let lastDiagMsg = null;
+// Cache: Turnouts istMask kann ggf. in state frames kommen, gerendert wird aber nur im DIAG-throttle.
+let _m2CachedIstMask = null;   // number | null
+let _m2CachedIstMaskTs = 0;    // ms timestamp (Date.now)
  
  // ------------------------------------------------------------
  // Performance guards for diag.htm:
@@ -80,9 +84,10 @@ let lastDiagMsg = null;
  let _lastAnalogAgeMs = null;
 
  function renderM2Sensors(msg){
-  // Mega2: Kontakte + Schaltgleise in einem konsistenten Durchlauf
+  // Mega2: Kontakte + Schaltgleise + Weichenrückmelder in einem konsistenten Durchlauf
   try { renderM2Kontakte(msg); } catch(e){ console.error("[diag] renderM2Kontakte failed", e); }
   try { renderM2Schalt(msg); } catch(e){ console.error("[diag] renderM2Schalt failed", e); }
+  try { renderM2Turnouts(msg); } catch(e){ console.error("[diag] renderM2Turnouts failed", e); }
  }
 
 function initM2PrevFromFirstPacket(msg){
@@ -139,6 +144,8 @@ function scheduleDiagRender(){
   const t1 = performance.now();
 
   try { renderM2Sensors(m); } catch(e){ console.error("[diag] renderM2Sensors failed", e); }
+  console.log("[diag] calling renderM2Relays, has mega2=", !!m?.mega2, "online=", m?.mega2?.online, "type=", m?.type);
+  try { renderM2Relays(m); } catch(e){ console.error("[diag] renderM2Relays failed", e); }
   const t2 = performance.now();
 
   try { renderM1Sensors(m); } catch(e){ console.error("[diag] renderM1Sensors failed", e); }
@@ -185,6 +192,82 @@ const M2_SCHALT_INFO = new Map([
   [15, { key:"S15", name:"Schaltgleis S15", pin:35, idx:4 }],
   [16, { key:"S16", name:"Schaltgleis S16", pin:36, idx:5 }],
 ]);
+
+// ------------------------------------------------------------
+// Mega2 Weichenrückmelder (abgeleitet)
+// Mega2 liefert turnouts.istMask (W12..W15). Die HW-RM-Pins sind "RM_ABBIEG".
+// Wir zeigen pro Weiche: Stellung (Gerade/Abbiegen) + LED (LOW=aktiv) als Diagnosehilfe.
+// ------------------------------------------------------------
+const M2_TURNOUT_RM_PINS = [
+  { wid:12, rmPin:37 },
+  { wid:13, rmPin:38 },
+  { wid:14, rmPin:39 },
+  { wid:15, rmPin:40 },
+];
+
+function renderM2Turnouts(msg){
+  // Heavy tables ONLY from DIAG frames, never from state/diagControl
+  if (!msg || msg.type !== "diag") return;
+
+  const body = qs("diag-m2-turnouts-body");
+  if (!body) return;
+
+  const m2 = msg.mega2;
+  const online = !!m2?.online;
+
+  // istMask: Bit0=W12, Bit1=W13, Bit2=W14, Bit3=W15 (Gerade=1 => HIGH)
+  // Kann in state frames kommen → Cache nutzen, aber hier (DIAG) rendern.
+  const directIst = m2?.turnouts?.istMask;
+  const istMask = (typeof directIst === "number")
+    ? directIst
+    : (typeof _m2CachedIstMask === "number" ? _m2CachedIstMask : null);
+
+  if (!renderM2Turnouts._t || Date.now() - renderM2Turnouts._t > 1000){
+    renderM2Turnouts._t = Date.now();
+    console.log("[TURNOUTS] render", msg.type, "istMask", istMask);
+  }
+
+  body.innerHTML = "";
+
+  if (!online){
+    body.innerHTML = `<tr><td colspan="6" class="mono">Mega2 offline</td></tr>`;
+    return;
+  }
+
+  // Level-Rendering wie bei Mega2 Sensor-Tabellen:
+  // 1 => LOW/aktiv (grün), 0 => HIGH/inaktiv (grau)
+  function levelHtml(lvl1MeansLow){
+    const on = !!lvl1MeansLow;
+    return `<span class="led ${on ? "led-on" : "led-off"}" title="${on ? "LOW (aktiv)" : "HIGH (inaktiv)"}"></span>` +
+           (on ? "LOW" : "HIGH");
+  }
+
+  // Stabil: immer 4 Zeilen rendern (auch wenn istMask fehlt)
+  for (let i = 0; i < M2_TURNOUT_RM_PINS.length; i++){
+    const w = M2_TURNOUT_RM_PINS[i];   // erwartet: { wid:12..15, rmPin:37..40 }
+    const bit = i;                    // W12->0, W13->1, W14->2, W15->3
+
+    // Wenn istMask fehlt: Level als "–" ohne LED anzeigen (wie andere Platzhalter)
+    let levelCell = "–";
+    if (istMask !== null){
+      const bitIs1 = ((istMask >> bit) & 1) === 1;
+
+      // INVERT: bit=1 => LOW (aktiv), bit=0 => HIGH (inaktiv)
+      const lvl1MeansLow = bitIs1 ? 1 : 0;
+
+      levelCell = levelHtml(lvl1MeansLow);
+    }
+
+    body.insertAdjacentHTML("beforeend", `<tr>
+      <td class="mono">W${w.wid}</td>
+      <td>Rückmelder</td>
+      <td class="mono">${w.rmPin}</td>
+      <td>${levelCell}</td>
+      <td class="mono">–</td>
+      <td class="mono">–</td>
+    </tr>`);
+  }
+}
 // ------------------------------------------------------------
 // Mega1 sensor meta (from pins_mega1.h / pins_mega1.cpp)
 // sid -> { name, pin }
@@ -465,10 +548,14 @@ const statusModel = {
 const SYS_MODE_DIAG = 0x20;
 
 function renderMega2Mode(msg){
+  // Render ONLY from diag frames (state frames would overwrite and cause flicker)
+  if (!msg || msg.type !== "diag") return;
+  if (!msg.mega2) return;
+
   const el = qs("m2-mode");
   if (!el) return;
 
-  const m2 = msg?.mega2;
+  const m2 = msg.mega2;
   if (!m2 || !m2.online){
     el.textContent = "Mega2: offline";
     return;
@@ -484,14 +571,102 @@ function renderMega2Mode(msg){
   }
 }
 
+function bitTest(mask, bit){
+  return ((mask >>> bit) & 1) !== 0;
+}
+
 function renderStatus(){
   const el = qs("diag-status");
   if (!el) return;
+
   const parts = [];
   parts.push(statusModel.wsUp ? "WS connected" : "WS disconnected");
   if (statusModel.diagText) parts.push(statusModel.diagText);
   if (statusModel.warnText) parts.push("⚠ " + statusModel.warnText);
+
   el.textContent = parts.join(" · ");
+}
+
+function renderM2Relays(msg){
+  // Render ONLY from diag frames (state/diagControl frames must not overwrite tables)
+  if (!msg || msg.type !== "diag") return;
+  if (!msg.mega2) return;
+
+  const body = qs("diag-m2-relays-body");
+  const sub  = qs("diag-m2-relays-sub");
+  if (!body) return;
+
+  const m2 = msg.mega2;
+  const online = !!m2.online;
+
+  if (sub){
+    sub.textContent = !online
+      ? "telemetry: offline"
+      : "telemetry: – (Relaiszustände noch nicht im JSON)";
+  }
+
+  // Immer stabil rendern (Read-Only Mapping), unabhängig von Telemetrie
+  body.innerHTML = "";
+
+  if (!online){
+    body.innerHTML = `<tr><td colspan="4" class="mono">Mega2 offline</td></tr>`;
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // Read-only Mapping (Pins aus mega2_pins.h)
+  // Spalten: Name | Pin | Level | Aktion
+  // Level/Aktion bleiben “—” bis echte Telemetrie existiert.
+  // ------------------------------------------------------------
+  const rows = [];
+
+  // Weichenrelais W12..W15 (2 Spulen pro Weiche)
+  const TURNOUT_PINS = [
+    { wid:12, gerade:2,  abbiegen:3  },
+    { wid:13, gerade:4,  abbiegen:5  },
+    { wid:14, gerade:6,  abbiegen:7  },
+    { wid:15, gerade:8,  abbiegen:9  },
+  ];
+  for (const p of TURNOUT_PINS){
+    rows.push({ name:`W${p.wid} Gerade`,   pin:p.gerade });
+    rows.push({ name:`W${p.wid} Abbiegen`, pin:p.abbiegen });
+  }
+
+  // Stromgleis / CUT Relais (Bezeichnungen wie bisher, aber ohne Von/Nach-Spalten)
+  const EDGE_PINS = new Map([
+    ["Block 1 → 2",         43],
+    ["Block 2 → 3",         44],
+    ["Block 3 → 4",         45],
+    ["Block 4 → 1",         46],
+    ["Block 4 → 5",         47],
+    ["Block 5 → SBHF",      48],
+    ["SBHF Gl1 → Block 6",  49],
+    ["SBHF Gl2 → Block 6",  50],
+    ["SBHF Gl3 → Block 6",  51],
+    ["Block 6 → Block 4",   53],
+    ["Nothalt SBHF",        52],
+    ["Trafo oben CUT",      41],
+    ["Trafo unten CUT",     42],
+  ]);
+
+  for (const [name, pin] of EDGE_PINS.entries()){
+    rows.push({ name, pin });
+  }
+
+  // Helpers: Placeholder cells
+  const levelCell  = `<span class="mono">—</span>`;
+  const actionCell = `<span class="mono">—</span>`;
+
+  for (const r of rows){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.name}</td>
+      <td class="mono">${r.pin ?? "—"}</td>
+      <td class="mono">${levelCell}</td>
+      <td class="mono">${actionCell}</td>
+    `;
+    body.appendChild(tr);
+  }
 }
 
 function setDiagStatus(t){
@@ -1067,229 +1242,226 @@ function connect(){
   };
 
   ws.onmessage = (ev) => {
-  console.log("[WSRX]", Date.now(), ev.data.length);
-  const t0 = performance.now();
+    const t0 = performance.now();
 
-  let msg = null;
-  try { msg = JSON.parse(ev.data); } catch(e) { return; }
-  const tParse = performance.now();
+    let msg = null;
+    try { msg = JSON.parse(ev.data); } catch(_) { return; }
+    const tParse = performance.now();
 
-  wsLog(msg?.type || "msg", msg);
-  
-  // Update Mega2 mode badge on every frame (diag/state/analog)
-  renderMega2Mode(msg);
+    wsLog(msg?.type || "msg", msg);
 
-  // ------------------------------------------------------------
-  // IMPORTANT: Handle diagControl + diagCtrl BEFORE returning from
-  //            "diag/state/analog" branches below.
-  // Reason: msg.diagCtrl is embedded in type:"diag" and type:"state".
-  // ------------------------------------------------------------
+    // ------------------------------------------------------------
+    // 1) diagControl: IMMER zuerst behandeln + return
+    // ------------------------------------------------------------
+    if (msg.type === "diagControl"){
+      try { console.log("[DIAGJS] diagControl rx", msg); } catch(_){}
 
-  // 1) Explicit diagControl response (after diagEnter)
-  if (msg.type === "diagControl"){
-    try { console.log("[DIAGJS] diagControl rx", msg); } catch(_){ }
-    if (msg.isOwner && msg.token){
-      diagIsOwner = true;
-      diagToken = msg.token;
-      if (DIAG_DEBUG) console.log(`[DIAGJS] set diagToken=${diagToken} (store) startHeartbeat`);
-      storeDiagToken(diagToken);
-      qs("diag-enter").disabled = true;
-      qs("diag-exit").disabled = false;
-      setWarnStatus("");
-      setDiagStatus(`Diagnose aktiv (Owner ${msg.ownerId})`);
-      startHeartbeat();
-    } else {
-      // Diagnose belegt / kein Owner -> hard read-only
-      diagIsOwner = false;
-      // IMPORTANT: don't clear stored token on "busy". We might want to resume later.
-      // Only clear if server says lease is inactive.
-      if (!msg.active) {
-        diagToken = null;
-        storeDiagToken(null);
-      }
-      stopHeartbeat();
-      qs("diag-exit").disabled = true;
-      qs("diag-enter").disabled = false;
-      setDiagStatus(`Diagnose belegt (Owner ${msg.ownerId})`);
-    }
-    const tEnd = performance.now();
-    console.log("[WSRX-T]", "len", ev.data.length,
-                "parse", (tParse - t0).toFixed(2) + "ms",
-                "total", (tEnd - t0).toFixed(2) + "ms");
-    return;
-  }
+      if (msg.isOwner && msg.token){
+        diagIsOwner = true;
+        diagToken = msg.token;
+        storeDiagToken(diagToken);
 
-  // 2) Lease snapshot mirrored into diag + state frames
-  if (msg.diagCtrl){
-    if (msg.diagCtrl.active){
-      leaseModel.active = true;
-      leaseModel.ownerId = msg.diagCtrl.ownerId || 0;
-      // Support multiple possible field names (optional)
-      if (typeof msg.diagCtrl.expiresAtMs === "number") {
-        leaseModel.expiresAtMs = msg.diagCtrl.expiresAtMs;
-      } else if (typeof msg.diagCtrl.leaseUntilMs === "number") {
-        leaseModel.expiresAtMs = msg.diagCtrl.leaseUntilMs;
-      } else if (typeof msg.diagCtrl.ttlMs === "number") {
-        leaseModel.expiresAtMs = Date.now() + msg.diagCtrl.ttlMs;
-      } else if (typeof msg.diagCtrl.expiresInMs === "number") {
-        // Your server currently sends expiresInMs (remaining), not an absolute timestamp
-        leaseModel.expiresAtMs = Date.now() + msg.diagCtrl.expiresInMs;
+        const bEnter = qs("diag-enter");
+        const bExit  = qs("diag-exit");
+        if (bEnter) bEnter.disabled = true;
+        if (bExit)  bExit.disabled  = false;
+
+        setWarnStatus("");
+        setDiagStatus(`Diagnose aktiv (Owner ${msg.ownerId})`);
+        startHeartbeat();
       } else {
-        leaseModel.expiresAtMs = 0;
-      }
-      setDiagStatus(buildDiagLeaseText());
-      if (leaseModel.expiresAtMs > 0) startLeaseCountdown();
-      else stopLeaseCountdown();
-    } else {
-      // Lease snapshot says inactive (display only). Token/owner is controlled by diagControl.
-      // If we are owner, heartbeat will refresh it; if not, diagControl will tell us.
-      leaseModel.active = false;
-      leaseModel.ownerId = 0;
-      leaseModel.expiresAtMs = 0;
-      stopLeaseCountdown();
-      // Anzeige-only: Owner/Token wird ausschließlich durch type:"diagControl" geführt.
-      setDiagStatus("Diagnose inaktiv");
-    }
-    // IMPORTANT: do NOT return here; diag/state payloads still need rendering below.
-  }
+        diagIsOwner = false;
+        // Token nur löschen, wenn Lease inaktiv ist (sonst "busy" behalten)
+        if (!msg.active) {
+          diagToken = null;
+          storeDiagToken(null);
+        }
+        stopHeartbeat();
 
-  // Dump last diag frame for quick debugging
-  if (msg.type === "diag"){
-    // Drop out-of-order/duplicate diag frames by ts (monotonic on ESP)
-    if (typeof msg.ts === "number"){
-      if (msg.ts <= _lastDiagTs) return;
-      _lastDiagTs = msg.ts;
+        const bEnter = qs("diag-enter");
+        const bExit  = qs("diag-exit");
+        if (bExit)  bExit.disabled  = true;
+        if (bEnter) bEnter.disabled = false;
+
+        setDiagStatus(msg.active ? `Diagnose belegt (Owner ${msg.ownerId})` : "Diagnose inaktiv");
+      } 
+
+      const tEnd = performance.now();
+      console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
+                  "parse", (tParse - t0).toFixed(2) + "ms",
+                  "total", (tEnd - t0).toFixed(2) + "ms");
+      return;
     }
 
-    lastDiagMsg = msg;
+    // ------------------------------------------------------------
+    // Cache Mega2 Turnouts istMask (kann in state oder diag kommen)
+    // Rendering bleibt trotzdem im DIAG-throttle.
+    // ------------------------------------------------------------
+    const maybeIst = msg?.mega2?.turnouts?.istMask;
+    if (typeof maybeIst === "number") {
+      _m2CachedIstMask = maybeIst;
+      _m2CachedIstMaskTs = Date.now();
+    }
 
-    // Pretty JSON dump is expensive -> throttle + (default) trim payload
-    const now = Date.now();
-    if (now - _lastPreDumpMs > DIAG_JSON_DUMP_MS){
-      _lastPreDumpMs = now;
-      const pre = qs("diag-json");
-      if (pre){
-        if (DIAG_JSON_FULL){
-          pre.textContent = JSON.stringify(msg, null, 2);
+
+    // ------------------------------------------------------------
+    // 2) diagCtrl snapshot (kann in state/diag/analog kommen)
+    // ------------------------------------------------------------
+    if (msg.diagCtrl){
+      if (msg.diagCtrl.active){
+        leaseModel.active = true;
+        leaseModel.ownerId = msg.diagCtrl.ownerId || 0;
+
+        if (typeof msg.diagCtrl.expiresAtMs === "number") {
+          leaseModel.expiresAtMs = msg.diagCtrl.expiresAtMs;
+        } else if (typeof msg.diagCtrl.leaseUntilMs === "number") {
+          leaseModel.expiresAtMs = msg.diagCtrl.leaseUntilMs;
+        } else if (typeof msg.diagCtrl.ttlMs === "number") {
+          leaseModel.expiresAtMs = Date.now() + msg.diagCtrl.ttlMs;
+        } else if (typeof msg.diagCtrl.expiresInMs === "number") {
+          leaseModel.expiresAtMs = Date.now() + msg.diagCtrl.expiresInMs;
         } else {
-          const d1 = msg?.mega1?.diag;
-          pre.textContent = JSON.stringify({
-            type: msg.type,
-            ts: msg.ts,
-            wsClients: msg.wsClients,
-            diagCtrl: msg.diagCtrl,
-            mega1: d1 ? {
-              sensorActiveMask: d1.sensorActiveMask,
-              sensorRiseMask: d1.sensorRiseMask,
-              sensorFallMask: d1.sensorFallMask,
-              sensors: d1.sensors,
-              relays: msg?.mega1?.relays,
-            } : undefined,
-            mega2: {
-              analog: msg?.mega2?.analog,
-              diagSensors: msg?.mega2?.diagSensors
-            }
-          }, null, 2);
+          leaseModel.expiresAtMs = 0;
+        } 
+
+        setDiagStatus(buildDiagLeaseText());
+        if (leaseModel.expiresAtMs > 0) startLeaseCountdown();
+        else stopLeaseCountdown();
+      } else {
+        leaseModel.active = false;
+        leaseModel.ownerId = 0;
+        leaseModel.expiresAtMs = 0;
+        stopLeaseCountdown();
+        setDiagStatus("Diagnose inaktiv");
+      }
+    }
+
+    // ------------------------------------------------------------
+    // 3) state: nur leichte Dinge (Blocks) + return
+    // ------------------------------------------------------------
+    if (msg.type === "state"){
+      renderBlocksFromState(msg);
+
+      const tEnd = performance.now();
+      console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
+                  "parse", (tParse - t0).toFixed(2) + "ms",
+                  "total", (tEnd - t0).toFixed(2) + "ms");
+      return;
+    }
+
+    // ------------------------------------------------------------
+    // 4) diag: hier passieren heavy tables (throttled)
+    // ------------------------------------------------------------
+    if (msg.type === "diag"){
+      // Drop out-of-order/duplicate diag frames by ts
+      if (typeof msg.ts === "number"){
+        if (msg.ts <= _lastDiagTs) return;
+        _lastDiagTs = msg.ts;
+      }
+
+      lastDiagMsg = msg;
+
+      // Mega2 mode badge nur aus DIAG (kein Flackern)
+      renderMega2Mode(msg);
+
+      // Pretty JSON dump throttle
+      const now = Date.now();
+      if (now - _lastPreDumpMs > DIAG_JSON_DUMP_MS){
+        _lastPreDumpMs = now;
+        const pre = qs("diag-json");
+        if (pre){
+          if (DIAG_JSON_FULL){
+            pre.textContent = JSON.stringify(msg, null, 2);
+          } else {
+            const d1 = msg?.mega1?.diag;
+            pre.textContent = JSON.stringify({
+              type: msg.type,
+              ts: msg.ts,
+              wsClients: msg.wsClients,
+              diagCtrl: msg.diagCtrl,
+              mega1: d1 ? {
+                sensors: d1.sensors,
+                relays: msg?.mega1?.relays,
+              } : undefined,
+              mega2: {
+                analog: msg?.mega2?.analog,
+                turnouts: msg?.mega2?.turnouts,
+                diagSensors: msg?.mega2?.diagSensors
+              }
+            }, null, 2);
+          }
         }
       }
+
+      // Analog in diag frame (klein)
+      const an = msg?.mega2?.analog;
+      if (an){
+        setKpi(an.ageMs, an.hz, an.seq);
+        renderAnalogRows(an);
+      } 
+
+      // Heavy DOM nur throttled
+      _latestDiagMsg = msg;
+      scheduleDiagRender();
+
+      const tEnd = performance.now();
+      console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
+                  "parse", (tParse - t0).toFixed(2) + "ms",
+                  "total", (tEnd - t0).toFixed(2) + "ms");
+      return;
     }
 
-    // Analog meta (Mega2)
-    const an = msg?.mega2?.analog;
-    if (an){
-      setKpi(an.ageMs, an.hz, an.seq);
-
-      // Preferred: table rows
-      if (!renderAnalogRows(an)){
-        // Fallback to old ids (if someone has an older diag.htm)
-        const vA10 = qs("an-vA10");
-        const vB10 = qs("an-vB10");
-        const imA  = qs("an-imA");
-        if (vA10 && typeof an.vA10 === "number") vA10.textContent = fmtV10(an.vA10);
-        if (vB10 && typeof an.vB10 === "number") vB10.textContent = fmtV10(an.vB10);
-        if (imA && Array.isArray(an.i_mA)) imA.textContent = an.i_mA.join(", ");
+    // ------------------------------------------------------------
+    // 5) analog: nur Analog-Tabelle (klein) + return
+    // ------------------------------------------------------------
+    if (msg.type === "analog"){
+      const an = msg?.mega2?.analog;
+      if (an){
+        renderAnalogRows(an);
+        setKpi(an.ageMs, an.hz, an.seq);
       }
+      const tEnd = performance.now();
+      console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
+                  "parse", (tParse - t0).toFixed(2) + "ms",
+                  "total", (tEnd - t0).toFixed(2) + "ms");
+      return;
     }
 
-    // Digital sensor tables (heavy DOM) -> throttle and render only latest
-    _latestDiagMsg = msg;
-    scheduleDiagRender();
-
-    const tEnd = performance.now();
-    console.log("[WSRX-T]", "len", ev.data.length,
-                "parse", (tParse - t0).toFixed(2) + "ms",
-                "total", (tEnd - t0).toFixed(2) + "ms");
-    return;
-  }
-
-  if (msg.type === "state"){
-    renderBlocksFromState(msg);
-    const tEnd = performance.now();
-    console.log("[WSRX-T]", "len", ev.data.length,
-                "parse", (tParse - t0).toFixed(2) + "ms",
-                "total", (tEnd - t0).toFixed(2) + "ms");
-    return;
-  }
-
-  if (msg.type === "analog"){
-    // Small periodic analog payload (base stream)
-    const an = msg?.mega2?.analog;
-    if (an){
-      if (!renderAnalogRows(an)){
-        const vA10 = qs("an-vA10");
-        const vB10 = qs("an-vB10");
-        const imA  = qs("an-imA");
-        if (vA10) vA10.textContent = fmtV10(an.vA10);
-        if (vB10) vB10.textContent = fmtV10(an.vB10);
-        if (imA && Array.isArray(an.i_mA)) imA.textContent = an.i_mA.join(", ");
-      }
+    // ------------------------------------------------------------
+    // 6) errors
+    // ------------------------------------------------------------
+    if (msg.type === "error" && msg.code === "DIAG_ACTIVE"){
+      setWarnStatus("DIAG_ACTIVE: Schreibzugriff gesperrt (du bist nicht Owner)");
+      return;
     }
+
+    if (msg.type === "error" && msg.code === "DIAG_HB_REJECT"){
+      setWarnStatus("DIAG_HB_REJECT: Heartbeat abgelehnt – Diagnose-Lease verloren.");
+      diagIsOwner = false;
+      diagToken = null;
+      storeDiagToken(null);
+      stopHeartbeat();
+
+      const exitBtn  = qs("diag-exit");
+      const enterBtn = qs("diag-enter");
+      if (exitBtn)  exitBtn.disabled = true;
+      if (enterBtn) enterBtn.disabled = false;
+
+      setDiagStatus("Diagnose inaktiv");
+      return;
+    } 
+
+    // default timing log
     const tEnd = performance.now();
-    console.log("[WSRX-T]", "len", ev.data.length,
+    console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
                 "parse", (tParse - t0).toFixed(2) + "ms",
                 "total", (tEnd - t0).toFixed(2) + "ms");
-    return;
-  }
-
-  if (msg.type === "error" && msg.code === "DIAG_ACTIVE"){
-    setWarnStatus("DIAG_ACTIVE: Schreibzugriff gesperrt (du bist nicht Owner)");
-    const tEnd = performance.now();
-    console.log("[WSRX-T]", "len", ev.data.length,
-                "parse", (tParse - t0).toFixed(2) + "ms",
-                "total", (tEnd - t0).toFixed(2) + "ms");
-    return;
-  }
-  
-  if (msg.type === "error" && msg.code === "DIAG_HB_REJECT"){
-    // Server rejected heartbeat => we are NOT owner anymore (token mismatch / inactive lease).
-    setWarnStatus("DIAG_HB_REJECT: Heartbeat abgelehnt – Diagnose-Lease verloren (Token mismatch / inaktiv).");
-    diagIsOwner = false;
-    diagToken = null;
-    storeDiagTokenStored(null);
-    stopHeartbeat();
-
-    const exitBtn  = qs("diag-exit");
-    const enterBtn = qs("diag-enter");
-    if (exitBtn)  exitBtn.disabled = true;
-    if (enterBtn) enterBtn.disabled = false;
-
-    setDiagStatus("Diagnose inaktiv");
-
-    const tEnd = performance.now();
-    console.log("[WSRX-T]", "len", ev.data.length,
-                "parse", (tParse - t0).toFixed(2) + "ms",
-                "total", (tEnd - t0).toFixed(2) + "ms");
-    return;
-  }
-
-  const tEnd = performance.now();
-  console.log("[WSRX-T]", "len", ev.data.length,
-              "parse", (tParse - t0).toFixed(2) + "ms",
-              "total", (tEnd - t0).toFixed(2) + "ms");
-};
+  };
 }
 
 window.addEventListener("load", () => {
+  const elBuild = qs("diag-build");
+  if (elBuild) elBuild.textContent = "build: " + (typeof DIAG_BUILD === "string" ? DIAG_BUILD : "unknown");
   // Reset Mega1 browser-side counters
   const resetBtn = qs("m1-reset");
   if (resetBtn){
