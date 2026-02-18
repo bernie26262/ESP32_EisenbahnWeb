@@ -309,6 +309,46 @@ bool Mega2Client::setSsr(uint8_t idx, bool on)
 
     return (resp == 1);
 }
+
+
+bool Mega2Client::diagRelaySet(uint8_t bit, bool on)
+{
+    uint8_t buf[1 + sizeof(Mega2DiagRelaySetPayload)];
+    buf[0] = M2_CMD_SET_DIAG_RELAY;
+    buf[1] = bit;
+    buf[2] = on ? 1 : 0;
+
+    uint8_t resp = 0;
+    const auto r = writeReadRetry(MEGA2_ADDR, buf, sizeof(buf), &resp, sizeof(resp), 8000);
+    if (r != I2CBus::Result::OK)
+        return false;
+
+    DBG_PRINTF(resp ? "[M2] DIAG_RELAY_SET bit=%u on=%u OK\n" : "[M2] DIAG_RELAY_SET bit=%u on=%u FAIL\n",
+               (unsigned)bit, (unsigned)(on ? 1 : 0));
+
+    return (resp == 1);
+}
+
+bool Mega2Client::diagRelayPulse(uint8_t bit, uint16_t ms)
+{
+    // Payload: [cmd, bit, msLo, msHi]
+    uint8_t buf[1 + sizeof(Mega2DiagRelayPulsePayload)];
+    buf[0] = M2_CMD_PULSE_DIAG_RELAY;
+    buf[1] = bit;
+    buf[2] = (uint8_t)(ms & 0xFF);
+    buf[3] = (uint8_t)((ms >> 8) & 0xFF);
+
+    uint8_t resp = 0;
+    const auto r = writeReadRetry(MEGA2_ADDR, buf, sizeof(buf), &resp, sizeof(resp), 8000);
+    if (r != I2CBus::Result::OK)
+        return false;
+
+    DBG_PRINTF(resp ? "[M2] DIAG_RELAY_PULSE bit=%u ms=%u OK\n" : "[M2] DIAG_RELAY_PULSE bit=%u ms=%u FAIL\n",
+               (unsigned)bit, (unsigned)ms);
+
+    return (resp == 1);
+}
+
 bool Mega2Client::powerOff()
 {
     return setSsr(SSR_MAIN_ENABLE, false);

@@ -1160,6 +1160,8 @@ if (type != WS_EVT_DATA)
              || !strcmp(a,"m1SetMode")
              || !strcmp(a,"m1TurnoutSet")
              || !strcmp(a,"m1DiagRelaySet")
+             || !strcmp(a,"m2DiagRelaySet")
+             || !strcmp(a,"m2DiagRelayPulse")
              || !strcmp(a,"sbhfSelftestRetry")
              || !strcmp(a,"sbhfSelftestStartup"));
     };
@@ -1298,6 +1300,83 @@ if (type != WS_EVT_DATA)
             Mega2Link::powerOn();
 
         g_stateDirty = true;
+        return;
+    }
+
+    // -------------------------------------------------
+    // Mega2 DIAG Relay Commands (bit-indexed, active-low)
+    // -------------------------------------------------
+    if (!strcmp(action, "m2DiagRelaySet"))
+    {
+        String tokIn;
+        if (!cmd["token"].isNull()) tokIn = cmd["token"].as<String>();
+        const char* token = (tokIn.length() > 0) ? tokIn.c_str() : nullptr;
+        if (!isDiagOwner(client, token)) return;
+
+        const int bit_i = cmd["bit"] | -1;
+        if (bit_i < 0 || bit_i > 31) return;
+        const uint8_t bit = (uint8_t)bit_i;
+
+        bool on = false;
+        JsonVariant vVal = cmd["on"];
+        if (vVal.is<bool>()) on = vVal.as<bool>();
+        else if (vVal.is<int>()) on = (vVal.as<int>() != 0);
+        else if (vVal.is<const char*>()) {
+            const char* s = vVal.as<const char*>();
+            if (s) on = (!strcasecmp(s, "true") || !strcasecmp(s, "on") || !strcmp(s, "1"));
+        }
+
+        const bool ok = Mega2Link::queueDiagRelaySet(bit, on);
+        if (!ok) LOG_WS("m2DiagRelaySet rejected (queue?)");
+
+        if (client) {
+            JsonDocument okj;
+            okj["type"]   = "ok";
+            okj["action"] = "m2DiagRelaySet";
+            okj["bit"]    = bit;
+            okj["on"]     = on ? 1 : 0;
+            okj["queued"] = ok ? 1 : 0;
+            String out;
+            serializeJson(okj, out);
+            client->text(out);
+        }
+        g_stateDirty = true;
+        g_diagDirty  = true;
+        return;
+    }
+
+    if (!strcmp(action, "m2DiagRelayPulse"))
+    {
+        String tokIn;
+        if (!cmd["token"].isNull()) tokIn = cmd["token"].as<String>();
+        const char* token = (tokIn.length() > 0) ? tokIn.c_str() : nullptr;
+        if (!isDiagOwner(client, token)) return;
+
+        const int bit_i = cmd["bit"] | -1;
+        if (bit_i < 0 || bit_i > 7) return;
+        const uint8_t bit = (uint8_t)bit_i;
+
+        const int ms_i = cmd["ms"] | 500;
+        uint16_t ms = (uint16_t)ms_i;
+        if (ms < 50) ms = 50;
+        if (ms > 2000) ms = 2000;
+
+        const bool ok = Mega2Link::queueDiagRelayPulse(bit, ms);
+        if (!ok) LOG_WS("m2DiagRelayPulse rejected (queue?)");
+
+        if (client) {
+            JsonDocument okj;
+            okj["type"]   = "ok";
+            okj["action"] = "m2DiagRelayPulse";
+            okj["bit"]    = bit;
+            okj["ms"]     = ms;
+            okj["queued"] = ok ? 1 : 0;
+            String out;
+            serializeJson(okj, out);
+            client->text(out);
+        }
+        g_stateDirty = true;
+        g_diagDirty  = true;
         return;
     }
 

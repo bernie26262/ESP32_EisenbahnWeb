@@ -34,6 +34,16 @@ static constexpr uint16_t ACT_STSTART  = 0x0040;
 static constexpr uint16_t ACT_MODE_DIAG = 0x0080; // -> setRunMode(1)
 static constexpr uint16_t ACT_MODE_AUTO = 0x0100; // -> setRunMode(0);
 
+// NEW: Mega2 DIAG relay writes
+static constexpr uint16_t ACT_DIAG_RELAY_SET   = 0x0200;
+static constexpr uint16_t ACT_DIAG_RELAY_PULSE = 0x0400;
+
+static volatile uint8_t  s_diagRelayBit = 0;
+static volatile uint8_t  s_diagRelayOn  = 0;
+static volatile uint8_t  s_diagPulseBit = 0;
+static volatile uint16_t s_diagPulseMs  = 0;
+
+
 static inline void queueAction(uint16_t mask)
 {
 #if defined(ESP32)
@@ -346,6 +356,23 @@ void update()
             (void)Mega2Client::powerOff();
             requestPollNow();
         }
+        
+        if (act & ACT_DIAG_RELAY_SET)
+        {
+            const uint8_t bit = s_diagRelayBit;
+            const bool on = (s_diagRelayOn != 0);
+            DBG_PRINTF("[M2LINK] sending cmd: DIAG_RELAY_SET bit=%u on=%u\n", (unsigned)bit, (unsigned)(on?1:0));
+            (void)Mega2Client::diagRelaySet(bit, on);
+            requestPollNow();
+        }
+        if (act & ACT_DIAG_RELAY_PULSE)
+        {
+            const uint8_t bit = s_diagPulseBit;
+            const uint16_t ms = s_diagPulseMs;
+            DBG_PRINTF("[M2LINK] sending cmd: DIAG_RELAY_PULSE bit=%u ms=%u\n", (unsigned)bit, (unsigned)ms);
+            (void)Mega2Client::diagRelayPulse(bit, ms);
+            requestPollNow();
+        }
     }
 
     // 1) Analog (immer rate-limited intern; bleibt bewusst NICHT DRDY-getrieben)
@@ -603,5 +630,35 @@ bool nothalt()       { queueAction(ACT_NOTHALT); return true; }
 bool releaseNotaus() { queueAction(ACT_REL);     return true; }
 bool powerOff()      { queueAction(ACT_POFF);    return true; }
 bool powerOn()       { queueAction(ACT_PON);     return true; }
+
+bool queueDiagRelaySet(uint8_t bit, bool on)
+{
+#if defined(ESP32)
+    portENTER_CRITICAL(&s_actionMux);
+    s_diagRelayBit = bit;
+    s_diagRelayOn  = on ? 1 : 0;
+    portEXIT_CRITICAL(&s_actionMux);
+#else
+    s_diagRelayBit = bit;
+    s_diagRelayOn  = on ? 1 : 0;
+#endif
+    queueAction(ACT_DIAG_RELAY_SET);
+    return true;
+}
+
+bool queueDiagRelayPulse(uint8_t bit, uint16_t ms)
+{
+#if defined(ESP32)
+    portENTER_CRITICAL(&s_actionMux);
+    s_diagPulseBit = bit;
+    s_diagPulseMs  = ms;
+    portEXIT_CRITICAL(&s_actionMux);
+#else
+    s_diagPulseBit = bit;
+    s_diagPulseMs  = ms;
+#endif
+    queueAction(ACT_DIAG_RELAY_PULSE);
+    return true;
+}
 
 } // namespace Mega2Link

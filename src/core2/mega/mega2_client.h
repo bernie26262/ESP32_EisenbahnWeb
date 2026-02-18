@@ -45,4 +45,8 @@ namespace Mega2Client
 
     bool powerOff();
     bool setSsr(uint8_t idx, bool on);
+
+    // DIAG relay writes (only when DIAG_TEST + lease owner on ESP side)
+    bool diagRelaySet(uint8_t bit, bool on);
+    bool diagRelayPulse(uint8_t bit, uint16_t ms);
 }

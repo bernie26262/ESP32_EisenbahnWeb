@@ -668,7 +668,20 @@ function renderM2Relays(msg){
     const led = `<span class="led ${isLowActive ? "led-on" : "led-off"}"></span>`;
     return `${led}<span class="mono">${isLowActive ? "LOW" : "HIGH"}</span>`;
   }
-  const actionCell = `<span class="mono">—</span>`;
+  function actionHtmlForRow(r){
+  const canWrite = online && diagIsOwner && diagToken;
+  if (!canWrite) return `<span class="mono">—</span>`;
+
+  // Turnout coils (bits 0..7): pulse-only
+  if (typeof r.bit === "number" && r.bit >= 0 && r.bit <= 7){
+    return `<button class="btn btn-sm" onclick="m2Pulse(${r.bit},500,this)">Puls (0,5s)</button>`;
+  }
+
+  // Power path / CUT relays: stable on/off
+  return `
+    <button class="btn btn-sm" onclick="m2SendRelaySet(${r.bit},true)">ON</button>
+    <button class="btn btn-sm" onclick="m2SendRelaySet(${r.bit},false)">OFF</button>`;
+}
 
   for (const r of rows){
     const tr = document.createElement("tr");
@@ -676,7 +689,7 @@ function renderM2Relays(msg){
       <td>${r.name}</td>
       <td class="mono">${r.pin ?? "—"}</td>
       <td>${levelCellForBit(r.bit)}</td>
-      <td class="mono">${actionCell}</td>
+      <td>${actionHtmlForRow(r)}</td>
     `;
     body.appendChild(tr);
   }
@@ -1032,6 +1045,49 @@ function m1Pulse(relay, idx, ms, uiBtn){
   }, ms);
 
   _m1PulseTimers.set(key, tid);
+}
+
+// Mega2 DIAG relay commands
+const _m2PulseTimers = new Map(); // bit -> timeoutId
+
+function m2SendRelaySet(bit, on){
+  if (!diagIsOwner || !diagToken) {
+    console.warn("[DIAGJS] m2DiagRelaySet blocked (not owner or missing token)", { diagIsOwner, diagToken });
+    return;
+  }
+  wsSend({ action:"m2DiagRelaySet", token: diagToken, bit, on: !!on });
+}
+
+function m2SendRelayPulse(bit, ms){
+  if (!diagIsOwner || !diagToken) {
+    console.warn("[DIAGJS] m2DiagRelayPulse blocked (not owner or missing token)", { diagIsOwner, diagToken });
+    return;
+  }
+  wsSend({ action:"m2DiagRelayPulse", token: diagToken, bit, ms });
+}
+
+function m2Pulse(bit, ms, uiBtn){
+  const key = String(bit);
+  if (_m2PulseTimers.has(key)) return;
+
+  if (uiBtn){
+    uiBtn.disabled = true;
+    uiBtn.dataset.busy = "1";
+    uiBtn.textContent = "Puls…";
+  }
+
+  m2SendRelayPulse(bit, ms);
+
+  const tid = setTimeout(() => {
+    _m2PulseTimers.delete(key);
+    if (uiBtn){
+      uiBtn.disabled = false;
+      uiBtn.dataset.busy = "";
+      uiBtn.textContent = "Puls (0,5s)";
+    }
+  }, ms + 50);
+
+  _m2PulseTimers.set(key, tid);
 }
 
 // ------------------------------------------------------------

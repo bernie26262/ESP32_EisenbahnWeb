@@ -33,6 +33,10 @@ namespace Mega2Link
     bool powerOn();
     bool powerOff();    // UI-STOP / SSR_MAIN_ENABLE aus
 
+    // DIAG relay writes (executed in Mega2Link::update to serialize I2C)
+    bool queueDiagRelaySet(uint8_t bit, bool on);
+    bool queueDiagRelayPulse(uint8_t bit, uint16_t ms);
+
     // optional: falls du später “lösen” willst
     bool releaseNotaus();
 }
