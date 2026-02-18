@@ -640,21 +640,21 @@ function renderM2Relays(msg){
     rows.push({ name:`W${p.wid} Abbiegen`, pin:p.abbiegen, bit: bit++ });
   }
 
-  // Stromgleis / CUT Relais (Bezeichnungen wie bisher, aber ohne Von/Nach-Spalten)
+  // Stromgleise / Powerpfade (nur Pin-Pegel; Bedeutung hängt von NO/NC ab)
   const EDGE_PINS = new Map([
-    ["Block 1 → 2",         43],
-    ["Block 2 → 3",         44],
-    ["Block 3 → 4",         45],
-    ["Block 4 → 1",         46],
-    ["Block 4 → 5",         47],
-    ["Block 5 → SBHF",      48],
-    ["SBHF Gl1 → Block 6",  49],
-    ["SBHF Gl2 → Block 6",  50],
-    ["SBHF Gl3 → Block 6",  51],
-    ["Block 6 → Block 4",   53],
-    ["Nothalt SBHF",        52],
-    ["Trafo oben CUT",      41],
-    ["Trafo unten CUT",     42],
+    ["Block 1 → 2 (Powerpfad)",         43],
+    ["Block 2 → 3 (Powerpfad)",         44],
+    ["Block 3 → 4 (Powerpfad)",         45],
+    ["Block 4 → 1 (Powerpfad)",         46],
+    ["Block 4 → 5 (Powerpfad)",         47],
+    ["Block 5 → SBHF (Powerpfad)",      48],
+    ["SBHF Gl1 → Block 6 (Powerpfad)",  49],
+    ["SBHF Gl2 → Block 6 (Powerpfad)",  50],
+    ["SBHF Gl3 → Block 6 (Powerpfad)",  51],
+    ["Block 6 → Block 4 (Powerpfad)",   53],
+    ["Nothalt SBHF (Relais)",           52],
+    ["Trafo oben (Relais)",             41],
+    ["Trafo unten (Relais)",            42],
   ]);
 
   for (const [name, pin] of EDGE_PINS.entries()){

@@ -2610,7 +2610,10 @@ function renderBlocksLeft(msg) {
      if (!sigWrap.__gridBuilt) {
        ensureSignalGridCss();
        sigWrap.__gridBuilt = true;
-       sigWrap.innerHTML = `<div><b>Signale (FROM -&gt; TO):</b></div><div class="badge-wrap badge-2col" id="m2-sig-grid"></div>`;
+       sigWrap.innerHTML = `
+         <div><b>Signale (Safety‑Freigabe FROM -&gt; TO):</b></div>
+         <div class="hint" style="margin:.25rem 0 .5rem 0; opacity:.85;">Anzeige = Software‑Freigabe/Safety‑Pfad (nicht direkt der Relais‑Pinpegel). Relais‑Pegel siehe diag.htm.</div>
+         <div class="badge-wrap badge-2col" id="m2-sig-grid"></div>`;
      }
      const grid = sigWrap.querySelector("#m2-sig-grid");
      if (grid && !grid.__placeholderBuilt) {
@@ -2695,7 +2698,10 @@ function renderBlocksLeft(msg) {
     if (!sigWrap.__gridBuilt) {
       ensureSignalGridCss();
       sigWrap.__gridBuilt = true;
-      sigWrap.innerHTML = `<div><b>Signale (FROM -&gt; TO):</b></div><div class="badge-wrap badge-2col" id="m2-sig-grid"></div>`;
+      sigWrap.innerHTML = `
+        <div><b>Signale (Safety‑Freigabe FROM -&gt; TO):</b></div>
+        <div class="hint" style="margin:.25rem 0 .5rem 0; opacity:.85;">Anzeige = Software‑Freigabe/Safety‑Pfad (nicht direkt der Relais‑Pinpegel). Relais‑Pegel siehe diag.htm.</div>
+        <div class="badge-wrap badge-2col" id="m2-sig-grid"></div>`;
     }
     const grid = sigWrap.querySelector("#m2-sig-grid");
     if (!grid) return;
