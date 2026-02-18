@@ -863,6 +863,16 @@ static String buildWsDiagJson(bool full)
 
             if (full) ds["ageMs"] = SystemRuntimeState::mega2DiagSensorsAgeMs();
         }
+
+        // Mega2 Diag Relays (pin levels, active-low semantics)
+        if (SystemRuntimeState::mega2DiagRelaysValid())
+        {
+            const auto& p = SystemRuntimeState::mega2DiagRelays();
+            JsonObject rr = doc["mega2"]["relays"].to<JsonObject>();
+            rr["seq"] = p.seq;
+            rr["levelMask"] = p.levelMask;
+            if (full) rr["ageMs"] = SystemRuntimeState::mega2DiagRelaysAgeMs();
+        }
     }
 
     String out;

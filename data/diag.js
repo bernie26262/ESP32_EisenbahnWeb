@@ -599,10 +599,17 @@ function renderM2Relays(msg){
   const m2 = msg.mega2;
   const online = !!m2.online;
 
+  // Telemetrie (pin-level, active-low semantics): bit=1 => LOW/aktiv
+  let levelMask = null;
+  const lm = m2?.relays?.levelMask;
+  if (typeof lm === "number") levelMask = lm;
+  else if (typeof lm === "string" && lm.trim() !== "" && !isNaN(Number(lm))) levelMask = Number(lm);
+  const ageMs = (typeof m2?.relays?.ageMs === "number") ? m2.relays.ageMs : null;
+
   if (sub){
-    sub.textContent = !online
-      ? "telemetry: offline"
-      : "telemetry: – (Relaiszustände noch nicht im JSON)";
+    if (!online) sub.textContent = "telemetry: offline";
+    else if (levelMask === null) sub.textContent = "telemetry: – (no relay levels)";
+    else sub.textContent = (ageMs !== null) ? `telemetry: ok (age ${ageMs} ms)` : "telemetry: ok";
   }
 
   // Immer stabil rendern (Read-Only Mapping), unabhängig von Telemetrie
@@ -619,6 +626,7 @@ function renderM2Relays(msg){
   // Level/Aktion bleiben “—” bis echte Telemetrie existiert.
   // ------------------------------------------------------------
   const rows = [];
+  let bit = 0;
 
   // Weichenrelais W12..W15 (2 Spulen pro Weiche)
   const TURNOUT_PINS = [
@@ -628,8 +636,8 @@ function renderM2Relays(msg){
     { wid:15, gerade:8,  abbiegen:9  },
   ];
   for (const p of TURNOUT_PINS){
-    rows.push({ name:`W${p.wid} Gerade`,   pin:p.gerade });
-    rows.push({ name:`W${p.wid} Abbiegen`, pin:p.abbiegen });
+    rows.push({ name:`W${p.wid} Gerade`,   pin:p.gerade,   bit: bit++ });
+    rows.push({ name:`W${p.wid} Abbiegen`, pin:p.abbiegen, bit: bit++ });
   }
 
   // Stromgleis / CUT Relais (Bezeichnungen wie bisher, aber ohne Von/Nach-Spalten)
@@ -650,11 +658,16 @@ function renderM2Relays(msg){
   ]);
 
   for (const [name, pin] of EDGE_PINS.entries()){
-    rows.push({ name, pin });
+    rows.push({ name, pin, bit: bit++ });
   }
 
   // Helpers: Placeholder cells
-  const levelCell  = `<span class="mono">—</span>`;
+  function levelCellForBit(b){
+    if (levelMask === null || typeof b !== "number") return `<span class="mono">—</span>`;
+    const isLowActive = (((levelMask >>> b) & 1) === 1);
+    const led = `<span class="led ${isLowActive ? "led-on" : "led-off"}"></span>`;
+    return `${led}<span class="mono">${isLowActive ? "LOW" : "HIGH"}</span>`;
+  }
   const actionCell = `<span class="mono">—</span>`;
 
   for (const r of rows){
@@ -662,7 +675,7 @@ function renderM2Relays(msg){
     tr.innerHTML = `
       <td>${r.name}</td>
       <td class="mono">${r.pin ?? "—"}</td>
-      <td class="mono">${levelCell}</td>
+      <td>${levelCellForBit(r.bit)}</td>
       <td class="mono">${actionCell}</td>
     `;
     body.appendChild(tr);
@@ -1386,7 +1399,8 @@ function connect(){
               mega2: {
                 analog: msg?.mega2?.analog,
                 turnouts: msg?.mega2?.turnouts,
-                diagSensors: msg?.mega2?.diagSensors
+                diagSensors: msg?.mega2?.diagSensors,
+                relays: msg?.mega2?.relays
               }
             }, null, 2);
           }

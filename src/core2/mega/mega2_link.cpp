@@ -49,12 +49,12 @@ static inline uint16_t takeActions()
 {
 #if defined(ESP32)
     portENTER_CRITICAL(&s_actionMux);
-    uint8_t v = s_pendingActions;
+    uint16_t v = s_pendingActions;
     s_pendingActions = 0;
     portEXIT_CRITICAL(&s_actionMux);
     return v;
 #else
-    uint8_t v = s_pendingActions;
+    uint16_t v = s_pendingActions;
     s_pendingActions = 0;
     return v;
 #endif
@@ -127,6 +127,10 @@ static uint32_t s_lastFullPullMs = 0;
 // diag-only sensors poll (prime + keep-alive)
 static uint32_t s_lastDiagSensorsPollMs = 0;
 static constexpr uint32_t DIAG_SENSORS_POLL_MS = 500;
+
+// diag-only relays poll (prime + keep-alive)
+static uint32_t s_lastDiagRelaysPollMs = 0;
+static constexpr uint32_t DIAG_RELAYS_POLL_MS = 500;
 
 static constexpr uint32_t POLL_STATUS_MS   = 200;
 static constexpr uint32_t POLL_SAFETY_MS   = 400;   // Safety halb so oft wie Status
@@ -442,10 +446,18 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
             M2_PEND_SHADOW,
             // diag-only sensors only when diag WS is active
             M2_PEND_DIAG_SENSORS,
+            M2_PEND_DIAG_RELAYS,
         };
         constexpr uint8_t RR_N = sizeof(rrBits) / sizeof(rrBits[0]);
 
         const bool diagOn = webserverHasDiagSubscribers();
+        
+        // minimal visibility: once per second
+        static uint32_t s_lastDiagGateLogMs = 0;
+        if (s_lastDiagGateLogMs == 0 || (uint32_t)(now - s_lastDiagGateLogMs) >= 1000) {
+            s_lastDiagGateLogMs = now;
+            DBG_PRINTF("[M2LINK] diagOn=%u pend=0x%04X drdy(pinLow=%u latched=%u)\n", (unsigned)(diagOn?1:0), (unsigned)s_m2PendMask, (unsigned)(drdyLevelLow?1:0), (unsigned)(s_drdyLatched?1:0));
+        }
 
         uint8_t chosen = 0xFF;
         for (uint8_t k = 0; k < RR_N; k++)
@@ -505,6 +517,24 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
                 break;
             }
 
+            case M2_PEND_DIAG_RELAYS:
+            {
+                Mega2DiagRelaysPayload p{};
+                ok = (Mega2Client::pollDiagRelays(p) == I2CBus::Result::OK);
+                if (ok) SystemRuntimeState::updateMega2DiagRelays(p);
+                if (ok) {
+                    SystemRuntimeState::updateMega2DiagRelays(p);
+                    // minimal: show seq/mask once per second (shares gate log cadence)
+                    static uint32_t s_lastRelayLogMs = 0;
+                    if (s_lastRelayLogMs == 0 || (uint32_t)(now - s_lastRelayLogMs) >= 1000) {
+                        s_lastRelayLogMs = now;
+                        DBG_PRINTF("[M2LINK] DIAG_RELAYS seq=%u mask=0x%08lX\n",
+                                   (unsigned)p.seq, (unsigned long)p.levelMask);
+                    }
+                }
+                break;
+            }
+
             default:
                 break;
         }
@@ -546,6 +576,14 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
             Mega2DiagSensorsPayload p{};
             if (Mega2Client::pollDiagSensors(p) == I2CBus::Result::OK)
                 SystemRuntimeState::updateMega2DiagSensors(p);
+        }
+
+        if (diagOn && (s_lastDiagRelaysPollMs == 0 || (uint32_t)(now - s_lastDiagRelaysPollMs) >= DIAG_RELAYS_POLL_MS))
+        {
+            s_lastDiagRelaysPollMs = now;
+            Mega2DiagRelaysPayload p{};
+            if (Mega2Client::pollDiagRelays(p) == I2CBus::Result::OK)
+                SystemRuntimeState::updateMega2DiagRelays(p);
         }
     }
 }

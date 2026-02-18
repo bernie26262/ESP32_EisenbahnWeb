@@ -33,6 +33,12 @@ static uint8_t  s_m2DiagSensSeq    = 0;
 static uint32_t s_m2DiagSensLastMs = 0;
 static Mega2DiagSensorsPayload s_m2DiagSens{};
 
+// Mega2 Diag Relays (pin levels, active-low semantics)
+static bool     s_m2DiagRelaysValid  = false;
+static uint8_t  s_m2DiagRelaysSeq    = 0;
+static uint32_t s_m2DiagRelaysLastMs = 0;
+static Mega2DiagRelaysPayload s_m2DiagRelays{};
+
 // NEU: Mega2SafetyStatus Cache (separat gepollt)
 static Mega2SafetyStatus s_m2Safety{};
 
@@ -473,6 +479,28 @@ const Mega2DiagSensorsPayload& SystemRuntimeState::mega2DiagSensors()
 {
     return s_m2DiagSens;
 }
+
+void SystemRuntimeState::updateMega2DiagRelays(const Mega2DiagRelaysPayload& p)
+{
+    const bool changed = (!s_m2DiagRelaysValid) || (p.seq != s_m2DiagRelaysSeq) || (p.levelMask != s_m2DiagRelays.levelMask);
+
+    s_m2DiagRelays = p;
+    s_m2DiagRelaysSeq = p.seq;
+    s_m2DiagRelaysLastMs = (uint32_t)millis();
+    s_m2DiagRelaysValid = true;
+
+    if (changed) g_diagDirty = true;
+}
+
+bool SystemRuntimeState::mega2DiagRelaysValid() { return s_m2DiagRelaysValid; }
+uint8_t SystemRuntimeState::mega2DiagRelaysSeq() { return s_m2DiagRelaysSeq; }
+uint32_t SystemRuntimeState::mega2DiagRelaysLastUpdateMs() { return s_m2DiagRelaysLastMs; }
+uint32_t SystemRuntimeState::mega2DiagRelaysAgeMs()
+{
+    if (!s_m2DiagRelaysValid) return 0xFFFFFFFFu;
+    return (uint32_t)((uint32_t)millis() - s_m2DiagRelaysLastMs);
+}
+const Mega2DiagRelaysPayload& SystemRuntimeState::mega2DiagRelays() { return s_m2DiagRelays; }
 
 const Mega1DiagV1& SystemRuntimeState::mega1Diag()
 {

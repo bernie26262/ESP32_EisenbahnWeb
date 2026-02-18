@@ -27,6 +27,9 @@ namespace Mega2Client
 
     // Mega2 Diag Sensors (Kontaktgleise + Schaltgleise) – read-only
     I2CBus::Result pollDiagSensors(Mega2DiagSensorsPayload& out);
+
+    // Mega2 Diag Relays (Relais-Pin-Level, active-low) – read-only
+    I2CBus::Result pollDiagRelays(Mega2DiagRelaysPayload& out);
      
     // Analogwerte (Trafo + Blockströme)
     I2CBus::Result pollAnalog();

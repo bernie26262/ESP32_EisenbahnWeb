@@ -32,7 +32,8 @@ enum : uint8_t
     M2_CMD_GET_ANALOG = 0x25,  // -> Mega2AnalogPayload
     M2_CMD_GET_PENDING_MASK = 0x26, // -> Mega2PendingMaskPayload
     M2_CMD_GET_TURNOUTS = 0x27, // -> Mega2TurnoutsPayload
-    M2_CMD_GET_DIAG_SENSORS = 0x28 // -> Mega2DiagSensorsPayload (kontakt+schalt, read-only)
+    M2_CMD_GET_DIAG_SENSORS = 0x28, // -> Mega2DiagSensorsPayload (kontakt+schalt, read-only)
+    M2_CMD_GET_DIAG_RELAYS  = 0x29  // -> Mega2DiagRelaysPayload (relay pin levels, diag-only)
 };
 
 // =====================================================
@@ -142,6 +143,7 @@ enum : uint16_t {
     M2_PEND_SHADOW      = 1u << 4,
     M2_PEND_TURNOUTS    = 1u << 5,  // reserved (future)
     M2_PEND_DIAG_SENSORS = 1u << 6, // diag-only sensors (kontakt + schaltgleise)
+    M2_PEND_DIAG_RELAYS  = 1u << 7, // diag-only relay pin levels
 
     // IMPORTANT: diag sensors are NOT part of ALL_DIGITAL (so "status pull" won't clear it implicitly)
     M2_PEND_ALL_DIGITAL = M2_PEND_SAFETY | M2_PEND_ENTRY | M2_PEND_ENTRY_PREV | M2_PEND_BLOCKS | M2_PEND_SHADOW | M2_PEND_TURNOUTS,
@@ -162,6 +164,8 @@ struct __attribute__((packed)) Mega2TurnoutsPayload
     uint16_t sollMask;
     uint16_t istMask;
 };
+
+
 
 // =====================================================
 // Mega2 Diag Sensors Payload (I2C, <=32 bytes, Wire-safe on AVR)
@@ -186,6 +190,18 @@ struct __attribute__((packed)) Mega2DiagSensorsPayload
 };
 static_assert(sizeof(Mega2DiagSensorsPayload) <= 32, "Mega2DiagSensorsPayload must fit Wire buffer");
 
+// =====================================================
+// Mega2 Diag Relays Payload (I2C, small)
+// Relay level semantics: 1 = aktiv (LOW bei active-low Treibern)
+// Bit mapping is fixed and mirrored in UI (diag.htm).
+// =====================================================
+struct __attribute__((packed)) Mega2DiagRelaysPayload
+{
+    uint8_t  seq;
+    uint32_t levelMask; // bit i: 1=LOW(aktiv), 0=HIGH(inaktiv)
+};
+static_assert(sizeof(Mega2DiagRelaysPayload) <= 8, "Mega2DiagRelaysPayload size");
+
 enum Mega2Command : uint8_t {
     CMD_GET_M2_SAFETY = 0x20,
     CMD_GET_M2_BLOCKS = 0x21,
@@ -196,5 +212,6 @@ enum Mega2Command : uint8_t {
     CMD_GET_M2_PENDING_MASK = 0x26,
     CMD_GET_M2_TURNOUTS     = 0x27,
     CMD_GET_M2_DIAG_SENSORS = 0x28,
+    CMD_GET_M2_DIAG_RELAYS  = 0x29,
 };
 

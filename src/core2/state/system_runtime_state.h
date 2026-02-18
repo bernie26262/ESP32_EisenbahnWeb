@@ -69,6 +69,17 @@ namespace SystemRuntimeState
     uint32_t mega2DiagSensorsLastUpdateMs();
     uint32_t mega2DiagSensorsAgeMs();
     const Mega2DiagSensorsPayload& mega2DiagSensors();;
+    
+    // ----------------------------------------------------
+    // Mega2 Diag Relays (Relais-Pin-Level, active-low)
+    // read-only, nur im diag WS stream
+    // ----------------------------------------------------
+    void updateMega2DiagRelays(const Mega2DiagRelaysPayload& p);
+    bool mega2DiagRelaysValid();
+    uint8_t mega2DiagRelaysSeq();
+    uint32_t mega2DiagRelaysLastUpdateMs();
+    uint32_t mega2DiagRelaysAgeMs();
+    const Mega2DiagRelaysPayload& mega2DiagRelays();
 
     // Abgeleitete Safety-Informationen
     bool safetyLock();
