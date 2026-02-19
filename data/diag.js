@@ -587,48 +587,22 @@ function renderStatus(){
   el.textContent = parts.join(" · ");
 }
 
-function renderM2Relays(msg){
-  // Render ONLY from diag frames (state/diagControl frames must not overwrite tables)
-  if (!msg || msg.type !== "diag") return;
-  if (!msg.mega2) return;
+// ------------------------------------------------------------
+// Mega2 Relays UI (stable DOM; no innerHTML rebuild in the tick)
+// ------------------------------------------------------------
+const M2_RELAYS_UI = {
+  inited: false,
+  table: null,
+  tbody: null,
+  sub: null,
+  rows: [], // [{ name, pin, bit, tr, tdLevel, tdAction, btnPulse, btnOn, btnOff }]
+};
 
-  const body = qs("diag-m2-relays-body");
-  const sub  = qs("diag-m2-relays-sub");
-  if (!body) return;
-
-  const m2 = msg.mega2;
-  const online = !!m2.online;
-
-  // Telemetrie (pin-level, active-low semantics): bit=1 => LOW/aktiv
-  let levelMask = null;
-  const lm = m2?.relays?.levelMask;
-  if (typeof lm === "number") levelMask = lm;
-  else if (typeof lm === "string" && lm.trim() !== "" && !isNaN(Number(lm))) levelMask = Number(lm);
-  const ageMs = (typeof m2?.relays?.ageMs === "number") ? m2.relays.ageMs : null;
-
-  if (sub){
-    if (!online) sub.textContent = "telemetry: offline";
-    else if (levelMask === null) sub.textContent = "telemetry: – (no relay levels)";
-    else sub.textContent = (ageMs !== null) ? `telemetry: ok (age ${ageMs} ms)` : "telemetry: ok";
-  }
-
-  // Immer stabil rendern (Read-Only Mapping), unabhängig von Telemetrie
-  body.innerHTML = "";
-
-  if (!online){
-    body.innerHTML = `<tr><td colspan="4" class="mono">Mega2 offline</td></tr>`;
-    return;
-  }
-
-  // ------------------------------------------------------------
-  // Read-only Mapping (Pins aus mega2_pins.h)
-  // Spalten: Name | Pin | Level | Aktion
-  // Level/Aktion bleiben “—” bis echte Telemetrie existiert.
-  // ------------------------------------------------------------
+function m2RelaysBuildMeta(){
   const rows = [];
   let bit = 0;
 
-  // Weichenrelais W12..W15 (2 Spulen pro Weiche)
+  // Weichenrelais W12..W15 (2 Spulen pro Weiche) => bits 0..7 => pulse-only
   const TURNOUT_PINS = [
     { wid:12, gerade:2,  abbiegen:3  },
     { wid:13, gerade:4,  abbiegen:5  },
@@ -636,11 +610,12 @@ function renderM2Relays(msg){
     { wid:15, gerade:8,  abbiegen:9  },
   ];
   for (const p of TURNOUT_PINS){
-    rows.push({ name:`W${p.wid} Gerade`,   pin:p.gerade,   bit: bit++ });
-    rows.push({ name:`W${p.wid} Abbiegen`, pin:p.abbiegen, bit: bit++ });
+    rows.push({ name:`W${p.wid} Gerade`,    pin:p.gerade,   bit: bit++, pulseOnly: true });
+    rows.push({ name:`W${p.wid} Abbiegen`,  pin:p.abbiegen, bit: bit++, pulseOnly: true });
   }
 
   // Stromgleise / Powerpfade (nur Pin-Pegel; Bedeutung hängt von NO/NC ab)
+  // Reihenfolge bleibt wie bisher (Map insertion order).
   const EDGE_PINS = new Map([
     ["Block 1 → 2 (Powerpfad)",         43],
     ["Block 2 → 3 (Powerpfad)",         44],
@@ -656,43 +631,194 @@ function renderM2Relays(msg){
     ["Trafo oben (Relais)",             41],
     ["Trafo unten (Relais)",            42],
   ]);
-
   for (const [name, pin] of EDGE_PINS.entries()){
-    rows.push({ name, pin, bit: bit++ });
+    rows.push({ name, pin, bit: bit++, pulseOnly: false });
   }
-
-  // Helpers: Placeholder cells
-  function levelCellForBit(b){
-    if (levelMask === null || typeof b !== "number") return `<span class="mono">—</span>`;
-    const isLowActive = (((levelMask >>> b) & 1) === 1);
-    const led = `<span class="led ${isLowActive ? "led-on" : "led-off"}"></span>`;
-    return `${led}<span class="mono">${isLowActive ? "LOW" : "HIGH"}</span>`;
-  }
-  function actionHtmlForRow(r){
-  const canWrite = online && diagIsOwner && diagToken;
-  if (!canWrite) return `<span class="mono">—</span>`;
-
-  // Turnout coils (bits 0..7): pulse-only
-  if (typeof r.bit === "number" && r.bit >= 0 && r.bit <= 7){
-    return `<button class="btn btn-sm" onclick="m2PulseClick(event,${r.bit},500,this)" type="button">Puls (0,5s)</button>`;
-  }
-
-  // Power path / CUT relays: stable on/off
-  return `
-    <button class="btn btn-sm" onclick="m2RelaySetClick(event,${r.bit},true,this)" type="button">ON</button>
-    <button class="btn btn-sm" onclick="m2RelaySetClick(event,${r.bit},false,this)" type="button">OFF</button>`;
+  return rows;
 }
 
-  for (const r of rows){
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${r.name}</td>
-      <td class="mono">${r.pin ?? "—"}</td>
-      <td>${levelCellForBit(r.bit)}</td>
-      <td>${actionHtmlForRow(r)}</td>
-    `;
-    body.appendChild(tr);
+function m2RelaysLevelCell(levelMask, bit){
+  // Telemetrie: bit=1 => LOW/aktiv
+  if (levelMask === null || typeof bit !== "number"){
+    return { html: `<span class="mono">—</span>`, isLowActive: null };
   }
+  const isLowActive = (((levelMask >>> bit) & 1) === 1);
+  const led = `<span class="led ${isLowActive ? "led-on" : "led-off"}"></span>`;
+  const txt = `<span class="mono">${isLowActive ? "LOW" : "HIGH"}</span>`;
+  return { html: `${led}${txt}`, isLowActive };
+}
+
+function m2RelaysInitOnce(){
+  if (M2_RELAYS_UI.inited) return;
+
+  const tbody = qs("diag-m2-relays-body");
+  const sub   = qs("diag-m2-relays-sub");
+  const table = qs("diag-m2-relays-table");
+  if (!tbody || !table) return;
+
+  M2_RELAYS_UI.inited = true;
+  M2_RELAYS_UI.table = table;
+  M2_RELAYS_UI.tbody = tbody;
+  M2_RELAYS_UI.sub = sub || null;
+
+  // Build stable rows ONCE
+  const meta = m2RelaysBuildMeta();
+  M2_RELAYS_UI.rows = [];
+
+  // Clear once (safe), afterwards: no innerHTML rebuilds.
+  tbody.innerHTML = "";
+
+  for (const r of meta){
+    const tr = document.createElement("tr");
+
+    const tdName = document.createElement("td");
+    tdName.textContent = r.name;
+
+    const tdPin = document.createElement("td");
+    tdPin.className = "mono";
+    tdPin.textContent = (r.pin ?? "—");
+
+    const tdLevel = document.createElement("td");
+    tdLevel.innerHTML = `<span class="mono">—</span>`;
+
+    const tdAction = document.createElement("td");
+    tdAction.className = "diag-relay-actions";
+    // Buttons are created once; enabled/disabled in updateOnly.
+    let btnPulse = null, btnOn = null, btnOff = null;
+
+    if (r.pulseOnly){
+      btnPulse = document.createElement("button");
+      btnPulse.type = "button";
+      btnPulse.className = "btn btn-sm btn-mini";
+      btnPulse.textContent = "Puls (0,5s)";
+      btnPulse.dataset.m2relayBit = String(r.bit);
+      btnPulse.dataset.m2relayAction = "pulse";
+      tdAction.appendChild(btnPulse);
+    } else {
+      btnOn = document.createElement("button");
+      btnOn.type = "button";
+      btnOn.className = "btn btn-sm btn-mini";
+      btnOn.textContent = "AN";
+      btnOn.dataset.m2relayBit = String(r.bit);
+      btnOn.dataset.m2relayAction = "on";
+
+      btnOff = document.createElement("button");
+      btnOff.type = "button";
+      btnOff.className = "btn btn-sm btn-mini";
+      btnOff.textContent = "AUS";
+      btnOff.dataset.m2relayBit = String(r.bit);
+      btnOff.dataset.m2relayAction = "off";
+
+      tdAction.appendChild(btnOn);
+      tdAction.appendChild(document.createTextNode(" "));
+      tdAction.appendChild(btnOff);
+    }
+
+    tr.appendChild(tdName);
+    tr.appendChild(tdPin);
+    tr.appendChild(tdLevel);
+    tr.appendChild(tdAction);
+    tbody.appendChild(tr);
+
+    M2_RELAYS_UI.rows.push({
+      name: r.name,
+      pin: r.pin,
+      bit: r.bit,
+      pulseOnly: !!r.pulseOnly,
+      tr, tdLevel, tdAction,
+      btnPulse, btnOn, btnOff
+    });
+  }
+
+  // Event delegation: ONE handler for all relay buttons.
+  // Use pointerup to be robust against "down/up while UI updates".
+  table.addEventListener("pointerup", (ev) => {
+    const btn = ev.target && ev.target.closest ? ev.target.closest("button[data-m2relay-bit]") : null;
+    if (!btn) return;
+    if (btn.disabled) return;
+
+    const bit = parseInt(btn.dataset.m2relayBit || "NaN", 10);
+    const act = btn.dataset.m2relayAction || "";
+    if (!Number.isFinite(bit) || !act) return;
+
+    // Ensure nothing else eats the gesture
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    if (act === "pulse"){
+      // Mega1-Style: pulse helper manages busy + button UI if passed the element
+      m2PulseClick(ev, bit, 500, btn);
+      return;
+    }
+    if (act === "on"){
+      m2RelaySetClick(ev, bit, true, btn);
+      return;
+    }
+    if (act === "off"){
+      m2RelaySetClick(ev, bit, false, btn);
+      return;
+    }
+  }, { passive: false });
+}
+
+function m2RelaysUpdateOnly(msg){
+  // Only from diag frames
+  if (!msg || msg.type !== "diag") return;
+  if (!msg.mega2) return;
+
+  const m2 = msg.mega2;
+  const online = !!m2.online;
+
+  // Telemetrie (pin-level, active-low semantics): bit=1 => LOW/aktiv
+  let levelMask = null;
+  const lm = m2?.relays?.levelMask;
+  if (typeof lm === "number") levelMask = lm >>> 0;
+  else if (typeof lm === "string" && lm.trim() !== "" && !isNaN(Number(lm))) levelMask = (Number(lm) >>> 0);
+  const ageMs = (typeof m2?.relays?.ageMs === "number") ? m2.relays.ageMs : null;
+
+  // Sub line
+  if (M2_RELAYS_UI.sub){
+    if (!online) M2_RELAYS_UI.sub.textContent = "telemetry: offline";
+    else if (levelMask === null) M2_RELAYS_UI.sub.textContent = "telemetry: – (no relay levels)";
+    else M2_RELAYS_UI.sub.textContent = (ageMs !== null) ? `telemetry: ok (age ${ageMs} ms)` : "telemetry: ok";
+  }
+
+  // Owner gate (same logic as before)
+  const canWrite = online && diagIsOwner && diagToken;
+
+  for (const r of M2_RELAYS_UI.rows){
+    // Level cell
+    const lc = m2RelaysLevelCell(levelMask, r.bit);
+    r.tdLevel.innerHTML = lc.html;
+
+    // Action enable/disable (stable buttons)
+    if (r.pulseOnly && r.btnPulse){
+      r.btnPulse.disabled = !canWrite;
+      r.btnPulse.setAttribute("aria-disabled", (!canWrite).toString());
+    } else {
+      if (r.btnOn){
+        r.btnOn.disabled = !canWrite;
+        r.btnOn.setAttribute("aria-disabled", (!canWrite).toString());
+      }
+      if (r.btnOff){
+        r.btnOff.disabled = !canWrite;
+        r.btnOff.setAttribute("aria-disabled", (!canWrite).toString());
+      }
+    }
+  }
+}
+
+
+function renderM2Relays(msg){
+  if (!msg || msg.type !== "diag") return;
+  if (!msg.mega2) return;
+
+  // Ensure stable DOM exists
+  m2RelaysInitOnce();
+  if (!M2_RELAYS_UI.inited) return;
+
+  // Update only (no rebuild)
+  m2RelaysUpdateOnly(msg);
 }
 
 function setDiagStatus(t){
@@ -714,25 +840,15 @@ function stopLeaseCountdown(){
 
 function startLeaseCountdown(){
   stopLeaseCountdown();
-  leaseCountdownTimer = setInterval(() => {
-    // force periodic refresh of diag text that includes remaining time
-    if (!leaseModel.active) return;
-    setDiagStatus(buildDiagLeaseText());
-  }, 1000);
+  // TTL is no longer shown in the status line -> no need for 1 Hz refresh.
+  // Keep this as a no-op to avoid UI flicker due to length changes.
 }
 
 function buildDiagLeaseText(){
   if (!leaseModel.active) return "Diagnose inaktiv";
   const ownerPart = (leaseModel.ownerId && leaseModel.ownerId !== 0) ? `Owner ${leaseModel.ownerId}` : "";
-  let ttlPart = "";
-  if (leaseModel.expiresAtMs && leaseModel.expiresAtMs > 0){
-    const now = Date.now();
-    const remMs = Math.max(0, leaseModel.expiresAtMs - now);
-    const remS  = Math.ceil(remMs / 1000);
-    ttlPart = `TTL ${remS}s`;
-  }
-  const extras = [ownerPart, ttlPart].filter(Boolean).join(", ");
-  return extras ? `Diagnose aktiv (${extras})` : "Diagnose aktiv";
+  // Keep status short & stable (no TTL countdown in header)
+  return ownerPart ? `Diagnose aktiv (${ownerPart})` : "Diagnose aktiv";
 }
 
 // ------------------------------------------------------------
@@ -1158,7 +1274,8 @@ function renderM1Relays(msg){
   if (!r) return;
 
   const tbody = qs("diag-m1-relays-body");
-  if (!tbody) return;
+  const table = qs("diag-m1-relays-table");
+  if (!tbody || !table) return;
 
   const sub = qs("diag-m1-relays-sub");
   if (sub){
@@ -1167,9 +1284,6 @@ function renderM1Relays(msg){
     sub.textContent = `seq: ${seqTxt} · age: ${ageTxt}`;
   }
 
-  // Nur Owner darf klicken
-  const dis = (!diagIsOwner || !diagToken) ? "disabled" : "";
-
   function bit(mask, i){ return ((mask >>> i) & 1) ? 1 : 0; }
 
   const gMask   = (typeof r.weicheGMask === "number")    ? r.weicheGMask    : 0;
@@ -1177,106 +1291,218 @@ function renderM1Relays(msg){
   const redMask = (typeof r.weicheRedMask === "number")  ? r.weicheRedMask  : 0;
   const bhfMask = (typeof r.bhfPowerMask === "number")   ? r.bhfPowerMask   : 0;
 
-// Level display like sensor tables: 1 => LOW/aktiv (green)
-  function levelHtml(lvl1MeansLow){
+  // Level display like sensor tables: 1 => LOW/aktiv (green)
+  function setLevel(td, lvl1MeansLow){
     const on = !!lvl1MeansLow;
-    return `<span class="led ${on ? "led-on" : "led-off"}" title="${on ? "LOW (aktiv)" : "HIGH (inaktiv)"}"></span>` +
-           (on ? "LOW" : "HIGH");
+    const html =
+      `<span class="led ${on ? "led-on" : "led-off"}" title="${on ? "LOW (aktiv)" : "HIGH (inaktiv)"}"></span>` +
+      (on ? "LOW" : "HIGH");
+    if (td.__lvlHtml !== html){
+      td.innerHTML = html;
+      td.__lvlHtml = html;
+    }
   }
 
-  let html = "";
+  // Build stable DOM once (no tbody.innerHTML churn => no lost clicks)
+  if (!renderM1Relays._ui){
+    renderM1Relays._ui = { rows: [] };
 
-  // ----------------------------------------------------------
-  // Sortierung wie gewünscht:
-  // Bhf2a, Bhf2b, Bhf4a, Bhf4b
-  // (Trenner)
-  // W0 G, W0 A, W1 G, W1 A, ... W11
-  // (Trenner)
-  // W6..W11 Reduktion
-  // ----------------------------------------------------------
+    const rows = [];
 
-  // Power rows (mask bits 0..3)
-  for (let i=0;i<4;i++){
-    const on = bit(bhfMask, i) === 1;
-    html += `<tr>
-      <td>${escapeHtml(M1_RELAY_META.powerNames[i])}</td>
-      <td class="mono">${M1_RELAY_META.pinTxt(M1_RELAY_META.powerPins[i])}</td>
-      <td>${levelHtml(on)}</td>
-      <td>
-        <div class="diag-relay-actions">
-          <button class="btn btn-mini" data-rel="power" data-idx="${i}" data-val="1" ${dis}>AN</button>
-          <button class="btn btn-mini" data-rel="power" data-idx="${i}" data-val="0" ${dis}>AUS</button>
-        </div>
-      </td>
-    </tr>`;
-  }
-
-  html += `<tr class="diag-sep-row"><td colspan="4">— Weichen (Taster: Puls 0,5s) —</td></tr>`;
-
-  // Weichen: G/A as momentary pulse (coil safety)
-  for (let i=0;i<12;i++){
-    const gOn = bit(gMask, i) === 0;
-    const aOn = bit(aMask, i) === 0;
-
-    html += `<tr>
-      <td>W${i} gerade</td>
-      <td class="mono">${M1_RELAY_META.pinTxt(M1_RELAY_META.pinsG[i])}</td>
-      <td>${levelHtml(gOn)}</td>
-      <td>
-        <div class="diag-relay-actions">
-          <button class="btn btn-mini" data-rel="weicheG" data-idx="${i}" data-pulse="1" ${dis}>Puls (0,5s)</button>
-          <button class="btn btn-mini" data-rel="weicheG" data-idx="${i}" data-val="0" ${dis}>STOP/AUS</button>
-        </div>
-      </td>
-    </tr>`;
-    html += `<tr>
-      <td>W${i} abbiegen</td>
-      <td class="mono">${M1_RELAY_META.pinTxt(M1_RELAY_META.pinsA[i])}</td>
-      <td>${levelHtml(aOn)}</td>
-      <td>
-        <div class="diag-relay-actions">
-          <button class="btn btn-mini" data-rel="weicheA" data-idx="${i}" data-pulse="1" ${dis}>Puls (0,5s)</button>
-          <button class="btn btn-mini" data-rel="weicheA" data-idx="${i}" data-val="0" ${dis}>STOP/AUS</button>
-        </div>
-      </td>
-    </tr>`;
-  }
-
-  html += `<tr class="diag-sep-row"><td colspan="4">— Reduktion (nur W6–W11) — <span class="muted">Read-Only: Reduktion wird automatisch abhängig der Weichenstellung geschaltet!</span></td></tr>`;
-
-  for (let i=6;i<=11;i++){
-    const redOn = bit(redMask, i) === 0;
-    html += `<tr>
-      <td>W${i} Reduktion</td>
-      <td class="mono">${M1_RELAY_META.pinTxt(M1_RELAY_META.pinsRed[i])}</td>
-      <td>${levelHtml(redOn)}</td>
-      <td><span class="muted">automatisch (abhängig von Weichenstellung)</span></td>
-    </tr>`;
-  }
-
-  tbody.innerHTML = html;
-
-  // One-time event delegation for buttons
-  if (!renderM1Relays._handlerInstalled){
-    const table = qs("diag-m1-relays-table");
-    if (table){
-      table.addEventListener("click", (ev) => {
-        const btn = ev.target && ev.target.closest ? ev.target.closest("button[data-rel]") : null;
-        if (!btn) return;
-        if (!diagIsOwner || !diagToken) return;
-
-        const relay = btn.getAttribute("data-rel");
-        const idx   = parseInt(btn.getAttribute("data-idx") || "0", 10);
-        const isPulse = btn.getAttribute("data-pulse") === "1";
-
-        if (isPulse){
-          m1Pulse(relay, idx, 500, btn);
-          return;
-        }
-        const val = parseInt(btn.getAttribute("data-val") || "0", 10);
-        m1SendRelayCmd(relay, idx, val);
+    // 1) Bhf2a..Bhf4b (mask bits 0..3)
+    for (let i=0;i<4;i++){
+      rows.push({
+        kind: "power",
+        name: M1_RELAY_META.powerNames[i],
+        pin: M1_RELAY_META.pinTxt(M1_RELAY_META.powerPins[i]),
+        idx: i,
       });
-      renderM1Relays._handlerInstalled = true;
+    }
+
+    // separator
+    rows.push({ kind: "sep", label: "— Weichen (Taster: Puls 0,5s) —" });
+
+    // 2) Weichen: W0..W11 gerade/abbiegen (pulse + stop)
+    for (let i=0;i<12;i++){
+      rows.push({
+        kind: "weiche",
+        relay: "weicheG",
+        idx: i,
+        name: `W${i} gerade`,
+        pin: M1_RELAY_META.pinTxt(M1_RELAY_META.pinsG[i]),
+      });
+      rows.push({
+        kind: "weiche",
+        relay: "weicheA",
+        idx: i,
+        name: `W${i} abbiegen`,
+        pin: M1_RELAY_META.pinTxt(M1_RELAY_META.pinsA[i]),
+      });
+    }
+
+    // separator
+    rows.push({
+      kind: "sep",
+      label: "— Reduktion (nur W6–W11) — <span class=\"muted\">Read-Only: Reduktion wird automatisch abhängig der Weichenstellung geschaltet!</span>"
+    });
+
+    // 3) Reduktion: W6..W11 read-only
+    for (let i=6;i<=11;i++){
+      rows.push({
+        kind: "red",
+        idx: i,
+        name: `W${i} Reduktion`,
+        pin: M1_RELAY_META.pinTxt(M1_RELAY_META.pinsRed[i]),
+      });
+    }
+
+    // Create DOM rows once
+    for (const it of rows){
+      if (it.kind === "sep"){
+        const tr = document.createElement("tr");
+        tr.className = "diag-sep-row";
+        const td = document.createElement("td");
+        td.colSpan = 4;
+        td.innerHTML = it.label;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        renderM1Relays._ui.rows.push({ kind:"sep", tr });
+        continue;
+      }
+
+      const tr = document.createElement("tr");
+
+      const tdName = document.createElement("td");
+      tdName.textContent = it.name;
+
+      const tdPin = document.createElement("td");
+      tdPin.className = "mono";
+      tdPin.textContent = it.pin;
+
+      const tdLevel = document.createElement("td");
+      tdLevel.innerHTML = `<span class="mono">—</span>`;
+
+      const tdAction = document.createElement("td");
+      tdAction.className = "diag-relay-actions";
+
+      let btnPulse=null, btnStop=null, btnOn=null, btnOff=null;
+
+      if (it.kind === "power"){
+        btnOn = document.createElement("button");
+        btnOn.type = "button";
+        btnOn.className = "btn btn-mini";
+        btnOn.textContent = "AN";
+        btnOn.dataset.m1rel = "power";
+        btnOn.dataset.idx = String(it.idx);
+        btnOn.dataset.val = "0"; // AN = active-low => drive pin LOW
+
+        btnOff = document.createElement("button");
+        btnOff.type = "button";
+        btnOff.className = "btn btn-mini";
+        btnOff.textContent = "AUS";
+        btnOff.dataset.m1rel = "power";
+        btnOff.dataset.idx = String(it.idx);
+        btnOff.dataset.val = "1"; // AUS = inactive => drive pin HIGH
+
+        tdAction.appendChild(btnOn);
+        tdAction.appendChild(document.createTextNode(" "));
+        tdAction.appendChild(btnOff);
+      } else if (it.kind === "weiche"){
+        btnPulse = document.createElement("button");
+        btnPulse.type = "button";
+        btnPulse.className = "btn btn-mini";
+        btnPulse.textContent = "Puls (0,5s)";
+        btnPulse.dataset.m1rel = it.relay;
+        btnPulse.dataset.idx = String(it.idx);
+        btnPulse.dataset.pulse = "1";
+
+        btnStop = document.createElement("button");
+        btnStop.type = "button";
+        btnStop.className = "btn btn-mini";
+        btnStop.textContent = "STOP/AUS";
+        btnStop.dataset.m1rel = it.relay;
+        btnStop.dataset.idx = String(it.idx);
+        btnStop.dataset.val = "0";
+
+        tdAction.appendChild(btnPulse);
+        tdAction.appendChild(document.createTextNode(" "));
+        tdAction.appendChild(btnStop);
+      } else if (it.kind === "red"){
+        tdAction.innerHTML = `<span class="muted">automatisch (abhängig von Weichenstellung)</span>`;
+      }
+
+      tr.appendChild(tdName);
+      tr.appendChild(tdPin);
+      tr.appendChild(tdLevel);
+      tr.appendChild(tdAction);
+      tbody.appendChild(tr);
+
+      renderM1Relays._ui.rows.push({
+        kind: it.kind,
+        relay: it.relay,
+        idx: it.idx,
+        tr, tdLevel,
+        btnPulse, btnStop, btnOn, btnOff
+      });
+    }
+
+    // Event delegation: ONE handler for all relay buttons.
+    // Use pointerup to be robust against "down/up while UI updates".
+    table.addEventListener("pointerup", (ev) => {
+      const btn = ev.target && ev.target.closest ? ev.target.closest("button[data-m1rel]") : null;
+      if (!btn) return;
+      if (btn.disabled) return;
+
+      // Ensure nothing else eats the gesture
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      if (!diagIsOwner || !diagToken) return;
+
+      const relay = btn.dataset.m1rel || "";
+      const idx = parseInt(btn.dataset.idx || "NaN", 10);
+      if (!relay || !Number.isFinite(idx)) return;
+
+      const isPulse = (btn.dataset.pulse === "1");
+      if (isPulse){
+        m1Pulse(relay, idx, 500, btn);
+        return;
+      }
+      const val = parseInt(btn.dataset.val || "0", 10);
+      m1SendRelayCmd(relay, idx, val);
+    }, { passive: false });
+  }
+
+  // Update only (levels + enabled/disabled)
+  const canCmd = !!(diagIsOwner && diagToken);
+
+  for (const row of renderM1Relays._ui.rows){
+    if (!row || row.kind === "sep") continue;
+
+    if (row.kind === "power"){
+      // IMPORTANT (Mega1 Bhf2a..Bhf4b):
+      // bhfPowerMask bit==1 corresponds to PIN=HIGH on the Mega1 output.
+      // Our LED convention expects "1 => LOW/aktiv (green)" (same as sensor tables).
+      // Therefore invert ONLY for these 4 power relays:
+      const pinHigh = bit(bhfMask, row.idx) === 1;
+      const lvl1MeansLow = pinHigh ? 0 : 1;
+      setLevel(row.tdLevel, lvl1MeansLow);
+
+      if (row.btnOn)  row.btnOn.disabled  = !canCmd;
+      if (row.btnOff) row.btnOff.disabled = !canCmd;
+    }
+    else if (row.kind === "weiche"){
+      const isG = (row.relay === "weicheG");
+      const lvl1MeansLow = isG ? (bit(gMask, row.idx) === 0) : (bit(aMask, row.idx) === 0);
+      setLevel(row.tdLevel, lvl1MeansLow);
+
+      if (row.btnPulse) row.btnPulse.disabled = !canCmd;
+      if (row.btnStop)  row.btnStop.disabled  = !canCmd;
+    }
+    else if (row.kind === "red"){
+      const lvl1MeansLow = (bit(redMask, row.idx) === 0);
+      setLevel(row.tdLevel, lvl1MeansLow);
+      // no buttons
     }
   }
 }

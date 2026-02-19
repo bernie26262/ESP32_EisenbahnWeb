@@ -1137,7 +1137,9 @@ function sendM1BhfToggle(bhf1) {
   const idx0 = Number(bhf1) - 1;
   if (idx0 < 0 || idx0 >= 4) return;
 
-  const curOn = ((powerMask >> idx0) & 1) === 1;
+  // Mega1 Bahnhof-Power ist active-low am Pin:
+  // powerMask bit==1 => PIN=HIGH (inaktiv), bit==0 => PIN=LOW (aktiv)
+  const curOn = (((powerMask >> idx0) & 1) === 0);
   const newOn = !curOn;
 
   const ok = wsSend({ action: "m1PowerSet", bhf: idx0, on: newOn });
@@ -2256,7 +2258,9 @@ function renderMega1StationsLeft(msg) {
     const btn = grid.querySelector(`#m1-bhf-${i}`);
     if (!btn) continue;
 
-    const on = haveData ? (((powerMask >> i) & 1) === 1) : null; // null => U
+    // Mega1 Bahnhof-Power ist active-low am Pin:
+    // powerMask bit==1 => PIN=HIGH (inaktiv), bit==0 => PIN=LOW (aktiv)
+    const on = haveData ? (((powerMask >> i) & 1) === 0) : null; // null => U
     const sig = (on === true) ? resolveSignalImg("G") : (on === false) ? resolveSignalImg("R") : resolveSignalImg("U");
 
     // "wie FROM->TO": kein farbiger Hintergrund, nur dezenter Rand + Hover

@@ -42,12 +42,25 @@
 /* ---- Blocks: left aligned (Sensor tables etc.) ---- */
 .diag-block-left{
   max-width: var(--diag-table-w);
+  width: 100%;              /* IMPORTANT: prevent shrink-to-fit (fixes narrow relay tables) */
   margin: 0 0 1rem 0;    /* linksbündig */
 }
 
 /* Ensure tables use the available width within block */
 .diag-block-left .diag-table{
   width: 100%;
+}
+
+
+/* Relay tables: make "Name" column wide enough (prevents text spilling into Pin) */
+body.diag-page #diag-m2-relays-table,
+body.diag-page #diag-m1-relays-table{ table-layout: fixed; }
+
+body.diag-page #diag-m2-relays-table th:nth-child(1),
+body.diag-page #diag-m2-relays-table td:nth-child(1),
+body.diag-page #diag-m1-relays-table th:nth-child(1),
+body.diag-page #diag-m1-relays-table td:nth-child(1){
+  width: calc(100% - 70px - 120px - 230px); /* Name = rest */
 }
 
 /* ---- LED indicator (Level) ---- */
@@ -103,6 +116,11 @@ body.diag-page .diag-headrow{
   margin: 0 !important;
 }
 
+/* Make column widths deterministic (prevents jitter / different-looking tables) */
+body.diag-page .diag-table.small{
+  table-layout: fixed;
+}
+
 /* Headrow: Titel links, Button rechts */
 body.diag-page .diag-headrow{
   display:flex !important;
@@ -113,17 +131,41 @@ body.diag-page .diag-headrow{
 body.diag-page .diag-headrow h3{ flex: 1 1 auto; min-width: 0; }
 body.diag-page .diag-headrow .btn{ flex: 0 0 auto; }
 
-/* Mega1: stabile Spalten (gegen Flattern) */
-body.diag-page #diag-m1-sensors th:nth-child(1),
-body.diag-page #diag-m1-sensors td:nth-child(1){ width: 70px; } /* Sensor */
-body.diag-page #diag-m1-sensors th:nth-child(3),
-body.diag-page #diag-m1-sensors td:nth-child(3){ width: 90px; } /* Pin */
-body.diag-page #diag-m1-sensors th:nth-child(4),
-body.diag-page #diag-m1-sensors td:nth-child(4){ width: 130px; white-space: nowrap; } /* Level */
-body.diag-page #diag-m1-sensors th:nth-child(5),
-body.diag-page #diag-m1-sensors td:nth-child(5),
-body.diag-page #diag-m1-sensors th:nth-child(6),
-body.diag-page #diag-m1-sensors td:nth-child(6){ width: 80px; } /* Rise/Fall */
+/* ------------------------------------------------------------
+ * 6-column sensor tables (TARGET: Mega2 Kontakt/Schaltgleise)
+ * Columns: 1=Sensor/Kontakt, 2=Name, 3=Pin, 4=Level, 5=Rise, 6=Fall
+ * Applies to both Mega2 contacts table and Mega1 sensors table
+ * ------------------------------------------------------------ */
+body.diag-page .diag-table.small th:nth-child(1),
+body.diag-page .diag-table.small td:nth-child(1){ width: 90px; }   /* Sensor/Kontakt */
+body.diag-page .diag-table.small th:nth-child(3),
+body.diag-page .diag-table.small td:nth-child(3){ width: 70px; }   /* Pin */
+body.diag-page .diag-table.small th:nth-child(4),
+body.diag-page .diag-table.small td:nth-child(4){ width: 120px; }  /* Level */
+body.diag-page .diag-table.small th:nth-child(5),
+body.diag-page .diag-table.small td:nth-child(5),
+body.diag-page .diag-table.small th:nth-child(6),
+body.diag-page .diag-table.small td:nth-child(6){ width: 70px; }   /* Rise/Fall */
+
+/* ------------------------------------------------------------
+ * 4-column relay tables (TARGET: Mega2 Relaiszustände)
+ * Columns: 1=Name, 2=Pin, 3=Level, 4=Aktion
+ * Ensure Mega1 relay table matches Mega2 relay table.
+ * ------------------------------------------------------------ */
+body.diag-page #diag-m2-relays-table th:nth-child(2),
+body.diag-page #diag-m2-relays-table td:nth-child(2),
+body.diag-page #diag-m1-relays-table th:nth-child(2),
+body.diag-page #diag-m1-relays-table td:nth-child(2){ width: 70px; }  /* Pin */
+
+body.diag-page #diag-m2-relays-table th:nth-child(3),
+body.diag-page #diag-m2-relays-table td:nth-child(3),
+body.diag-page #diag-m1-relays-table th:nth-child(3),
+body.diag-page #diag-m1-relays-table td:nth-child(3){ width: 120px; } /* Level */
+
+body.diag-page #diag-m2-relays-table th:nth-child(4),
+body.diag-page #diag-m2-relays-table td:nth-child(4),
+body.diag-page #diag-m1-relays-table th:nth-child(4),
+body.diag-page #diag-m1-relays-table td:nth-child(4){ width: 230px; } /* Aktion */
 
 /* Optional: keine Umbrüche in Tabellen (HIGH/LOW bleibt stabil) */
 body.diag-page .diag-table th,
