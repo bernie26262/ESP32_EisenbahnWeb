@@ -18,6 +18,18 @@
 .diag-table th, .diag-table td { border: 1px solid rgba(0,0,0,.12); padding: .35rem .5rem; text-align: left; }
 .diag-table th { background: rgba(0,0,0,.04); }
 
+/* ------------------------------------------------------------
+ * Click safety for action buttons inside tables
+ * (prevents "sometimes no click" when an overlay/row layer sits above)
+ * ------------------------------------------------------------ */
+.diag-table { position: relative; }
+.diag-table tbody td { position: relative; z-index: 0; }
+.diag-table button {
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+}
+
 /* Section separator rows inside tables (e.g. "Schaltgleise S11..S16") */
 .diag-section td{
   background: rgba(0,0,0,.04);
@@ -133,6 +145,12 @@ body.diag-page .diag-table td{ white-space: nowrap; }
   cursor:not-allowed;
 }
 
+/* Mega2 uses btn-sm for relay actions; match busy/disabled look */
+.btn-sm[disabled]{
+  opacity:.55;
+  cursor:not-allowed;
+}
+
 .diag-sep-row td{
   padding: .35rem .4rem;
   opacity: .6;
@@ -231,4 +249,20 @@ body.diag-page .diag-table td{ white-space: nowrap; }
   height: 1px;
   background: rgba(0,0,0,.10);
   margin: .75rem 0;
+}
+
+/* Relais-Buttons immer klickbar */
+table button {
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+/* Click-safety: verhindert Overlays innerhalb der Tabelle */
+table { position: relative; }
+tbody td { position: relative; z-index: 0; }
+tbody td button { position: relative; z-index: 5; }
+
+#someOverlay, .overlay, .statusOverlay {
+  pointer-events: none;   /* nur wenn es wirklich rein Anzeige ist */
 }

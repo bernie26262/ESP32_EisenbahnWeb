@@ -15,6 +15,16 @@
 
 #include <LittleFS.h>
 
+#ifndef EE_DEBUG_DIAG_WRITE
+#define EE_DEBUG_DIAG_WRITE 0
+#endif
+#if EE_DEBUG_DIAG_WRITE
+  #define EE_DIAGW(fmt, ...) EE_LOGI("DIAGW", fmt, ##__VA_ARGS__)
+#else
+  #define EE_DIAGW(...) do{}while(0)
+#endif
+
+
 // Exported by mega1_link.cpp (read-only relays snapshot for diag WS)
 extern bool mega1Link_getRelaysRO(uint8_t* outSeq,
                                   uint32_t* outAgeMs,
@@ -1311,7 +1321,13 @@ if (type != WS_EVT_DATA)
         String tokIn;
         if (!cmd["token"].isNull()) tokIn = cmd["token"].as<String>();
         const char* token = (tokIn.length() > 0) ? tokIn.c_str() : nullptr;
-        if (!isDiagOwner(client, token)) return;
+        const bool tokOk = (token != nullptr);
+        const uint32_t ownerId = client ? (uint32_t)client->id() : 0;
+        EE_DIAGW("WS rx m2RelaySet owner=%u tok=%s", (unsigned)ownerId, tokOk?"ok":"null");
+        if (!isDiagOwner(client, token)) {
+            EE_DIAGW("WS rx m2RelaySet denied owner=%u tok=%s", (unsigned)ownerId, tokOk?"ok":"null");
+            return;
+        }
 
         const int bit_i = cmd["bit"] | -1;
         if (bit_i < 0 || bit_i > 31) return;
@@ -1326,7 +1342,9 @@ if (type != WS_EVT_DATA)
             if (s) on = (!strcasecmp(s, "true") || !strcasecmp(s, "on") || !strcmp(s, "1"));
         }
 
+        EE_DIAGW("WS enq m2RelaySet bit=%u on=%u", (unsigned)bit, (unsigned)(on?1:0));
         const bool ok = Mega2Link::queueDiagRelaySet(bit, on);
+        EE_DIAGW("WS enq m2RelaySet bit=%u -> %s", (unsigned)bit, ok?"OK":"DROP");
         if (!ok) LOG_WS("m2DiagRelaySet rejected (queue?)");
 
         if (client) {
@@ -1350,7 +1368,13 @@ if (type != WS_EVT_DATA)
         String tokIn;
         if (!cmd["token"].isNull()) tokIn = cmd["token"].as<String>();
         const char* token = (tokIn.length() > 0) ? tokIn.c_str() : nullptr;
-        if (!isDiagOwner(client, token)) return;
+        const bool tokOk = (token != nullptr);
+        const uint32_t ownerId = client ? (uint32_t)client->id() : 0;
+        EE_DIAGW("WS rx m2RelayPulse owner=%u tok=%s", (unsigned)ownerId, tokOk?"ok":"null");
+        if (!isDiagOwner(client, token)) {
+            EE_DIAGW("WS rx m2RelayPulse denied owner=%u tok=%s", (unsigned)ownerId, tokOk?"ok":"null");
+            return;
+        }
 
         const int bit_i = cmd["bit"] | -1;
         if (bit_i < 0 || bit_i > 7) return;
@@ -1361,7 +1385,9 @@ if (type != WS_EVT_DATA)
         if (ms < 50) ms = 50;
         if (ms > 2000) ms = 2000;
 
+        EE_DIAGW("WS enq m2RelayPulse bit=%u ms=%u", (unsigned)bit, (unsigned)ms);
         const bool ok = Mega2Link::queueDiagRelayPulse(bit, ms);
+        EE_DIAGW("WS enq m2RelayPulse bit=%u -> %s", (unsigned)bit, ok?"OK":"DROP");
         if (!ok) LOG_WS("m2DiagRelayPulse rejected (queue?)");
 
         if (client) {

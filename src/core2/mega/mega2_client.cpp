@@ -9,6 +9,15 @@
 #include "system/system_status_payload.h"
 
 #include "debug.h"
+
+#ifndef EE_DEBUG_DIAG_WRITE
+#define EE_DEBUG_DIAG_WRITE 0
+#endif
+#if EE_DEBUG_DIAG_WRITE
+  #define EE_DIAGW(fmt, ...) DBG_PRINTF("[DIAGW] " fmt "\n", ##__VA_ARGS__)
+#else
+  #define EE_DIAGW(...) do{}while(0)
+#endif
  
 
 
@@ -320,12 +329,15 @@ bool Mega2Client::diagRelaySet(uint8_t bit, bool on)
 
     uint8_t resp = 0;
     const auto r = writeReadRetry(MEGA2_ADDR, buf, sizeof(buf), &resp, sizeof(resp), 8000);
+    EE_DIAGW("I2C tx cmd=SET_DIAG_RELAY bit=%u on=%u -> r=%u resp=0x%02X", (unsigned)bit, (unsigned)(on?1:0), (unsigned)r, (unsigned)resp);
     if (r != I2CBus::Result::OK)
         return false;
-
+    
+    #if !EE_DEBUG_DIAG_WRITE
     DBG_PRINTF(resp ? "[M2] DIAG_RELAY_SET bit=%u on=%u OK\n" : "[M2] DIAG_RELAY_SET bit=%u on=%u FAIL\n",
                (unsigned)bit, (unsigned)(on ? 1 : 0));
-
+    #endif
+    
     return (resp == 1);
 }
 
@@ -340,11 +352,14 @@ bool Mega2Client::diagRelayPulse(uint8_t bit, uint16_t ms)
 
     uint8_t resp = 0;
     const auto r = writeReadRetry(MEGA2_ADDR, buf, sizeof(buf), &resp, sizeof(resp), 8000);
+    EE_DIAGW("I2C tx cmd=PULSE_DIAG_RELAY bit=%u ms=%u -> r=%u resp=0x%02X", (unsigned)bit, (unsigned)ms, (unsigned)r, (unsigned)resp);
     if (r != I2CBus::Result::OK)
         return false;
 
+    #if !EE_DEBUG_DIAG_WRITE
     DBG_PRINTF(resp ? "[M2] DIAG_RELAY_PULSE bit=%u ms=%u OK\n" : "[M2] DIAG_RELAY_PULSE bit=%u ms=%u FAIL\n",
                (unsigned)bit, (unsigned)ms);
+    #endif
 
     return (resp == 1);
 }

@@ -10,9 +10,21 @@
 #include "core2/state/system_runtime_state.h"
 #include "debug.h"
 
+#ifndef EE_DEBUG_DIAG_WRITE
+#define EE_DEBUG_DIAG_WRITE 0
+#endif
+#if EE_DEBUG_DIAG_WRITE
+  #define EE_DIAGW(fmt, ...) EE_LOGI("DIAGW", fmt, ##__VA_ARGS__)
+#else
+  #define EE_DIAGW(...) do{}while(0)
+#endif
+
 // in webserver.cpp bereitstellen (kleiner Export), damit wir diag-only Reads gaten können
 extern bool webserverHasDiagSubscribers();
 
+// like mega1_link.cpp: trigger immediate WS pushes from link-layer updates
+extern volatile bool g_stateDirty;
+extern volatile bool g_diagDirty;
 
 #if defined(ESP32)
   #include "freertos/FreeRTOS.h"
@@ -361,7 +373,7 @@ void update()
         {
             const uint8_t bit = s_diagRelayBit;
             const bool on = (s_diagRelayOn != 0);
-            DBG_PRINTF("[M2LINK] sending cmd: DIAG_RELAY_SET bit=%u on=%u\n", (unsigned)bit, (unsigned)(on?1:0));
+            EE_DIAGW("Q pop m2RelaySet bit=%u on=%u", (unsigned)bit, (unsigned)(on?1:0));
             (void)Mega2Client::diagRelaySet(bit, on);
             requestPollNow();
         }
@@ -369,7 +381,7 @@ void update()
         {
             const uint8_t bit = s_diagPulseBit;
             const uint16_t ms = s_diagPulseMs;
-            DBG_PRINTF("[M2LINK] sending cmd: DIAG_RELAY_PULSE bit=%u ms=%u\n", (unsigned)bit, (unsigned)ms);
+            EE_DIAGW("Q pop m2RelayPulse bit=%u ms=%u", (unsigned)bit, (unsigned)ms);
             (void)Mega2Client::diagRelayPulse(bit, ms);
             requestPollNow();
         }
@@ -540,7 +552,11 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
             {
                 Mega2DiagSensorsPayload p{};
                 ok = (Mega2Client::pollDiagSensors(p) == I2CBus::Result::OK);
-                if (ok) SystemRuntimeState::updateMega2DiagSensors(p);
+                if (ok) {
+                    SystemRuntimeState::updateMega2DiagSensors(p);
+                    g_diagDirty  = true;
+                    g_stateDirty = true;
+                }
                 break;
             }
 
@@ -548,7 +564,6 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
             {
                 Mega2DiagRelaysPayload p{};
                 ok = (Mega2Client::pollDiagRelays(p) == I2CBus::Result::OK);
-                if (ok) SystemRuntimeState::updateMega2DiagRelays(p);
                 if (ok) {
                     SystemRuntimeState::updateMega2DiagRelays(p);
                     // minimal: show seq/mask once per second (shares gate log cadence)
@@ -558,6 +573,10 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
                         DBG_PRINTF("[M2LINK] DIAG_RELAYS seq=%u mask=0x%08lX\n",
                                    (unsigned)p.seq, (unsigned long)p.levelMask);
                     }
+
+                    // Like Mega1: immediate UI push when relay state changed
+                    g_diagDirty  = true;
+                    g_stateDirty = true;
                 }
                 break;
             }
@@ -572,6 +591,10 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
             s_mega2Online  = true;
             s_lastOkMsLink = now;
             if (!wasOnline) DBG_PRINTLN("[M2LINK] online=1");
+
+            // Like Mega1: any successful DRDY payload read means "new data available".
+            // Ensure WS push does not wait for periodic full/slow timers.
+            g_stateDirty = true;
         }
         else
         {
@@ -601,16 +624,22 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
         {
             s_lastDiagSensorsPollMs = now;
             Mega2DiagSensorsPayload p{};
-            if (Mega2Client::pollDiagSensors(p) == I2CBus::Result::OK)
+            if (Mega2Client::pollDiagSensors(p) == I2CBus::Result::OK) {
                 SystemRuntimeState::updateMega2DiagSensors(p);
+                g_diagDirty  = true;
+                g_stateDirty = true;
+            }
         }
 
         if (diagOn && (s_lastDiagRelaysPollMs == 0 || (uint32_t)(now - s_lastDiagRelaysPollMs) >= DIAG_RELAYS_POLL_MS))
         {
             s_lastDiagRelaysPollMs = now;
             Mega2DiagRelaysPayload p{};
-            if (Mega2Client::pollDiagRelays(p) == I2CBus::Result::OK)
+            if (Mega2Client::pollDiagRelays(p) == I2CBus::Result::OK) {
                 SystemRuntimeState::updateMega2DiagRelays(p);
+                g_diagDirty  = true;
+                g_stateDirty = true;
+            }
         }
     }
 }

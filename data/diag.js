@@ -674,13 +674,13 @@ function renderM2Relays(msg){
 
   // Turnout coils (bits 0..7): pulse-only
   if (typeof r.bit === "number" && r.bit >= 0 && r.bit <= 7){
-    return `<button class="btn btn-sm" onclick="m2Pulse(${r.bit},500,this)">Puls (0,5s)</button>`;
+    return `<button class="btn btn-sm" onclick="m2PulseClick(event,${r.bit},500,this)" type="button">Puls (0,5s)</button>`;
   }
 
   // Power path / CUT relays: stable on/off
   return `
-    <button class="btn btn-sm" onclick="m2SendRelaySet(${r.bit},true)">ON</button>
-    <button class="btn btn-sm" onclick="m2SendRelaySet(${r.bit},false)">OFF</button>`;
+    <button class="btn btn-sm" onclick="m2RelaySetClick(event,${r.bit},true,this)" type="button">ON</button>
+    <button class="btn btn-sm" onclick="m2RelaySetClick(event,${r.bit},false,this)" type="button">OFF</button>`;
 }
 
   for (const r of rows){
@@ -1050,6 +1050,25 @@ function m1Pulse(relay, idx, ms, uiBtn){
 // Mega2 DIAG relay commands
 const _m2PulseTimers = new Map(); // bit -> timeoutId
 
+// Helper: user feedback when pulse is busy (Mega1-style UX, but with message)
+function m2PulseBusyFeedback(bit, uiBtn){
+  try { setDiagStatus(`Busy: Mega2 Puls läuft (Bit ${bit})`); } catch(_) {}
+  if (!uiBtn) return;
+  // Mega1-style: rely on [disabled] CSS; just give a short text hint.
+  try {
+    const old = uiBtn.textContent;
+    uiBtn.textContent = "Busy…";
+    setTimeout(() => {
+      // If our pulse timer still owns the button, keep "Puls…" text.
+      if (uiBtn.dataset && uiBtn.dataset.busy === "1"){
+        uiBtn.textContent = "Puls…";
+      } else {
+        uiBtn.textContent = old;
+      }
+    }, 250);
+  } catch(_) {}
+}
+
 function m2SendRelaySet(bit, on){
   if (!diagIsOwner || !diagToken) {
     console.warn("[DIAGJS] m2DiagRelaySet blocked (not owner or missing token)", { diagIsOwner, diagToken });
@@ -1066,9 +1085,50 @@ function m2SendRelayPulse(bit, ms){
   wsSend({ action:"m2DiagRelayPulse", token: diagToken, bit, ms });
 }
 
+function m2RelaySetClick(ev, bit, on, uiBtn){
+  // Ensure table/row handlers or overlays don't swallow the click.
+  if (ev){
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+
+  // Optional tiny UI feedback
+  if (uiBtn){
+    uiBtn.blur();
+  }
+
+  m2SendRelaySet(bit, on);
+}
+
+function m2PulseClick(ev, bit, ms, uiBtn){
+  if (ev){
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+  if (uiBtn){
+    uiBtn.blur();
+  }
+  m2Pulse(bit, ms, uiBtn);
+}
+
+function m2PulseBusyFeedback(bit, uiBtn){
+  if (!uiBtn) return;
+  const old = uiBtn.textContent;
+  uiBtn.dataset.busy = "1";
+  uiBtn.textContent = "Busy…";
+  setTimeout(() => {
+    uiBtn.textContent = old;
+    uiBtn.dataset.busy = "";
+  }, 300);
+}
+
 function m2Pulse(bit, ms, uiBtn){
   const key = String(bit);
-  if (_m2PulseTimers.has(key)) return;
+  if (_m2PulseTimers.has(key)){
+    // Busy: ignore overlapping pulses (same behavior as Mega1), but give feedback.
+    m2PulseBusyFeedback(bit, uiBtn);
+    return;
+  }
 
   if (uiBtn){
     uiBtn.disabled = true;
@@ -1335,7 +1395,7 @@ function connect(){
         if (bEnter) bEnter.disabled = true;
         if (bExit)  bExit.disabled  = false;
 
-        setWarnStatus("");
+        setWarnStatus("⚠️ Diagnose aktiv: Aktoren können direkt geschaltet werden (potenziell gefährlich). Not-Aus bleibt wirksam.");
         setDiagStatus(`Diagnose aktiv (Owner ${msg.ownerId})`);
         startHeartbeat();
       } else {
