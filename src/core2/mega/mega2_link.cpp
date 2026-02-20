@@ -374,16 +374,38 @@ void update()
             const uint8_t bit = s_diagRelayBit;
             const bool on = (s_diagRelayOn != 0);
             EE_DIAGW("Q pop m2RelaySet bit=%u on=%u", (unsigned)bit, (unsigned)(on?1:0));
-            (void)Mega2Client::diagRelaySet(bit, on);
+            const bool r = Mega2Client::diagRelaySet(bit, on);
             requestPollNow();
+            // Optional but helps "spritzige" UI: immediate readback after write
+            if (r)
+            {
+                Mega2DiagRelaysPayload p{};
+                if (Mega2Client::pollDiagRelays(p) == I2CBus::Result::OK)
+                {
+                    SystemRuntimeState::updateMega2DiagRelays(p);
+                    g_diagDirty  = true;
+                    g_stateDirty = true;
+                }
+            }
         }
         if (act & ACT_DIAG_RELAY_PULSE)
         {
             const uint8_t bit = s_diagPulseBit;
             const uint16_t ms = s_diagPulseMs;
             EE_DIAGW("Q pop m2RelayPulse bit=%u ms=%u", (unsigned)bit, (unsigned)ms);
-            (void)Mega2Client::diagRelayPulse(bit, ms);
+            const bool r = Mega2Client::diagRelayPulse(bit, ms);
             requestPollNow();
+            // Best-effort immediate readback (pulse start), pulse end will be captured via DRDY/RR
+            if (r)
+            {
+                Mega2DiagRelaysPayload p{};
+                if (Mega2Client::pollDiagRelays(p) == I2CBus::Result::OK)
+                {
+                    SystemRuntimeState::updateMega2DiagRelays(p);
+                    g_diagDirty  = true;
+                    g_stateDirty = true;
+                }
+            }
         }
     }
 
