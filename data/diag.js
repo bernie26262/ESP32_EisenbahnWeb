@@ -598,6 +598,13 @@ const M2_RELAYS_UI = {
   rows: [], // [{ name, pin, bit, tr, tdLevel, tdAction, btnPulse, btnOn, btnOff }]
 };
 
+let _m2RelaysLastSeq = null;
+
+function _seqNewer8(newSeq, oldSeq){
+  const d = ((newSeq - oldSeq) & 0xFF);
+  return d > 0 && d < 128;
+}
+
 function m2RelaysBuildMeta(){
   const rows = [];
   let bit = 0;
@@ -767,6 +774,15 @@ function m2RelaysUpdateOnly(msg){
   if (!msg.mega2) return;
 
   const m2 = msg.mega2;
+  const seq = m2?.relays?.seq;
+
+  if (typeof seq === "number"){
+    if (_m2RelaysLastSeq !== null &&
+        !_seqNewer8(seq & 0xFF, _m2RelaysLastSeq)){
+      return; // stale frame -> ignore
+    }
+    _m2RelaysLastSeq = seq & 0xFF;
+  }
   const online = !!m2.online;
 
   // Telemetrie (pin-level, active-low semantics): bit=1 => LOW/aktiv
