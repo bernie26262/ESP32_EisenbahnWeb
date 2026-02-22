@@ -1134,7 +1134,13 @@ function sendM1BhfToggle(bhf1) {
 
   const diag = lastStateMsg?.mega1?.diag;
   const powerMask = Number(diag?.powerMask ?? 0);
-  const idx0 = Number(bhf1) - 1;
+  // Accept both 1-based (1..4) and 0-based (0..3) callers
+  // IMPORTANT: prefer 1-based mapping first, otherwise "1..3" would be mistaken as 0-based.
+  const n = Number(bhf1);
+  const idx0 =
+    (n >= 1 && n <= 4) ? (n - 1) :
+    (n >= 0 && n <= 3) ? n :
+    -1;
   if (idx0 < 0 || idx0 >= 4) return;
 
   // Mega1 Bahnhof-Power ist active-low am Pin:
@@ -1142,8 +1148,11 @@ function sendM1BhfToggle(bhf1) {
   const curOn = (((powerMask >> idx0) & 1) === 0);
   const newOn = !curOn;
 
-  const ok = wsSend({ action: "m1PowerSet", bhf: idx0, on: newOn });
-  if (ok) logLine(`BHF${bhf1} -> ${newOn ? "AN" : "aus"}`);
+  // IMPORTANT: m1PowerSet.on is interpreted as PIN level (HIGH/LOW), not logical ON/OFF.
+  // active-low: logical AN => PIN LOW; logical aus => PIN HIGH
+  const newPinHigh = !newOn;
+  const ok = wsSend({ action: "m1PowerSet", bhf: idx0, on: newPinHigh });
+  if (ok) logLine(`Bhf${idx0} -> ${newOn ? "AN" : "aus"}`);
 }
 
 function sendM1WeicheToggle(idxW) {
@@ -2228,7 +2237,7 @@ function renderMega1StationsLeft(msg) {
       b.setAttribute("data-m1cmd", "bhfToggle");
       b.setAttribute("data-bhf", String(i));
       b.innerHTML = `
-        <div class="m1-sig-title">BHF ${i + 1}</div>
+        <div class="m1-sig-title">Bhf${i}</div>
         <div class="m1-sig-row">
           <img class="signal-img" alt="">
           <span class="m1-sig-text"></span>
@@ -2273,7 +2282,7 @@ function renderMega1StationsLeft(msg) {
 
     const img = btn.querySelector("img");
     if (img && img.getAttribute("src") !== sig) img.setAttribute("src", sig);
-    if (img) img.setAttribute("alt", `BHF ${i + 1} ${(on === true) ? "G" : (on === false) ? "R" : "U"}`);
+    if (img) img.setAttribute("alt", `Bhf${i} ${(on === true) ? "G" : (on === false) ? "R" : "U"}`);
 
     const t = btn.querySelector(".m1-sig-text");
     const label = (on === true) ? "AN" : (on === false) ? "aus" : "—";

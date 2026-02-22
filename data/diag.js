@@ -299,7 +299,7 @@ const M1_SENSOR_INFO = new Map([
 const M1_RELAY_META = {
   // Benutzer-gewünschte Sortierung/Benennung:
   // Annahme: Bhf2a..Bhf4b entsprechen den 4 TrackPower-Relais auf A8..A11.
-  powerNames: ["Bhf2a", "Bhf2b", "Bhf4a", "Bhf4b"],
+  powerNames: ["Bhf0", "Bhf1", "Bhf2", "Bhf3"],
   powerPins:  ["A8", "A9", "A10", "A11"], // TrackPower Relais Bhf0..Bhf3
 
   // Weichen W0..W11 (Gerade/Abbiegen)
