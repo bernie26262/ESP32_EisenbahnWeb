@@ -287,22 +287,23 @@ bool Mega2Client::setRunMode(uint8_t mode)
 
 bool Mega2Client::powerOn()
 {
-    const uint8_t cmd = M2_CMD_POWER_ON;
-
-    uint8_t resp = 0;
-    const auto r = writeReadRetry(MEGA2_ADDR, &cmd, sizeof(cmd), &resp, sizeof(resp), 8000);
-    if (r != I2CBus::Result::OK)
-        return false;
-
-    DBG_PRINTF(resp ? "[M2] POWER ON OK\n" : "[M2] POWER ON FAIL\n");
-    return (resp == 1);
+    return setSsr(SSR_MAIN_ENABLE, true);
 }
+
+
 bool Mega2Client::setSsr(uint8_t idx, bool on)
 {
     uint8_t buf[3];
     buf[0] = M2_CMD_SET_SSR;
     buf[1] = idx;
-    buf[2] = on ? 1 : 0;
+
+    // --- IMPORTANT: active-low mapping (at least for SSR_MAIN_ENABLE) ---
+    bool pinHigh = on; // default: active-high
+    if (idx == SSR_MAIN_ENABLE) {
+        // SSR_MAIN_ENABLE is active-low: logical ON => PIN LOW => pinHigh=false
+        pinHigh = !on;
+    }
+    buf[2] = pinHigh ? 1 : 0;
 
     uint8_t resp = 0;
     const auto r = writeReadRetry(MEGA2_ADDR, buf, sizeof(buf), &resp, sizeof(resp), 8000);

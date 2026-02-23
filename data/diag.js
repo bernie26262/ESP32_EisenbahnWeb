@@ -893,7 +893,9 @@ function renderAnalogRows(an){
   html += `<tr><td>vA10</td><td class="mono">${vA10}</td></tr>`;
   html += `<tr><td>vB10</td><td class="mono">${vB10}</td></tr>`;
   for (let k=0;k<labels.length;k++){
-    const val = (typeof i[k] === "number") ? `${i[k]} mA` : "–";
+    const raw = !!(an && (an.flags & 0x10));
+    const suffixI = raw ? " cnt" : " mA";
+    const val = (typeof i[k] === "number") ? `${i[k]}${suffixI}` : "–";
     html += `<tr><td>i_mA ${labels[k]}</td><td class="mono">${val}</td></tr>`;
   }
   body.innerHTML = html;
@@ -1765,12 +1767,7 @@ function connect(){
         }
       }
 
-      // Analog in diag frame (klein)
-      const an = msg?.mega2?.analog;
-      if (an){
-        setKpi(an.ageMs, an.hz, an.seq);
-        renderAnalogRows(an);
-      } 
+
 
       // Heavy DOM nur throttled
       _latestDiagMsg = msg;
@@ -1787,7 +1784,7 @@ function connect(){
     // 5) analog: nur Analog-Tabelle (klein) + return
     // ------------------------------------------------------------
     if (msg.type === "analog"){
-      const an = msg?.mega2?.analog;
+      const an = msg?.analog ?? msg?.mega2?.analog;
       if (an){
         renderAnalogRows(an);
         setKpi(an.ageMs, an.hz, an.seq);

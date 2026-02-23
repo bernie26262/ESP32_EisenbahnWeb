@@ -350,8 +350,13 @@ static String buildWsStateJson(bool includeAnalog)
     s["errorType"]  = SystemRuntimeState::errorType;
     s["errorIndex"] = SystemRuntimeState::errorIndex;
 
-    // Power-Status (aus Flags)
-    s["powerOn"] = (m2.flags & SYS_POWER_ON) != 0;
+    // Power-Status (UI-semantisch): powerOn==true bedeutet "Leistung EIN".
+    // Hinweis: SYS_POWER_ON ist historisch ein *Pin-Level*-Flag (active-low):
+    //   bit==1 => Pin HIGH (inaktiv / AUS)
+    //   bit==0 => Pin LOW  (aktiv  / EIN)
+    // Daher hier bewusst invertieren.
+    const bool powerPinHigh = (m2.flags & SYS_POWER_ON) != 0;
+    s["powerOn"] = !powerPinHigh;
 
     // NOTAUS-Status (aus Flags)
     const bool notausActive = (m2.flags & SYS_NOTAUS_ACTIVE) != 0;
@@ -1290,6 +1295,7 @@ if (type != WS_EVT_DATA)
 
     if (!strcmp(action, "powerOn"))
     {
+        EE_LOGI("WS", "action powerOn received");
         Mega2Link::powerOn();
         g_stateDirty = true;
         return;
@@ -1297,6 +1303,7 @@ if (type != WS_EVT_DATA)
 
     if (!strcmp(action, "powerOff"))
     {
+        EE_LOGI("WS", "action powerOff received");
         Mega2Link::powerOff();
         g_stateDirty = true;
         return;
@@ -1304,10 +1311,11 @@ if (type != WS_EVT_DATA)
 
     if (!strcmp(action, "powerToggle"))
     {
-        if (((SystemRuntimeState::mega2Status().flags & SYS_POWER_ON) != 0))
-            Mega2Link::powerOff();
-        else
-            Mega2Link::powerOn();
+        //Legacy: toggle logical power state.
+        const bool powerPinHigh = ((SystemRuntimeState::mega2Status().flags & SYS_POWER_ON) != 0);
+        const bool logicalPowerOn = !powerPinHigh;
+        if (logicalPowerOn) Mega2Link::powerOff();
+        else                Mega2Link::powerOn();
 
         g_stateDirty = true;
         return;
