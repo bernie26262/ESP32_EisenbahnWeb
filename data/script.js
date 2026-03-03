@@ -2,8 +2,18 @@
  *  Eisenbahn WebUI - Safety & Status (WebSocket-only)
  * ========================================================= */
 
-const DEBUG_WS = true;
-const DEBUG_UI = false;
+// ---------------------------------------------------------
+// Console hygiene:
+// - Normalbetrieb: Konsole ruhig
+// - Debug opt-in per URL: ?debugws=1 / ?debugui=1
+// ---------------------------------------------------------
+const __qs = (() => {
+  try { return new URLSearchParams(location.search); }
+  catch (_) { return { get: () => null }; }
+})();
+
+const DEBUG_WS = (__qs.get("debugws") === "1");
+const DEBUG_UI = (__qs.get("debugui") === "1");
 
 
 // SystemStatus.flags bits (include/system/system_status_payload.h)
