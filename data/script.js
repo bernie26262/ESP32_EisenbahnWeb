@@ -2,18 +2,44 @@
  *  Eisenbahn WebUI - Safety & Status (WebSocket-only)
  * ========================================================= */
 
-// ---------------------------------------------------------
-// Console hygiene:
+// ------------------------------------------------------------
+// Console hygiene (wie diag.htm):
 // - Normalbetrieb: Konsole ruhig
-// - Debug opt-in per URL: ?debugws=1 / ?debugui=1
-// ---------------------------------------------------------
-const __qs = (() => {
-  try { return new URLSearchParams(location.search); }
-  catch (_) { return { get: () => null }; }
-})();
+// - Debug opt-in per URL oder localStorage
+//   URL: ?uidebug=1 / ?uitiming=1
+//   LS : EE_UI_DEBUG="0/1", EE_UI_TIMING="0/1"
+// - Verbose Output NUR wenn BEIDES aktiv ist (UI_VERBOSE)
+// ------------------------------------------------------------
+function _uiBoolSetting(lsKey, urlKey, defVal=false){
+  try{
+    const qs = new URLSearchParams(location.search);
+    if (qs.has(urlKey)){
+      const v = qs.get(urlKey);
+      return !(v === "0" || v === "false" || v === "off");
+    }
+    const s = localStorage.getItem(lsKey);
+    if (s !== null) return (s === "1" || s === "true" || s === "on");
+  }catch(e){}
+  return defVal;
+}
+const UI_DEBUG  = _uiBoolSetting("EE_UI_DEBUG",  "uidebug",  false);
+const UI_TIMING = _uiBoolSetting("EE_UI_TIMING", "uitiming", false);
+const UI_VERBOSE = (UI_DEBUG && UI_TIMING);
 
-const DEBUG_WS = (__qs.get("debugws") === "1");
-const DEBUG_UI = (__qs.get("debugui") === "1");
+// Backwards compatible names used throughout the file
+const DEBUG_WS = UI_VERBOSE;
+const DEBUG_UI = UI_VERBOSE;
+
+// Convenience for browser console:
+//   uiDebug(1) / uiTiming(1) then reload happens automatically
+window.uiDebug = function(on){
+  try{ localStorage.setItem("EE_UI_DEBUG", on ? "1":"0"); }catch(e){}
+  location.reload();
+};
+window.uiTiming = function(on){
+  try{ localStorage.setItem("EE_UI_TIMING", on ? "1":"0"); }catch(e){}
+  location.reload();
+};
 
 
 // SystemStatus.flags bits (include/system/system_status_payload.h)
@@ -114,7 +140,7 @@ function uiContractSelfTest() {
     uiContractBannerShow([headline, ...missing, "", "=> Ursache ist meist: inkonsistente Datei-Kombination (index/style/script) oder fehlende Render-Funktionen."].join("\n"));
   } else {
     // small, unobtrusive debug log
-    console.log(`[UI] contract ok (UI_VERSION=${typeof UI_VERSION !== "undefined" ? UI_VERSION : "?"})`);
+    if (UI_VERBOSE) console.log(`[UI] contract ok (UI_VERSION=${typeof UI_VERSION !== "undefined" ? UI_VERSION : "?"})`);
   }
 }
 
@@ -412,7 +438,7 @@ function connectWebSocket() {
       const msg = JSON.parse(ev.data);
       handleWsMessage(msg);
     } catch (e) {
-      console.warn("WS parse error", e);
+      if (UI_VERBOSE) console.warn("WS parse error", e);
     }
   };
 }
@@ -545,7 +571,7 @@ function handleWsMessage(msg) {
     if (DEBUG_WS) {
       window.__wsAnalogLogN = (window.__wsAnalogLogN || 0) + 1;
       if ((window.__wsAnalogLogN % 10) === 0) {
-        console.log("[WS MSG json][analog x10]", JSON.stringify(msg));
+        if (UI_VERBOSE) console.log("[WS MSG json][analog x10]", JSON.stringify(msg));
       }
     }
 
@@ -554,8 +580,8 @@ function handleWsMessage(msg) {
     window.lastStateMsg.mega2.analog = msg.analog || {};
 
     // Update only analog-related UI parts (cheap, avoids full re-render)
-    try { renderTrafoRight(window.lastStateMsg); } catch (e) { console.warn("[UI] renderTrafoRight(analog) failed:", e); }
-    try { renderBlocksLeft(window.lastStateMsg); } catch (e) { console.warn("[UI] renderBlocksLeft(analog) failed:", e); }
+    try { renderTrafoRight(window.lastStateMsg); } catch (e) { if (UI_VERBOSE) console.warn("[UI] renderTrafoRight(analog) failed:", e); }
+    try { renderBlocksLeft(window.lastStateMsg); } catch (e) { if (UI_VERBOSE) console.warn("[UI] renderBlocksLeft(analog) failed:", e); }
     return;
   }
 
@@ -599,7 +625,7 @@ try {
         uiTransientInfoText = line;
         uiTransientInfoUntil = Date.now() + 12000; // 12s
       } else {
-        console.info("[UI] INFO_SELFTEST_POWER_STAYS_OFF missing in safety_ui_texts.js");
+        if (UI_VERBOSE) console.info("[UI] INFO_SELFTEST_POWER_STAYS_OFF missing in safety_ui_texts.js");
       }
 
       uiSbhfSelftestPowerHintShown = true;
@@ -607,15 +633,13 @@ try {
 
     uiPrevSbhfSelftestRunning = sbhf.selftestRunning;
   }
-} catch (e) {
-  console.warn("[UI] Selftest power-off hint failed:", e);
-}
+} catch (e) { if (UI_VERBOSE) console.warn("[UI] Selftest power-off hint failed:", e); }
 
   // Contract checks (never throw; only diagnostics)
   try {
     runUiContractChecks(msg);
   } catch (e) {
-    console.error("[UI-CONTRACT] checks threw", e);
+    if (UI_VERBOSE) console.error("[UI-CONTRACT] checks threw", e);
   }
 
 
@@ -721,7 +745,7 @@ function getSafetyOverlayTexts(safety) {
       }
     }
   } catch (e) {
-    console.warn('SAFETY_UI_TEXTS error', e);
+    if (UI_VERBOSE) console.warn('SAFETY_UI_TEXTS error', e);
   }
   
   // If Mega2 reports blockReason==2 (NOTAUS), always present it as "Not-Aus"
