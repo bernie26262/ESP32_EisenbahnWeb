@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Diagnose</title>
-  <link rel="stylesheet" href="style.css?v=20260223134540">
+  <link rel="stylesheet" href="style.css?v=20260303191921">
   <link rel="stylesheet" href="diagstyle.css">
 
 </head>
@@ -159,7 +159,9 @@
 
   <script>
     // diag.js setzt window.DIAG_BUILD optional – fallback über query param etc.
-    console.log("[DIAGHTM] loaded", new Date().toISOString());
+  if (window.DIAG_DEBUG && window.DIAG_TIMING) {
+   console.log("[DIAGHTM] loaded", new Date().toISOString());
+  }
   </script>
 
   <script src="diag.js"></script>

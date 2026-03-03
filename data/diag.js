@@ -1,6 +1,54 @@
 const DIAG_BUILD = "2026-02-17 17:54";
-console.log("[DIAGJS] build", DIAG_BUILD);
-const DIAG_DEBUG = true;
+
+// ------------------------------------------------------------
+// Debug toggles (runtime):
+//  - localStorage EE_DIAG_DEBUG = "0"/"1"
+//  - localStorage EE_DIAG_TIMING = "0"/"1"
+//  - URL: ?diagdebug=1 / ?diagtiming=1
+// ------------------------------------------------------------
+function _diagBoolSetting(lsKey, urlKey, defVal=false){
+  try{
+    const qs = new URLSearchParams(location.search);
+    if (qs.has(urlKey)){
+      const v = qs.get(urlKey);
+      return !(v === "0" || v === "false" || v === "off");
+    }
+    const s = localStorage.getItem(lsKey);
+    if (s !== null) return (s === "1" || s === "true" || s === "on");
+  }catch(e){}
+  return defVal;
+}
+
+const DIAG_DEBUG = _diagBoolSetting("EE_DIAG_DEBUG", "diagdebug", false);
+const DIAG_TIMING = _diagBoolSetting("EE_DIAG_TIMING", "diagtiming", false);
+// Only show verbose console output when BOTH toggles are enabled
+const DIAG_VERBOSE = (DIAG_DEBUG && DIAG_TIMING);
+
+if (DIAG_VERBOSE) {
+  console.log("[DIAGJS] build", DIAG_BUILD);
+}
+
+
+// ------------------------------------------------------------
+// Render throttling (avoid re-rendering tables if nothing changed)
+// ------------------------------------------------------------
+let _lastM2DiagSensorsSeq = -1;
+let _lastM2RelaysSeq = -1;
+let _lastM1RelaysSeq = -1;
+let _lastM1SensorsKey = "";
+let _lastM2TurnoutsIstMask = null; // number | null
+
+// Convenience for browser console:
+//   diagDebug(1) / diagTiming(1) then reload happens automatically
+window.diagDebug = function(on){
+  try{ localStorage.setItem("EE_DIAG_DEBUG", on ? "1":"0"); }catch(e){}
+  location.reload();
+};
+window.diagTiming = function(on){
+  try{ localStorage.setItem("EE_DIAG_TIMING", on ? "1":"0"); }catch(e){}
+  location.reload();
+};
+
 let ws = null;
 // Diagnose-Owner Token (nur aus type:"diagControl")
 let diagToken = null;
@@ -142,21 +190,56 @@ function scheduleDiagRender(){
 
   try { initM2PrevFromFirstPacket(m); } catch(e){ console.error("[diag] initM2PrevFromFirstPacket failed", e); }
   const t1 = performance.now();
+  // ---------------- M2 sensors (kontakte + schalt) only if seq changed ----------------
+  const m2DiagSeq = (typeof m?.mega2?.diagSensors?.seq === "number") ? m.mega2.diagSensors.seq : -1;
+  if (m2DiagSeq !== _lastM2DiagSensorsSeq) {
+    _lastM2DiagSensorsSeq = m2DiagSeq;
+    try { renderM2Kontakte(m); } catch(e){ console.error("[diag] renderM2Kontakte failed", e); }
+    try { renderM2Schalt(m); } catch(e){ console.error("[diag] renderM2Schalt failed", e); }
+  }
 
-  try { renderM2Sensors(m); } catch(e){ console.error("[diag] renderM2Sensors failed", e); }
-  console.log("[diag] calling renderM2Relays, has mega2=", !!m?.mega2, "online=", m?.mega2?.online, "type=", m?.type);
-  try { renderM2Relays(m); } catch(e){ console.error("[diag] renderM2Relays failed", e); }
+  // ---------------- M2 turnouts only if effective istMask changed ----------------
+  const directIst = m?.mega2?.turnouts?.istMask;
+  const effIst = (typeof directIst === "number") ? directIst : (typeof _m2CachedIstMask === "number" ? _m2CachedIstMask : null);
+  if (effIst !== _lastM2TurnoutsIstMask) {
+    _lastM2TurnoutsIstMask = effIst;
+    try { renderM2Turnouts(m); } catch(e){ console.error("[diag] renderM2Turnouts failed", e); }
+  }
+
+  // ---------------- M2 relays only if seq changed ----------------
+  const m2RelSeq = (typeof m?.mega2?.relays?.seq === "number") ? m.mega2.relays.seq : -1;
+  if (m2RelSeq !== _lastM2RelaysSeq) {
+    _lastM2RelaysSeq = m2RelSeq;
+    if (DIAG_VERBOSE) {
+      console.log("[diag] renderM2Relays seq=", m2RelSeq, "online=", m?.mega2?.online);
+    }
+    try { renderM2Relays(m); } catch(e){ console.error("[diag] renderM2Relays failed", e); }
+  }
   const t2 = performance.now();
 
-  try { renderM1Sensors(m); } catch(e){ console.error("[diag] renderM1Sensors failed", e); }
-  try { renderM1Relays(m); } catch(e){ console.error("[diag] renderM1Relays failed", e); }
+  // ---------------- M1 sensors only if masks changed ----------------
+  const m1 = m?.mega1;
+  const m1Key = `${m1?.sensorActiveMask ?? ""}|${m1?.sensorRiseMask ?? ""}|${m1?.sensorFallMask ?? ""}`;
+  if (m1Key !== _lastM1SensorsKey) {
+    _lastM1SensorsKey = m1Key;
+    try { renderM1Sensors(m); } catch(e){ console.error("[diag] renderM1Sensors failed", e); }
+  }
+
+  // ---------------- M1 relays only if seq changed ----------------
+  const m1RelSeq = (typeof m?.mega1?.relays?.seq === "number") ? m.mega1.relays.seq : -1;
+  if (m1RelSeq !== _lastM1RelaysSeq) {
+    _lastM1RelaysSeq = m1RelSeq;
+    try { renderM1Relays(m); } catch(e){ console.error("[diag] renderM1Relays failed", e); }
+  }
   const t3 = performance.now();
 
-  console.log("[DIAG-RENDER]",
-              "total", (t3 - t0).toFixed(1)+"ms",
-              "init",  (t1 - t0).toFixed(1)+"ms",
-              "m2",    (t2 - t1).toFixed(1)+"ms",
-              "m1",    (t3 - t2).toFixed(1)+"ms");
+  if (DIAG_VERBOSE) {
+    console.log("[DIAG-RENDER]",
+                "total", (t3 - t0).toFixed(1)+"ms",
+                "init",  (t1 - t0).toFixed(1)+"ms",
+                "m2",    (t2 - t1).toFixed(1)+"ms",
+                "m1",    (t3 - t2).toFixed(1)+"ms");
+  }
 }, DIAG_RENDER_INTERVAL_MS);
 }
 
@@ -222,7 +305,7 @@ function renderM2Turnouts(msg){
     ? directIst
     : (typeof _m2CachedIstMask === "number" ? _m2CachedIstMask : null);
 
-  if (!renderM2Turnouts._t || Date.now() - renderM2Turnouts._t > 1000){
+  if (DIAG_VERBOSE && (!renderM2Turnouts._t || Date.now() - renderM2Turnouts._t > 1000)){
     renderM2Turnouts._t = Date.now();
     console.log("[TURNOUTS] render", msg.type, "istMask", istMask);
   }
@@ -1149,10 +1232,14 @@ const _m1PulseTimers = new Map(); // key -> timeoutId
 function m1SendRelayCmd(relay, idx, val){
   // Hard UI gate: send only if we are owner AND have the diag token.
   if (!diagIsOwner || !diagToken) {
-    console.warn("[DIAGJS] m1DiagRelaySet blocked (not owner or missing token)", { diagIsOwner, diagToken });
+    if (DIAG_VERBOSE) {
+      console.warn("[DIAGJS] m1DiagRelaySet blocked (not owner or missing token)", { diagIsOwner, diagToken });
+    }
     return;
   }
-  console.log("[DIAGJS] m1DiagRelaySet send", { relay, idx, val, token: diagToken });
+  if (DIAG_DEBUG && DIAG_TIMING) {
+   console.log("[DIAGJS] m1DiagRelaySet send", { relay, idx, val, token: diagToken });
+  }
   wsSend({ action:"m1DiagRelaySet", token: diagToken, relay, idx, val });
 }
 
@@ -1529,7 +1616,8 @@ function renderM1Relays(msg){
 // WS send + diag lease heartbeat
 // ------------------------------------------------------------
 function wsSend(obj){
-  if (DIAG_DEBUG && obj && (obj.action === "diagEnter" || obj.action === "diagHeartbeat" || obj.action === "diagExit")){
+  if (DIAG_DEBUG && DIAG_TIMING && obj &&
+      (obj.action === "diagEnter" || obj.action === "diagHeartbeat" || obj.action === "diagExit")){
     console.log(`[DIAGJS] tx ${obj.action} token=${obj.token ?? "<none>"} diagToken=${diagToken ?? "<null>"} isOwner=${diagIsOwner}`);
   }
   const json = JSON.stringify(obj);
@@ -1541,7 +1629,9 @@ function startHeartbeat(){
   hbTimer = setInterval(() => {
     if (diagIsOwner && diagToken) {
       // Instrumentation: verify the token we think we send.
-      try { console.log("[DIAGJS] HB send token=", diagToken, "len=", (diagToken||"").length); } catch(_){ }
+      if (DIAG_VERBOSE) {
+        try { console.log("[DIAGJS] HB send token=", diagToken, "len=", (diagToken||"").length); } catch(_){ }
+      }
       wsSend({ action:"diagHeartbeat", token: diagToken });
     }
   }, 1000);
@@ -1627,7 +1717,9 @@ function connect(){
     // 1) diagControl: IMMER zuerst behandeln + return
     // ------------------------------------------------------------
     if (msg.type === "diagControl"){
-      try { console.log("[DIAGJS] diagControl rx", msg); } catch(_){}
+      if (DIAG_DEBUG && DIAG_TIMING) {
+        try { console.log("[DIAGJS] diagControl rx", msg); } catch(_){}
+      }
 
       if (msg.isOwner && msg.token){
         diagIsOwner = true;
@@ -1660,9 +1752,11 @@ function connect(){
       } 
 
       const tEnd = performance.now();
-      console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
-                  "parse", (tParse - t0).toFixed(2) + "ms",
-                  "total", (tEnd - t0).toFixed(2) + "ms");
+      if (DIAG_DEBUG && DIAG_TIMING) {
+        console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
+                    "parse", (tParse - t0).toFixed(2) + "ms",
+                    "total", (tEnd - t0).toFixed(2) + "ms");
+      }
       return;
     }
 
@@ -1716,9 +1810,11 @@ function connect(){
       renderBlocksFromState(msg);
 
       const tEnd = performance.now();
-      console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
-                  "parse", (tParse - t0).toFixed(2) + "ms",
-                  "total", (tEnd - t0).toFixed(2) + "ms");
+      if (DIAG_VERBOSE) {
+        console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
+                    "parse", (tParse - t0).toFixed(2) + "ms",
+                    "total", (tEnd - t0).toFixed(2) + "ms");
+      }
       return;
     }
 
@@ -1774,9 +1870,11 @@ function connect(){
       scheduleDiagRender();
 
       const tEnd = performance.now();
-      console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
-                  "parse", (tParse - t0).toFixed(2) + "ms",
-                  "total", (tEnd - t0).toFixed(2) + "ms");
+      if (DIAG_VERBOSE) {
+        console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
+                    "parse", (tParse - t0).toFixed(2) + "ms",
+                    "total", (tEnd - t0).toFixed(2) + "ms");
+      }
       return;
     }
 
@@ -1790,9 +1888,11 @@ function connect(){
         setKpi(an.ageMs, an.hz, an.seq);
       }
       const tEnd = performance.now();
-      console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
-                  "parse", (tParse - t0).toFixed(2) + "ms",
-                  "total", (tEnd - t0).toFixed(2) + "ms");
+      if (DIAG_VERBOSE) {
+        console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
+                    "parse", (tParse - t0).toFixed(2) + "ms",
+                    "total", (tEnd - t0).toFixed(2) + "ms");
+      }
       return;
     }
 
@@ -1822,9 +1922,11 @@ function connect(){
 
     // default timing log
     const tEnd = performance.now();
-    console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
-                "parse", (tParse - t0).toFixed(2) + "ms",
-                "total", (tEnd - t0).toFixed(2) + "ms");
+    if (DIAG_VERBOSE) {
+      console.log("[WSRX-T]", "type", msg.type, "len", ev.data.length,
+                  "parse", (tParse - t0).toFixed(2) + "ms",
+                  "total", (tEnd - t0).toFixed(2) + "ms");
+    }
   };
 }
 
