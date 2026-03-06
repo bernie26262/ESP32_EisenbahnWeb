@@ -1177,15 +1177,12 @@ function sendM1BhfToggle(bhf1) {
     -1;
   if (idx0 < 0 || idx0 >= 4) return;
 
-  // Mega1 Bahnhof-Power ist active-low am Pin:
-  // powerMask bit==1 => PIN=HIGH (inaktiv), bit==0 => PIN=LOW (aktiv)
-  const curOn = (((powerMask >> idx0) & 1) === 0);
+  // Mega1: powerMask is LOGICAL (bit==1 => Bahnhof AN, bit==0 => AUS)
+  const curOn = (((powerMask >> idx0) & 1) === 1);
   const newOn = !curOn;
 
-  // IMPORTANT: m1PowerSet.on is interpreted as PIN level (HIGH/LOW), not logical ON/OFF.
-  // active-low: logical AN => PIN LOW; logical aus => PIN HIGH
-  const newPinHigh = !newOn;
-  const ok = wsSend({ action: "m1PowerSet", bhf: idx0, on: newPinHigh });
+  // IMPORTANT: m1PowerSet.on is logical ON/OFF (Mega1 applies active-low internally).
+  const ok = wsSend({ action: "m1PowerSet", bhf: idx0, on: newOn });
   if (ok) logLine(`Bhf${idx0} -> ${newOn ? "AN" : "aus"}`);
 }
 
@@ -2301,9 +2298,8 @@ function renderMega1StationsLeft(msg) {
     const btn = grid.querySelector(`#m1-bhf-${i}`);
     if (!btn) continue;
 
-    // Mega1 Bahnhof-Power ist active-low am Pin:
-    // powerMask bit==1 => PIN=HIGH (inaktiv), bit==0 => PIN=LOW (aktiv)
-    const on = haveData ? (((powerMask >> i) & 1) === 0) : null; // null => U
+    // Mega1: powerMask is LOGICAL (bit==1 => Bahnhof AN, bit==0 => AUS)
+    const on = haveData ? (((powerMask >> i) & 1) === 1) : null; // null => U
     const sig = (on === true) ? resolveSignalImg("G") : (on === false) ? resolveSignalImg("R") : resolveSignalImg("U");
 
     // "wie FROM->TO": kein farbiger Hintergrund, nur dezenter Rand + Hover

@@ -381,7 +381,7 @@ const M1_SENSOR_INFO = new Map([
 // ------------------------------------------------------------
 const M1_RELAY_META = {
   // Benutzer-gewünschte Sortierung/Benennung:
-  // Annahme: Bhf2a..Bhf4b entsprechen den 4 TrackPower-Relais auf A8..A11.
+  // Bhf0..Bhf3 entsprechen den 4 TrackPower-Relais auf A8..A11.
   powerNames: ["Bhf0", "Bhf1", "Bhf2", "Bhf3"],
   powerPins:  ["A8", "A9", "A10", "A11"], // TrackPower Relais Bhf0..Bhf3
 
@@ -1414,7 +1414,7 @@ function renderM1Relays(msg){
 
     const rows = [];
 
-    // 1) Bhf2a..Bhf4b (mask bits 0..3)
+    // 1) Bhf0..Bhf3 (mask bits 0..3)
     for (let i=0;i<4;i++){
       rows.push({
         kind: "power",
@@ -1499,7 +1499,7 @@ function renderM1Relays(msg){
         btnOn.textContent = "AN";
         btnOn.dataset.m1rel = "power";
         btnOn.dataset.idx = String(it.idx);
-        btnOn.dataset.val = "0"; // AN = active-low => drive pin LOW
+        btnOn.dataset.val = "1";
 
         btnOff = document.createElement("button");
         btnOff.type = "button";
@@ -1507,7 +1507,7 @@ function renderM1Relays(msg){
         btnOff.textContent = "AUS";
         btnOff.dataset.m1rel = "power";
         btnOff.dataset.idx = String(it.idx);
-        btnOff.dataset.val = "1"; // AUS = inactive => drive pin HIGH
+        btnOff.dataset.val = "0"; // logical OFF
 
         tdAction.appendChild(btnOn);
         tdAction.appendChild(document.createTextNode(" "));
@@ -1585,12 +1585,14 @@ function renderM1Relays(msg){
     if (!row || row.kind === "sep") continue;
 
     if (row.kind === "power"){
-      // IMPORTANT (Mega1 Bhf2a..Bhf4b):
-      // bhfPowerMask bit==1 corresponds to PIN=HIGH on the Mega1 output.
-      // Our LED convention expects "1 => LOW/aktiv (green)" (same as sensor tables).
-      // Therefore invert ONLY for these 4 power relays:
-      const pinHigh = bit(bhfMask, row.idx) === 1;
-      const lvl1MeansLow = pinHigh ? 0 : 1;
+      // Mega1 Bhf0..Bhf3:
+      // bhfPowerMask is LOGICAL:
+      //   bit==1 => Bahnhof AN
+      //   bit==0 => Bahnhof AUS
+      // Hardware is active-low:
+      //   AN  => PIN LOW
+      //   AUS => PIN HIGH
+      const lvl1MeansLow = (bit(bhfMask, row.idx) === 1);
       setLevel(row.tdLevel, lvl1MeansLow);
 
       if (row.btnOn)  row.btnOn.disabled  = !canCmd;
