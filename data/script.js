@@ -593,6 +593,16 @@ function handleWsMessage(msg) {
   // Backwards compatible shape for renderers (flat vs nested)
   msg = normalizeWsState(msg);
 
+  // Analogdaten aus dem letzten bekannten Zustand erhalten, falls
+  // dieses State-Frame keine neuen Analogdaten mitliefert.
+  const prevAnalog = window.lastStateMsg?.mega2?.analog;
+  if (prevAnalog) {
+    msg.mega2 = msg.mega2 || {};
+    if (msg.mega2.analog === undefined) {
+      msg.mega2.analog = prevAnalog;
+    }
+  }
+
   // Debug/Inspection helper (Browser-Konsole)
   window.lastState = msg;
   window.lastStateMsg = msg;

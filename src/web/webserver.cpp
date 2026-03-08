@@ -1554,7 +1554,21 @@ if (type != WS_EVT_DATA)
     if (!strcmp(action, "m1TurnoutSet"))
     {
         const uint8_t idxW = (uint8_t)(cmd["idx"] | 0);
-        const bool gerade = (bool)(cmd["gerade"] | 0);
+       
+        // robust bool parse: true/false, 0/1, "true"/"false"
+        bool gerade = false;
+        JsonVariant vGerade = cmd["gerade"];
+        if (vGerade.is<bool>()) {
+            gerade = vGerade.as<bool>();
+        } else if (vGerade.is<int>()) {
+            gerade = (vGerade.as<int>() != 0);
+        } else if (vGerade.is<const char*>()) {
+            const char* s = vGerade.as<const char*>();
+            if (s) gerade = (!strcasecmp(s, "true") || !strcasecmp(s, "on") || !strcmp(s, "1"));
+        }
+
+        LOG_WS("m1TurnoutSet idx=%u gerade=%s", idxW, gerade ? "true" : "false");
+
         const bool ok = Mega1Link::queueTurnoutSet(idxW, gerade);
         if (!ok) LOG_WS("m1TurnoutSet rejected (args/queue full)");
         g_stateDirty = true;
