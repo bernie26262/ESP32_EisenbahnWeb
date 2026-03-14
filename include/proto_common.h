@@ -8,7 +8,7 @@
 // "M2EP" (Mega2 <-> ESP)
 #define PROTO_MAGIC   0x4D324550u
 // Bump whenever any wire-visible struct/command meaning changes.
-#define PROTO_VERSION 0x0006u
+#define PROTO_VERSION 0x0007u
 
 // =====================================================
 //  Anlagen-Konstanten (fix)
@@ -72,7 +72,7 @@ enum SafetyBlockReason : uint8_t
     SAFETY_BLOCK_SSR_STUCK = 4
 };
 
-struct Mega2SafetyStatus
+struct __attribute__((packed)) Mega2SafetyStatus
 {
     uint8_t notausActive;   // 0/1
     uint8_t ssrMask;        // Bit0=MAIN, Bit1=TRAFO_A, Bit2=TRAFO_B
@@ -80,6 +80,8 @@ struct Mega2SafetyStatus
 
     uint8_t blockReason;    // NEU: siehe SafetyBlockReason
 };
+
+static_assert(sizeof(Mega2SafetyStatus) == 4, "Mega2SafetyStatus size mismatch");
 
 // =====================================================
 //  Block-Status (pro Block identisch)
@@ -91,7 +93,7 @@ struct Mega2SafetyStatus
 //   - kurzschluss : Stromfehler
 //   - nothalt     : Safety wirkt auf Block
 // =====================================================
-struct BlockStatus
+struct __attribute__((packed)) BlockStatus
 {
     uint8_t kontakt     : 1;
     uint8_t stromEin    : 1;
@@ -102,6 +104,9 @@ struct BlockStatus
 
     uint16_t stromRaw;      // ADC-Wert Stromsensor
 };
+
+static_assert(sizeof(BlockStatus) == 3, "BlockStatus size mismatch");
+
 
 // =====================================================
 //  Schattenbahnhof-Status (logischer Überblick)

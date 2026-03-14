@@ -1,4 +1,4 @@
-+#error "DO NOT USE: src/core_legacy/proto_common.h is deprecated. Use include/proto_common.h"
+#error "DO NOT USE: src/core_legacy/proto_common.h is deprecated. Use include/proto_common.h"
 
 #pragma once
 #include <Arduino.h>
