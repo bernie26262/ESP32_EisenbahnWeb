@@ -148,6 +148,9 @@ static uint8_t countSubBase() {
 static uint8_t countSubDiag() {
     uint8_t n=0; for (auto &c: s_wsClients) if (c.used && c.subDiag) n++; return n;
 }
+static uint8_t countWsTotal() {
+    uint8_t n=0; for (auto &c: s_wsClients) if (c.used) n++; return n;
+}
 
 // Exported helper for link-layer gating: only read diag-only payloads when at least one diag WS subscriber exists.
 bool webserverHasDiagSubscribers()
@@ -164,6 +167,13 @@ struct DiagLease {
     uint32_t lastHbMs = 0;    // last accepted heartbeat (millis)
 };
 static DiagLease s_diag;
+
+static const char* hmiDiagOwnerTag()
+{
+    // HMI itself will not take over diag control.
+    // For HMI-v1 we only distinguish between "web" and "none".
+    return s_diag.active ? "web" : "none";
+}
 
 static void genToken32(char out[33]) {
 #if defined(ESP32)
@@ -625,13 +635,93 @@ static String buildWsStateJson(bool includeAnalog)
     return out;
 }
 
+static String buildWsStateLiteJson()
+{
+    JsonDocument doc;
+
+    doc["type"] = "state-lite";
+
+    const bool ethConnected = Net::EthManager::isConnected();
+    const bool m2online = Mega2Link::mega2Online();
+    const bool m1online = SystemRuntimeState::mega1Online();
+
+    const bool m1Needs = SystemRuntimeState::mega1NeedsStartupChecklist();
+    const bool m2Needs = SystemRuntimeState::mega2NeedsStartupChecklist();
+    const bool m1SelftestDone = SystemRuntimeState::mega1SelftestDone();
+    const bool m2SelftestDone = SystemRuntimeState::mega2SelftestDone();
+    const bool startupReady = ((!m1Needs) || m1SelftestDone) && ((!m2Needs) || m2SelftestDone);
+
+    const auto& m2 = SystemRuntimeState::mega2Status();
+    const bool safetyLock = SystemRuntimeState::safetyLock();
+    const bool powerPinHigh = (m2.flags & SYS_POWER_ON) != 0;
+    const bool powerOn = !powerPinHigh;
+    const bool notausActive = (m2.flags & SYS_NOTAUS_ACTIVE) != 0;
+
+    bool ackRequired = (safetyLock &&
+                        (notausActive || (SystemRuntimeState::safetyBlockReason() != 0)));
+    if ((m1Needs || m2Needs) && !notausActive && (SystemRuntimeState::safetyBlockReason() == 1))
+    {
+        ackRequired = false;
+    }
+
+    bool modeAuto = false;
+    if (m1online)
+    {
+        modeAuto = (SystemRuntimeState::mega1Diag().mode == 1u);
+    }
+
+    JsonObject eth = doc["eth"].to<JsonObject>();
+    eth["connected"] = ethConnected;
+    eth["ip"] = Net::EthManager::localIP().toString();
+
+    JsonObject mega1 = doc["mega1"].to<JsonObject>();
+    mega1["online"] = m1online;
+    mega1["modeAuto"] = modeAuto;
+
+    JsonObject mega2 = doc["mega2"].to<JsonObject>();
+    mega2["online"] = m2online;
+
+    JsonObject startup = doc["startup"].to<JsonObject>();
+    startup["ready"] = startupReady;
+    startup["m1SelftestDone"] = m1SelftestDone;
+    startup["m2SelftestDone"] = m2SelftestDone;
+
+    JsonObject safety = doc["safety"].to<JsonObject>();
+    safety["lock"] = safetyLock;
+    safety["ackRequired"] = ackRequired;
+    safety["notausActive"] = notausActive;
+    safety["powerOn"] = powerOn;
+
+    const bool writeLockedByDiag = s_diag.active;
+
+    JsonObject actions = doc["actions"].to<JsonObject>();
+    actions["canWrite"] = !writeLockedByDiag;
+    actions["canAck"] = (!writeLockedByDiag) && ackRequired && m2online;
+    actions["canPowerOn"] = (!writeLockedByDiag) && ethConnected && m1online && m2online && (!startupReady ? false : (!powerOn && !notausActive && !safetyLock));
+    actions["canAuto"] = (!writeLockedByDiag) && ethConnected && m1online && m2online && startupReady && (!safetyLock) && (!notausActive) && (!modeAuto);
+
+    JsonObject wsC = doc["wsClients"].to<JsonObject>();
+    wsC["base"] = countSubBase();
+    wsC["diag"] = countSubDiag();
+    wsC["total"] = countWsTotal();
+
+    JsonObject diag = doc["diag"].to<JsonObject>();
+    diag["active"] = s_diag.active;
+    diag["owner"] = hmiDiagOwnerTag();
+
+    String out;
+    out.reserve(768);
+    warnJsonOverflowThrottled("buildWsStateLiteJson", doc);
+    serializeJson(doc, out);
+    return out;
+}
+
 // --------------------------------------------------------
-// HMI Wrapper (macht static Funktion extern verfügbar)
+// HMI Wrapper (macht HMI-State extern verfügbar)
 // --------------------------------------------------------
 String buildWsStateJsonForHmi()
 {
-    // Für HMI erstmal ohne Analogdaten
-    return buildWsStateJson(false);
+    return buildWsStateLiteJson();
 }
 
 // ---------------------------------------------------------
