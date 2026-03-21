@@ -625,6 +625,15 @@ static String buildWsStateJson(bool includeAnalog)
     return out;
 }
 
+// --------------------------------------------------------
+// HMI Wrapper (macht static Funktion extern verfügbar)
+// --------------------------------------------------------
+String buildWsStateJsonForHmi()
+{
+    // Für HMI erstmal ohne Analogdaten
+    return buildWsStateJson(false);
+}
+
 // ---------------------------------------------------------
 // WS Analog JSON (small, periodic)
 // ---------------------------------------------------------

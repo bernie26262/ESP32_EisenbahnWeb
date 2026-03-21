@@ -402,8 +402,10 @@ void Mega1Link::update()
         else if (s_lastBootstrapPollMs == 0 || (uint32_t)(now - s_lastBootstrapPollMs) >= BOOTSTRAP_POLL_MS)
         {
             s_lastBootstrapPollMs = now;
-            (void)Mega1Client::pollStatusAndDiag();
-            SystemRuntimeState::noteMega1LinkActivity();
+            const I2CBus::Result br = Mega1Client::pollStatusAndDiag();
+            if (br == I2CBus::Result::OK) {
+                SystemRuntimeState::noteMega1LinkActivity();
+            }
             g_stateDirty = true;
         }
     }
@@ -430,9 +432,11 @@ void Mega1Link::update()
                 if (s_nextBackoffDiagMs == 0 || (uint32_t)(now - s_nextBackoffDiagMs) >= s_backoffDiagMs)
                 {
                     s_nextBackoffDiagMs = now;
-                    (void)Mega1Client::pollDiag();       // edge-miss-safe
+                    const I2CBus::Result dr = Mega1Client::pollDiag();  // edge-miss-safe
                     (void)pollMega1RelaysReadOnly();     // outputs/relays snapshot (read-only)
-                    SystemRuntimeState::noteMega1LinkActivity();
+                    if (dr == I2CBus::Result::OK) {
+                        SystemRuntimeState::noteMega1LinkActivity();
+                    }
                     g_stateDirty = true;
 
                     // backoff: 250 -> 500 -> 1000 (cap)

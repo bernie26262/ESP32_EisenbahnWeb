@@ -6,6 +6,8 @@
 #include "network/net_config.h"
 #include "network/eth_manager.h"
 #include "web/webserver.h"
+#include "hmi/hmi_uart.h"
+#include "hmi/hmi_state.h"
 
 #include "core2/mega/mega2_link.h"
 #include "core2/mega/mega1_link.h"
@@ -17,6 +19,8 @@
 #include <esp_bt.h>
 
 #include "debug.h"
+
+static uint32_t s_lastHmiSend = 0;
 
 static void disableWirelessHard()
 {
@@ -87,6 +91,8 @@ void setup()
 
     Mega1Link::begin();
     EE_LOGI("BOOT", "Setup abgeschlossen");
+
+    HMI::begin();
 }
 
 // ============================================================================
@@ -106,5 +112,19 @@ void loop()
             Mega2Link::safetyAck();
         }
     }
+
+    // ----------------------------------------------------
+    // HMI UART
+    // ----------------------------------------------------
+    HMI::loop();
+
+    const uint32_t now = millis();
+    if (now - s_lastHmiSend > 500)
+    {
+        String s = buildHmiStateJson();
+        HMI::sendJson(s);
+        s_lastHmiSend = now;
+    }
+
     Ui::OledStatus::tick();
 }

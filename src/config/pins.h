@@ -21,6 +21,12 @@
 #define PIN_STATUS_LED   35
 
 // ========================================================
+// HMI UART (Display-ESP)
+// ========================================================
+#define PIN_HMI_UART_RX  16   // ESP empfängt (Display TX)
+#define PIN_HMI_UART_TX  17   // ESP sendet   (Display RX)
+
+// ========================================================
 // Ethernet W5500 – fest verdrahtet auf Waveshare Board
 // NICHT ÄNDERN!
 // ========================================================

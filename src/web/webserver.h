@@ -1,6 +1,11 @@
 #pragma once
 #include <Arduino.h>
 
+// --------------------------------------------------------
+// HMI Support (UART)
+// --------------------------------------------------------
+String buildWsStateJsonForHmi();
+
 namespace Web
 {
     void begin();
