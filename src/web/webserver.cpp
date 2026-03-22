@@ -650,6 +650,12 @@ static String buildWsStateLiteJson()
     const bool m1SelftestDone = SystemRuntimeState::mega1SelftestDone();
     const bool m2SelftestDone = SystemRuntimeState::mega2SelftestDone();
     const bool startupReady = ((!m1Needs) || m1SelftestDone) && ((!m2Needs) || m2SelftestDone);
+    const bool startupChecklistActive = (m1Needs || m2Needs);
+
+    const auto& m1diag = SystemRuntimeState::mega1Diag();
+    const auto& m2shadow = SystemRuntimeState::mega2ShadowStatus();
+    const bool m1SelftestRunning = ((m1diag.selftestFlags & 0x01u) != 0u);
+    const bool m2SelftestRunning = ((m2shadow.selftestFlags & 0x01u) != 0u);
 
     const auto& m2 = SystemRuntimeState::mega2Status();
     const bool safetyLock = SystemRuntimeState::safetyLock();
@@ -683,8 +689,13 @@ static String buildWsStateLiteJson()
 
     JsonObject startup = doc["startup"].to<JsonObject>();
     startup["ready"] = startupReady;
+    startup["checklistActive"] = startupChecklistActive;
+    startup["m1Needs"] = m1Needs;
+    startup["m2Needs"] = m2Needs;
     startup["m1SelftestDone"] = m1SelftestDone;
     startup["m2SelftestDone"] = m2SelftestDone;
+    startup["m1SelftestRunning"] = m1SelftestRunning;
+    startup["m2SelftestRunning"] = m2SelftestRunning;
 
     JsonObject safety = doc["safety"].to<JsonObject>();
     safety["lock"] = safetyLock;
@@ -699,7 +710,20 @@ static String buildWsStateLiteJson()
     actions["canAck"] = (!writeLockedByDiag) && ackRequired && m2online;
     actions["canPowerOn"] = (!writeLockedByDiag) && ethConnected && m1online && m2online && (!startupReady ? false : (!powerOn && !notausActive && !safetyLock));
     actions["canAuto"] = (!writeLockedByDiag) && ethConnected && m1online && m2online && startupReady && (!safetyLock) && (!notausActive) && (!modeAuto);
+    actions["canStartM1Selftest"] = (!writeLockedByDiag) && m1online && m1Needs && (!m1SelftestDone) && (!m1SelftestRunning);
+    actions["canStartM2Selftest"] = (!writeLockedByDiag) && m2online && m2Needs && (!m2SelftestDone) && (!m2SelftestRunning);
 
+    // Entspricht der WebUI-Overlay-Logik:
+    // Quittieren erst wenn alle benötigten Schritte erledigt sind.
+    const bool allChecklistDone =
+        ((!m1Needs) || m1SelftestDone) &&
+        ((!m2Needs) || m2SelftestDone);
+    actions["canStartupConfirm"] =
+        (!writeLockedByDiag) &&
+        startupChecklistActive &&
+        m2online &&
+        allChecklistDone;
+ 
     JsonObject wsC = doc["wsClients"].to<JsonObject>();
     wsC["base"] = countSubBase();
     wsC["diag"] = countSubDiag();
@@ -1732,6 +1756,20 @@ if (type != WS_EVT_DATA)
     {
         LOG_WS("-> SBHF Selftest Startup");
         Mega2Link::sbhfSelftestStartup();
+        g_stateDirty = true;
+        return;
+    }
+
+    if (!strcmp(action, "markMega1ChecklistDone")) {
+        LOG_WS("-> markMega1ChecklistDone");
+        SystemRuntimeState::markMega1ChecklistDone();
+        g_stateDirty = true;
+        return;
+    }
+
+    if (!strcmp(action, "markMega2ChecklistDone")) {
+        LOG_WS("-> markMega2ChecklistDone");
+        SystemRuntimeState::markMega2ChecklistDone();
         g_stateDirty = true;
         return;
     }
