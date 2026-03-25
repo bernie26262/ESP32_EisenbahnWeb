@@ -1,5 +1,6 @@
 #include "hmi_uart.h"
 #include "../config/pins.h"
+#include "../../include/debug.h"
 
 #include <HardwareSerial.h>
 
@@ -8,6 +9,7 @@ namespace HMI
     static HardwareSerial uart(1);
     static uint32_t lastSend = 0;
     static String rxLine;
+    static uint32_t s_lastRateWarnMs = 0;
 
     void begin()
     {
@@ -23,7 +25,18 @@ namespace HMI
     bool sendJson(const String& s)
     {
         uint32_t now = millis();
-        if (now - lastSend < 200) return false;
+        if (now - lastSend < 200)
+        {
+            if ((uint32_t)(now - s_lastRateWarnMs) >= 1000)
+            {
+                s_lastRateWarnMs = now;
+                EE_LOGI("HMIUART",
+                        "sendJson rate-limit dt=%lu len=%u",
+                        (unsigned long)(now - lastSend),
+                        (unsigned)s.length());
+            }
+            return false;
+        }
 
         uint16_t len = s.length();
 

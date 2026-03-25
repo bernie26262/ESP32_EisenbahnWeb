@@ -79,6 +79,7 @@ static AsyncWebSocket ws("/ws");
 
 // IMPORTANT: Diese Symbole werden (derzeit) auch aus anderen Modulen referenziert.
 volatile bool g_stateDirty = true;
+volatile bool g_hmiStateDirty = true;
 
 // Diag hat eine eigene Dirty-Quelle: diag-only Clients sollen NICHT an stateDirty gekoppelt sein.
 volatile bool g_diagDirty  = true;
@@ -224,7 +225,7 @@ static void diagRevertToNormal(const char* reason) {
     }
 
     // Trigger a fresh state push so all UIs see diagActive=false immediately.
-    g_stateDirty = true;
+    markStateDirtyAll();
     g_diagDirty  = true;
 }
 
@@ -707,11 +708,19 @@ static String buildWsStateLiteJson()
 
     JsonObject actions = doc["actions"].to<JsonObject>();
     actions["canWrite"] = !writeLockedByDiag;
-    actions["canAck"] = (!writeLockedByDiag) && ackRequired && m2online;
-    actions["canPowerOn"] = (!writeLockedByDiag) && ethConnected && m1online && m2online && (!startupReady ? false : (!powerOn && !notausActive && !safetyLock));
-    actions["canAuto"] = (!writeLockedByDiag) && ethConnected && m1online && m2online && startupReady && (!safetyLock) && (!notausActive) && (!modeAuto);
+    actions["canAck"]      = (!writeLockedByDiag) && ackRequired && m2online;
+    actions["canPowerOn"]  = (!writeLockedByDiag) && ethConnected && m1online && m2online
+                          && startupReady && (!powerOn) && (!notausActive) && (!safetyLock);
+    actions["canPowerOff"] = (!writeLockedByDiag) && ethConnected && m1online && m2online
+                          && powerOn;
+    actions["canAuto"]     = (!writeLockedByDiag) && ethConnected && m1online && m2online
+                          && startupReady && (!safetyLock) && (!notausActive) && (!modeAuto);
+    actions["canManual"]   = (!writeLockedByDiag) && ethConnected && m1online && m2online
+                          && startupReady && (!safetyLock) && (!notausActive) && modeAuto;
     actions["canStartM1Selftest"] = (!writeLockedByDiag) && m1online && m1Needs && (!m1SelftestDone) && (!m1SelftestRunning);
     actions["canStartM2Selftest"] = (!writeLockedByDiag) && m2online && m2Needs && (!m2SelftestDone) && (!m2SelftestRunning);
+    actions["canM1Selftest"] = actions["canStartM1Selftest"];
+    actions["canM2Selftest"] = actions["canStartM2Selftest"];
 
     // Entspricht der WebUI-Overlay-Logik:
     // Quittieren erst wenn alle benötigten Schritte erledigt sind.
@@ -1203,7 +1212,7 @@ if (type != WS_EVT_DATA)
             serializeJson(reply, out);
             if (client) client->text(out);
 
-            g_stateDirty = true;
+            markStateDirtyAll();
             g_diagDirty  = true;
         }
         else
@@ -1243,7 +1252,7 @@ if (type != WS_EVT_DATA)
             s_diag.expiresMs = now + LEASE_MS;
             s_diag.lastHbMs  = now;
             if (client) s_diag.ownerId = client->id();   // rebind
-            g_stateDirty = true;
+            markStateDirtyAll();
             g_diagDirty  = true;
         } else {
             // Help debugging: distinguish "missing token" vs "mismatch/inactive"
@@ -1293,9 +1302,12 @@ if (type != WS_EVT_DATA)
     // -------------------------------------------------
     auto isProtectedAction = [&](const char* a) -> bool {
         return (!strcmp(a,"powerOff")
+             || !strcmp(a,"powerOn")
              || !strcmp(a,"m1PowerSet")
              || !strcmp(a,"m1SelftestStart")
              || !strcmp(a,"m1SetMode")
+             || !strcmp(a,"setAuto")
+             || !strcmp(a,"setManual")
              || !strcmp(a,"m1TurnoutSet")
              || !strcmp(a,"m1DiagRelaySet")
              || !strcmp(a,"m2DiagRelaySet")
@@ -1375,7 +1387,7 @@ if (type != WS_EVT_DATA)
         LOG_WS("[SIM] setBypassSbhfSelftest(enable=%s) -> now=%s",
                 en ? "true" : "false",
                 SystemRuntimeState::bypassSbhfSelftest() ? "true" : "false");
-        g_stateDirty = true;
+        markStateDirtyAll();
 #else
         LOG_WS("[SIM] setBypassSbhfSelftest ignored (not a sim build)");
 #endif
@@ -1391,28 +1403,28 @@ if (type != WS_EVT_DATA)
     if (!strcmp(action, "markMega1ChecklistDone"))
     {
         SystemRuntimeState::markMega1ChecklistDone();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
     if (!strcmp(action, "markMega2ChecklistDone"))
     {
         SystemRuntimeState::markMega2ChecklistDone();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
     if (!strcmp(action, "safetyAck"))
     {
         Mega2Link::safetyAck();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
     if (!strcmp(action, "nothalt"))
     {
         Mega2Link::nothalt();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
@@ -1420,7 +1432,7 @@ if (type != WS_EVT_DATA)
     {
         EE_LOGI("WS", "action powerOn received");
         Mega2Link::powerOn();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
@@ -1428,7 +1440,7 @@ if (type != WS_EVT_DATA)
     {
         EE_LOGI("WS", "action powerOff received");
         Mega2Link::powerOff();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
@@ -1440,7 +1452,7 @@ if (type != WS_EVT_DATA)
         if (logicalPowerOn) Mega2Link::powerOff();
         else                Mega2Link::powerOn();
 
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
@@ -1489,7 +1501,7 @@ if (type != WS_EVT_DATA)
             serializeJson(okj, out);
             client->text(out);
         }
-        g_stateDirty = true;
+        markStateDirtyAll();
         g_diagDirty  = true;
         return;
     }
@@ -1532,7 +1544,7 @@ if (type != WS_EVT_DATA)
             serializeJson(okj, out);
             client->text(out);
         }
-        g_stateDirty = true;
+        markStateDirtyAll();
         g_diagDirty  = true;
         return;
     }
@@ -1603,7 +1615,7 @@ if (type != WS_EVT_DATA)
                 serializeJson(okj, out);
                 client->text(out);
             }
-            g_stateDirty = true;
+            markStateDirtyAll();
             g_diagDirty  = true;
             return;
         }
@@ -1642,7 +1654,7 @@ if (type != WS_EVT_DATA)
                 client->text(out);
             
             }
-            g_stateDirty = true;
+            markStateDirtyAll();
             g_diagDirty  = true;
             return;
         }
@@ -1664,13 +1676,29 @@ if (type != WS_EVT_DATA)
         EE_LOGW("DIAG", "m1DiagRelaySet reject: unknown relay='%s'", relayS.c_str());
         return;
     }
-
-    if (!strcmp(action, "m1SetMode"))
+if (!strcmp(action, "m1SetMode") || !strcmp(action, "setAuto") || !strcmp(action, "setManual"))
+    
     {
-        const uint8_t mode = (uint8_t)(cmd["mode"] | 0);
+        uint8_t mode = 0;
+
+        if (!strcmp(action, "setAuto")) {
+            mode = 1u;
+        } else if (!strcmp(action, "setManual")) {
+            mode = 0u;
+        } else {
+            const int modeIn = cmd["mode"] | -1;
+            if (modeIn != 0 && modeIn != 1) {
+                LOG_WS("m1SetMode rejected (invalid mode)");
+                return;
+            }
+            mode = (uint8_t)modeIn;
+        }
+
         const bool ok = Mega1Link::queueSetMode(mode);
-        if (!ok) LOG_WS("m1SetMode rejected (args/queue full)");
-        g_stateDirty = true;
+        if (!ok) {
+            LOG_WS("mode action rejected (queue full)");
+        }
+        markStateDirtyAll();
         return;
     }
 
@@ -1694,7 +1722,7 @@ if (type != WS_EVT_DATA)
 
         const bool ok = Mega1Link::queueTurnoutSet(idxW, gerade);
         if (!ok) LOG_WS("m1TurnoutSet rejected (args/queue full)");
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
@@ -1723,7 +1751,7 @@ if (type != WS_EVT_DATA)
 
         const bool ok = Mega1Link::queueBhfPowerSet(bhf, on);
         if (!ok) LOG_WS("m1PowerSet rejected (args/queue full)");
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
@@ -1731,7 +1759,7 @@ if (type != WS_EVT_DATA)
     {
         const bool ok = Mega1Link::queueStartSelftest();
         if (!ok) LOG_WS("m1SelftestStart rejected (queue full)");
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
@@ -1739,7 +1767,7 @@ if (type != WS_EVT_DATA)
     {
         LOG_WS("-> Mega2Link::requestPollNow()");
         Mega2Link::requestPollNow();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
@@ -1748,7 +1776,7 @@ if (type != WS_EVT_DATA)
     {
         LOG_WS("-> SBHF Selftest Retry");
         Mega2Link::sbhfSelftestRetry();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
     
@@ -1756,21 +1784,21 @@ if (type != WS_EVT_DATA)
     {
         LOG_WS("-> SBHF Selftest Startup");
         Mega2Link::sbhfSelftestStartup();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
     if (!strcmp(action, "markMega1ChecklistDone")) {
         LOG_WS("-> markMega1ChecklistDone");
         SystemRuntimeState::markMega1ChecklistDone();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
     if (!strcmp(action, "markMega2ChecklistDone")) {
         LOG_WS("-> markMega2ChecklistDone");
         SystemRuntimeState::markMega2ChecklistDone();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 }

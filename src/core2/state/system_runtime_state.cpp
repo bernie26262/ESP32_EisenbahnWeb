@@ -4,6 +4,7 @@
 #include "system/mega2_schaltgleise_payload.h"
 #include "debug.h"
 #include "proto_common.h"   // <-- für SAFETY_BLOCK_* + Mega2SafetyStatus
+#include "web/webserver.h"
 
 // ----------------------------------------------------
 // Interner Zustand
@@ -164,8 +165,6 @@ static SafetyReason s_safetyReason = SafetyReason::NONE;
 // UI-Block-Grund (BOOT / NOTAUS / NONE)
 static uint8_t      s_blockReasonUi = SAFETY_BLOCK_NONE;
 
-// Dirty-Flag (extern definiert)
-extern volatile bool g_stateDirty;
 // Diag-Dirty Flag (extern definiert, WebSocket diag channel)
 extern volatile bool g_diagDirty;
 
@@ -234,7 +233,7 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     if (s_m2Boot.needsChecklist && s_m2SelftestRunningPrev && !selftestRunning)
     {
         s_m2SelftestDone = true;
-        g_stateDirty = true;
+        markStateDirtyAll();
     }
     s_m2SelftestRunningPrev = selftestRunning;
 
@@ -246,12 +245,13 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     s_m2OnlinePrev = true;
     
     if (!wasOnlinePrev)
-        g_stateDirty = true;const bool rebootDetected = updateBootTrack(s_m2Boot, st);
+        markStateDirtyAll();
+    const bool rebootDetected = updateBootTrack(s_m2Boot, st);
     if (rebootDetected)
     { 
         s_m2SelftestDone = false;
         // boot-related UI fields changed (bootId/uptime/checklist)
-        g_stateDirty = true;
+        markStateDirtyAll();
     }
 
     s_safetyLock =
@@ -274,7 +274,7 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
 //     {
 //         s_m2Boot.needsChecklist = false;
 //         s_m2SelftestDone = false;
-//         g_stateDirty = true;
+//         markStateDirtyAll();
 //     }
 // }
 
@@ -295,7 +295,7 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     }
     // WS: only mark dirty if something relevant changed.
     if (changed)
-        g_stateDirty = true;
+        markStateDirtyAll();
 }
 
 void SystemRuntimeState::updateMega1Status(const SystemStatus& st)
@@ -314,7 +314,7 @@ void SystemRuntimeState::updateMega1Status(const SystemStatus& st)
         s_m1SelftestRunningPrev = false;
         s_m1SelftestEverRunning = false;
     }
-    g_stateDirty = true;
+    markStateDirtyAll();
 }
 
 bool SystemRuntimeState::mega2SelftestDone()
@@ -382,10 +382,10 @@ void SystemRuntimeState::updateMega1Diag(const Mega1DiagV1& d)
     if (doneFlag && !s_m1SelftestDone)
     {
         s_m1SelftestDone = true;
-        g_stateDirty = true;
+        markStateDirtyAll();
     }
     s_m1SelftestRunningPrev = running;
-    g_stateDirty = true;
+    markStateDirtyAll();
 }
 
 // =====================================================
@@ -512,7 +512,7 @@ const Mega1DiagV1& SystemRuntimeState::mega1Diag()
 void SystemRuntimeState::updateMega2SafetyStatus(const Mega2SafetyStatus& st)
 {
     s_m2Safety = st;
-    g_stateDirty = true;
+    markStateDirtyAll();
 }
 
 const Mega2SafetyStatus& SystemRuntimeState::mega2SafetyStatus()
@@ -580,13 +580,13 @@ bool SystemRuntimeState::mega2BootChanged()
 void SystemRuntimeState::markMega1ChecklistDone()
 {
     s_m1Boot.needsChecklist = false;
-    g_stateDirty = true;
+    markStateDirtyAll();
 }
 
 void SystemRuntimeState::markMega2ChecklistDone()
 {
     s_m2Boot.needsChecklist = false;
-    g_stateDirty = true;
+    markStateDirtyAll();
 }
 
 void SystemRuntimeState::setBypassSbhfSelftest(bool en)
@@ -594,7 +594,7 @@ void SystemRuntimeState::setBypassSbhfSelftest(bool en)
     if (s_bypassSbhfSelftest != en)
     {
         s_bypassSbhfSelftest = en;
-        g_stateDirty = true;
+        markStateDirtyAll();
     }
 }
 
@@ -672,7 +672,7 @@ void SystemRuntimeState::updateMega2BlockStatus(const BlockStatus* arr, uint8_t 
         s_m2Blocks[i] = arr[i];
 
     s_lastBlocksRxMs = millis();
-    g_stateDirty = true;
+    markStateDirtyAll();
 }
 
 const ShadowYardStatus& SystemRuntimeState::mega2ShadowStatus()
@@ -684,7 +684,7 @@ void SystemRuntimeState::updateMega2ShadowStatus(const ShadowYardStatus& st)
 {
     s_m2Shadow = st;
     s_lastShadowRxMs = millis();
-    g_stateDirty = true;
+    markStateDirtyAll();
 }
 
 const Mega2TurnoutsPayload& SystemRuntimeState::mega2Turnouts()
@@ -702,7 +702,7 @@ void SystemRuntimeState::updateMega2Turnouts(const Mega2TurnoutsPayload& t)
 {
     s_m2Turnouts = t;
     s_lastTurnoutsRxMs = millis();
-    g_stateDirty = true;
+    markStateDirtyAll();
 }
 
 void SystemRuntimeState::updateMega2EntryAllowed(const uint16_t* arr, uint8_t n)
@@ -714,7 +714,7 @@ void SystemRuntimeState::updateMega2EntryAllowed(const uint16_t* arr, uint8_t n)
         s_m2EntryAllowed[i] = arr[i];
 
     s_lastEntryRxMs = millis();
-    g_stateDirty = true;
+    markStateDirtyAll();
 }
 
 void SystemRuntimeState::updateMega2EntryPreview(const uint16_t* arr, uint8_t n)
@@ -726,7 +726,7 @@ void SystemRuntimeState::updateMega2EntryPreview(const uint16_t* arr, uint8_t n)
         s_m2EntryPreview[i] = arr[i];
 
     s_lastEntryRxMs = millis();
-    g_stateDirty = true;
+    markStateDirtyAll();
 }
  
  void SystemRuntimeState::updateMega2Analog(const Mega2AnalogPayload& p)

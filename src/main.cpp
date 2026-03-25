@@ -8,6 +8,7 @@
 #include "web/webserver.h"
 #include "hmi/hmi_uart.h"
 #include "hmi/hmi_state.h"
+#include "hmi/hmi_push.h"
 #include "core2/state/system_runtime_state.h"
 
 #include "core2/mega/mega2_link.h"
@@ -21,8 +22,6 @@
 #include <ArduinoJson.h>
 
 #include "debug.h"
-
-static uint32_t s_lastHmiSend = 0;
 
 static void disableWirelessHard()
 {
@@ -119,46 +118,61 @@ static void handleHmiActionLine(const String& line)
 
     if (!strcmp(action, "safetyAck")) {
         Mega2Link::safetyAck();
-        g_stateDirty = true;
+        markStateDirtyAll();
+        return;
+    }
+
+    if (!strcmp(action, "powerOff")) {
+        Mega2Link::powerOff();
+        markStateDirtyAll();
         return;
     }
 
     if (!strcmp(action, "powerOn")) {
         Mega2Link::powerOn();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
-    if (!strcmp(action, "m1SetMode")) {
-        const int mode = doc["mode"] | -1;
+    if (!strcmp(action, "m1SetMode") || !strcmp(action, "setAuto") || !strcmp(action, "setManual")) {
+        int mode = -1;
+
+        if (!strcmp(action, "setAuto")) {
+            mode = 1;
+        } else if (!strcmp(action, "setManual")) {
+            mode = 0;
+        } else {
+            mode = doc["mode"] | -1;
+        }
+
         if (mode == 0 || mode == 1) {
             Mega1Link::queueSetMode((uint8_t)mode);
-            g_stateDirty = true;
+            markStateDirtyAll();
         }
         return;
     }
 
     if (!strcmp(action, "m1SelftestStart")) {
         Mega1Link::queueStartSelftest();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
     if (!strcmp(action, "sbhfSelftestStartup")) {
         Mega2Link::sbhfSelftestStartup();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
     if (!strcmp(action, "markMega1ChecklistDone")) {
         SystemRuntimeState::markMega1ChecklistDone();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 
     if (!strcmp(action, "markMega2ChecklistDone")) {
         SystemRuntimeState::markMega2ChecklistDone();
-        g_stateDirty = true;
+        markStateDirtyAll();
         return;
     }
 }
@@ -192,13 +206,7 @@ void loop()
         handleHmiActionLine(hmiLine);
     }
 
-    const uint32_t now = millis();
-    if (now - s_lastHmiSend > 500)
-    {
-        String s = buildHmiStateJson();
-        HMI::sendJson(s);
-        s_lastHmiSend = now;
-    }
+    HmiPush::loop();
 
     Ui::OledStatus::tick();
 }

@@ -21,8 +21,15 @@ namespace Web
     void pushDiagIfNeeded();
 }
 
-// IMPORTANT: Dieses Symbol wird (derzeit) auch aus anderen Modulen referenziert.
+// IMPORTANT: Dieses Symbole werden (derzeit) auch aus anderen Modulen referenziert.
 extern volatile bool g_stateDirty;
+extern volatile bool g_hmiStateDirty;
+
+static inline void markStateDirtyAll()
+{
+    g_stateDirty = true;
+    g_hmiStateDirty = true;
+}
 
 // IMPORTANT: Diag-Dirty Flag (für diag.htm / diag.js Instant-Updates).
 // Wird von Core-Modulen gesetzt, wenn neue Diag-Sensor-Daten verfügbar sind.

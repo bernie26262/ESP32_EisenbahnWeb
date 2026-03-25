@@ -1154,7 +1154,7 @@ function sendModeToggle() {
   // Toggle: 1 <-> 0
   const newMode = (mode === 1) ? 0 : 1;
 
-  const ok = wsSend({ action: "m1SetMode", mode: newMode });
+  const ok = wsSend({ action: (newMode === 1 ? "setAuto" : "setManual") });
   if (ok) logLine("Mode gesetzt: " + (newMode === 1 ? "Auto" : "Manuell"));
 }
 
@@ -1769,7 +1769,7 @@ function confirmAck() {
   if (inStartupChecklist) {
     // Optional Komfort: nach Startup-Checkliste automatisch auf Automatik schalten
     if (st?.mega1?.online === true) {
-      wsSend({ action: "m1SetMode", mode: 1 });
+      wsSend({ action: "setAuto" });
     }
   
     // The startup checklist is cleared on ESP ONLY through markMega*ChecklistDone.

@@ -9,6 +9,7 @@
 #include "core2/bus/gpio_isr_once.h"
 #include "core2/state/system_runtime_state.h"
 #include "debug.h"
+#include "web/webserver.h"
 
 #ifndef EE_DEBUG_DIAG_WRITE
 #define EE_DEBUG_DIAG_WRITE 0
@@ -22,8 +23,6 @@
 // in webserver.cpp bereitstellen (kleiner Export), damit wir diag-only Reads gaten können
 extern bool webserverHasDiagSubscribers();
 
-// like mega1_link.cpp: trigger immediate WS pushes from link-layer updates
-extern volatile bool g_stateDirty;
 extern volatile bool g_diagDirty;
 
 #if defined(ESP32)
@@ -384,7 +383,7 @@ void update()
                 {
                     SystemRuntimeState::updateMega2DiagRelays(p);
                     g_diagDirty  = true;
-                    g_stateDirty = true;
+                    markStateDirtyAll();
                 }
             }
         }
@@ -403,7 +402,7 @@ void update()
                 {
                     SystemRuntimeState::updateMega2DiagRelays(p);
                     g_diagDirty  = true;
-                    g_stateDirty = true;
+                    markStateDirtyAll();
                 }
             }
         }
@@ -577,7 +576,7 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
                 if (ok) {
                     SystemRuntimeState::updateMega2DiagSensors(p);
                     g_diagDirty  = true;
-                    g_stateDirty = true;
+                    markStateDirtyAll();
                 }
                 break;
             }
@@ -598,7 +597,7 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
 
                     // Like Mega1: immediate UI push when relay state changed
                     g_diagDirty  = true;
-                    g_stateDirty = true;
+                    markStateDirtyAll();
                 }
                 break;
             }
@@ -616,7 +615,7 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
 
             // Like Mega1: any successful DRDY payload read means "new data available".
             // Ensure WS push does not wait for periodic full/slow timers.
-            g_stateDirty = true;
+            markStateDirtyAll();
         }
         else
         {
@@ -649,7 +648,7 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
             if (Mega2Client::pollDiagSensors(p) == I2CBus::Result::OK) {
                 SystemRuntimeState::updateMega2DiagSensors(p);
                 g_diagDirty  = true;
-                g_stateDirty = true;
+                markStateDirtyAll();
             }
         }
 
@@ -660,7 +659,7 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
             if (Mega2Client::pollDiagRelays(p) == I2CBus::Result::OK) {
                 SystemRuntimeState::updateMega2DiagRelays(p);
                 g_diagDirty  = true;
-                g_stateDirty = true;
+                markStateDirtyAll();
             }
         }
     }

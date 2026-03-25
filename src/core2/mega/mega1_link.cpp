@@ -9,11 +9,10 @@
 #include "core2/bus/gpio_isr_once.h"
 #include "config/pins.h"
 #include "debug.h"
+#include "web/webserver.h"
 
 // (moved into anonymous namespace below to avoid symbol/type ambiguity)
 
-// WebSocket push trigger (defined in webserver.cpp; also set by SystemRuntimeState setters)
-extern volatile bool g_stateDirty;
 // Diag WS push trigger (exists in webserver.cpp)
 extern volatile bool g_diagDirty;
 
@@ -100,7 +99,7 @@ namespace
         if (r.seq != s_m1RelaysSeqSeen)
         {
             s_m1RelaysSeqSeen = r.seq;
-            g_stateDirty = true;
+            markStateDirtyAll();
             g_diagDirty  = true;
         }
 
@@ -406,7 +405,7 @@ void Mega1Link::update()
             if (br == I2CBus::Result::OK) {
                 SystemRuntimeState::noteMega1LinkActivity();
             }
-            g_stateDirty = true;
+            markStateDirtyAll();
         }
     }
 
@@ -437,7 +436,7 @@ void Mega1Link::update()
                     if (dr == I2CBus::Result::OK) {
                         SystemRuntimeState::noteMega1LinkActivity();
                     }
-                    g_stateDirty = true;
+                    markStateDirtyAll();
 
                     // backoff: 250 -> 500 -> 1000 (cap)
                     if (s_backoffDiagMs < BACKOFF_MAX_MS)
@@ -654,7 +653,7 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
             // wenn noch was pending ist -> sehr bald nochmal (Fast), sonst zurück zu FullPoll
             s_nextFastMs = (s_cachedPendingMask != 0) ? (now + BUSY_RETRY_MS) : 0;
             s_nextPollMs = now + POLL_STATUS_MS;
-            g_stateDirty = true; // ensure immediate WS push after RR
+            markStateDirtyAll(); // ensure immediate WS push after RR
         }
         else if (rr == I2CBus::Result::BUSY)
         {
