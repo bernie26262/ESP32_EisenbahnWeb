@@ -15,11 +15,12 @@ namespace
     static bool s_forceFull = true;
     static uint32_t s_lastSendMs = 0;
 
-    // Hybrid-Test:
+    // Hybrid:
     // - periodischer Re-Send bleibt aktiv
-    // - on-change kommt zurück, aber rate-limited
+    // - on-change bleibt rate-limited, aber deutlich spritziger
+    //   als zuvor
     static constexpr uint32_t HMI_FULL_MS = 1000;
-    static constexpr uint32_t HMI_DIRTY_MIN_MS = 250;
+    static constexpr uint32_t HMI_DIRTY_MIN_MS = 50;
 
     static uint32_t s_lastSkipLogMs = 0;
     static uint32_t s_lastSendLogMs = 0;
