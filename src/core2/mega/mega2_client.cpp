@@ -287,6 +287,7 @@ bool Mega2Client::setRunMode(uint8_t mode)
 
 bool Mega2Client::powerOn()
 {
+    DBG_PRINTLN("[M2] powerOn() -> setSsr(SSR_MAIN_ENABLE, true)");
     return setSsr(SSR_MAIN_ENABLE, true);
 }
 
@@ -297,13 +298,8 @@ bool Mega2Client::setSsr(uint8_t idx, bool on)
     buf[0] = M2_CMD_SET_SSR;
     buf[1] = idx;
 
-    // --- IMPORTANT: active-low mapping (at least for SSR_MAIN_ENABLE) ---
-    bool pinHigh = on; // default: active-high
-    if (idx == SSR_MAIN_ENABLE) {
-        // SSR_MAIN_ENABLE is active-low: logical ON => PIN LOW => pinHigh=false
-        pinHigh = !on;
-    }
-    buf[2] = pinHigh ? 1 : 0;
+    // Mega2I2C erwartet hier ein logisches enable-Flag, kein Pin-Level.
+    buf[2] = on ? 1 : 0;
 
     uint8_t resp = 0;
     const auto r = writeReadRetry(MEGA2_ADDR, buf, sizeof(buf), &resp, sizeof(resp), 8000);
@@ -367,6 +363,7 @@ bool Mega2Client::diagRelayPulse(uint8_t bit, uint16_t ms)
 
 bool Mega2Client::powerOff()
 {
+    DBG_PRINTLN("[M2] powerOff() -> setSsr(SSR_MAIN_ENABLE, false)");
     return setSsr(SSR_MAIN_ENABLE, false);
 }
 
