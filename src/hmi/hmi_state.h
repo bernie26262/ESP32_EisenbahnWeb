@@ -2,3 +2,4 @@
 #include <Arduino.h>
 
 String buildHmiStateJson();
+String buildHmiAnalogJson();

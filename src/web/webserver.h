@@ -5,6 +5,7 @@
 // HMI Support (UART)
 // --------------------------------------------------------
 String buildWsStateJsonForHmi();
+String buildWsAnalogJsonForHmi();
 
 namespace Web
 {

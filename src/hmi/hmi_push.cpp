@@ -14,6 +14,7 @@ namespace
     static bool s_hasHash = false;
     static bool s_forceFull = true;
     static uint32_t s_lastSendMs = 0;
+    static uint32_t s_lastAnalogMs = 0;
 
     // Hybrid:
     // - periodischer Re-Send bleibt aktiv
@@ -21,6 +22,7 @@ namespace
     //   als zuvor
     static constexpr uint32_t HMI_FULL_MS = 1000;
     static constexpr uint32_t HMI_DIRTY_MIN_MS = 50;
+    static constexpr uint32_t HMI_ANALOG_MS = 500;
 
     static uint32_t s_lastSkipLogMs = 0;
     static uint32_t s_lastSendLogMs = 0;
@@ -155,11 +157,29 @@ namespace HmiPush
         s_hasHash = true;
         g_hmiStateDirty = false;
         ++s_cntSendOk;
+
+        // Kein return: danach darf im selben loop-Durchlauf trotzdem noch
+        // ein periodisches Analogpaket versucht werden, falls genug Zeit
+        // vergangen ist. Die UART-Rate-Limit-Logik in HMI::sendJson()
+        // verhindert zu dichtes Senden.
     }
 
     void forceFull()
     {
         s_forceFull = true;
         EE_LOGI("HMIPUSH", "forceFull() [hybrid rate-limited]");
+    }
+
+    void loopAnalog()
+    {
+        const uint32_t now = (uint32_t)millis();
+        if ((uint32_t)(now - s_lastAnalogMs) < HMI_ANALOG_MS)
+            return;
+
+        const String json = buildHmiAnalogJson();
+        if (HMI::sendJson(json))
+        {
+            s_lastAnalogMs = now;
+        }
     }
 }

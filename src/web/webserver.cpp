@@ -633,6 +633,56 @@ static String buildWsStateJson(bool includeAnalog)
     return out;
 }
 
+static String buildMega1DefectList()
+{
+    const auto& m1d = SystemRuntimeState::mega1Diag();
+    const uint16_t fm = (uint16_t)m1d.selftestFailMask & 0x0FFFu;
+
+    String out;
+    out.reserve(48);
+
+    for (uint8_t i = 0; i < 12; ++i)
+    {
+        if ((fm & (1u << i)) == 0u)
+            continue;
+
+        if (!out.isEmpty())
+            out += ' ';
+
+        out += 'W';
+        out += String(i + 1);
+    }
+
+    return out;
+}
+
+static String buildMega2DefectList(uint8_t warningMask)
+{
+    String out;
+    out.reserve(24);
+
+    struct Entry { uint8_t bit; const char* name; };
+    static const Entry kMap[] = {
+        { 0x02u, "W12" },
+        { 0x04u, "W13" },
+        { 0x08u, "W14" },
+        { 0x10u, "W15" },
+    };
+
+    for (const auto& e : kMap)
+    {
+        if ((warningMask & e.bit) == 0u)
+            continue;
+
+        if (!out.isEmpty())
+            out += ' ';
+
+        out += e.name;
+    }
+
+    return out;
+}
+
 static String buildWsStateLiteJson()
 {
     JsonDocument doc;
@@ -654,6 +704,18 @@ static String buildWsStateLiteJson()
     const auto& m2shadow = SystemRuntimeState::mega2ShadowStatus();
     const bool m1SelftestRunning = ((m1diag.selftestFlags & 0x01u) != 0u);
     const bool m2SelftestRunning = ((m2shadow.selftestFlags & 0x01u) != 0u);
+
+    const auto& m1s = SystemRuntimeState::mega1Status();
+    const uint8_t m1WarningMask = (uint8_t)(m1s.reserved & 0xFFu);
+    const bool m1WarningPresent = ((m1s.flags & SYS_WARNING_PRESENT) != 0u);
+    const uint16_t m1FailMask = (uint16_t)m1diag.selftestFailMask & 0x0FFFu;
+
+    // ⚠️ aktuell: kein reserved-Feld im ShadowYardStatus vorhanden
+    // → minimal: nur Selftest-Status verwenden
+    const uint8_t m2WarningMask = 0;
+    const bool m2WarningPresent = ((m2shadow.selftestFlags & 0x02u) != 0u);
+
+    const bool warningPresent = m1WarningPresent || m2WarningPresent;
 
     const auto& m2 = SystemRuntimeState::mega2Status();
     const bool safetyLock = SystemRuntimeState::safetyLock();
@@ -680,9 +742,26 @@ static String buildWsStateLiteJson()
     JsonObject mega1 = doc["mega1"].to<JsonObject>();
     mega1["online"] = m1online;
     mega1["modeAuto"] = modeAuto;
+    mega1["warningMask"] = m1WarningMask;
+    mega1["bahnhofMask"] = (uint8_t)m1diag.powerMask;
+    mega1["selftestRetryAvailable"] =
+        m1online &&
+        (!m1SelftestRunning) &&
+        (m1FailMask != 0u);
+    mega1["defectList"] = buildMega1DefectList();
 
     JsonObject mega2 = doc["mega2"].to<JsonObject>();
     mega2["online"] = m2online;
+    mega2["warningMask"] = m2WarningMask;
+    mega2["selftestRetryAvailable"] =
+        m2online &&
+        (!m2SelftestRunning) &&
+        (m2WarningPresent);
+    mega2["defectList"] = buildMega2DefectList(m2WarningMask);
+
+    JsonObject summary = doc["summary"].to<JsonObject>();
+    summary["warningPresent"] = warningPresent;
+    summary["emergencyPresent"] = notausActive;
 
     JsonObject startup = doc["startup"].to<JsonObject>();
     startup["ready"] = startupReady;
@@ -739,11 +818,13 @@ static String buildWsStateLiteJson()
     diag["owner"] = hmiDiagOwnerTag();
 
     String out;
-    out.reserve(768);
+    out.reserve(1024);
     warnJsonOverflowThrottled("buildWsStateLiteJson", doc);
     serializeJson(doc, out);
     return out;
 }
+
+static String buildWsAnalogJson();
 
 // --------------------------------------------------------
 // HMI Wrapper (macht HMI-State extern verfügbar)
@@ -751,6 +832,11 @@ static String buildWsStateLiteJson()
 String buildWsStateJsonForHmi()
 {
     return buildWsStateLiteJson();
+}
+
+String buildWsAnalogJsonForHmi()
+{
+    return buildWsAnalogJson();
 }
 
 // ---------------------------------------------------------

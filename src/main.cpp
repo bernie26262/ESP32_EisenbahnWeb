@@ -96,6 +96,12 @@ void setup()
     HMI::begin();
 }
 
+static inline void markStateDirtyAllAndForceHmi()
+{
+    markStateDirtyAll();
+    HmiPush::forceFull();
+}
+
 static void handleHmiActionLine(const String& line)
 {
     if (line.length() == 0) return;
@@ -118,19 +124,19 @@ static void handleHmiActionLine(const String& line)
 
     if (!strcmp(action, "safetyAck")) {
         Mega2Link::safetyAck();
-        markStateDirtyAll();
+        markStateDirtyAllAndForceHmi();
         return;
     }
 
     if (!strcmp(action, "powerOff")) {
         Mega2Link::powerOff();
-        markStateDirtyAll();
+        markStateDirtyAllAndForceHmi();
         return;
     }
 
     if (!strcmp(action, "powerOn")) {
         Mega2Link::powerOn();
-        markStateDirtyAll();
+        markStateDirtyAllAndForceHmi();
         return;
     }
 
@@ -147,32 +153,32 @@ static void handleHmiActionLine(const String& line)
 
         if (mode == 0 || mode == 1) {
             Mega1Link::queueSetMode((uint8_t)mode);
-            markStateDirtyAll();
+            markStateDirtyAllAndForceHmi();
         }
         return;
     }
 
     if (!strcmp(action, "m1SelftestStart")) {
         Mega1Link::queueStartSelftest();
-        markStateDirtyAll();
+        markStateDirtyAllAndForceHmi();
         return;
     }
 
     if (!strcmp(action, "sbhfSelftestStartup")) {
         Mega2Link::sbhfSelftestStartup();
-        markStateDirtyAll();
+        markStateDirtyAllAndForceHmi();
         return;
     }
 
     if (!strcmp(action, "markMega1ChecklistDone")) {
         SystemRuntimeState::markMega1ChecklistDone();
-        markStateDirtyAll();
+        markStateDirtyAllAndForceHmi();
         return;
     }
 
     if (!strcmp(action, "markMega2ChecklistDone")) {
         SystemRuntimeState::markMega2ChecklistDone();
-        markStateDirtyAll();
+        markStateDirtyAllAndForceHmi();
         return;
     }
 }
@@ -207,6 +213,7 @@ void loop()
     }
 
     HmiPush::loop();
+    HmiPush::loopAnalog();
 
     Ui::OledStatus::tick();
 }
