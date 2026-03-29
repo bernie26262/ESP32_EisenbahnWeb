@@ -164,6 +164,12 @@ static void handleHmiActionLine(const String& line)
         return;
     }
 
+    if (!strcmp(action, "sbhfSelftestRetry")) {
+        Mega2Link::sbhfSelftestRetry();
+        markStateDirtyAllAndForceHmi();
+        return;
+    }
+
     if (!strcmp(action, "sbhfSelftestStartup")) {
         Mega2Link::sbhfSelftestStartup();
         markStateDirtyAllAndForceHmi();

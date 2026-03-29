@@ -650,7 +650,7 @@ static String buildMega1DefectList()
             out += ' ';
 
         out += 'W';
-        out += String(i + 1);
+        out += String(i);
     }
 
     return out;
@@ -702,6 +702,7 @@ static String buildWsStateLiteJson()
 
     const auto& m1diag = SystemRuntimeState::mega1Diag();
     const auto& m2shadow = SystemRuntimeState::mega2ShadowStatus();
+    const auto& m2 = SystemRuntimeState::mega2Status();
     const bool m1SelftestRunning = ((m1diag.selftestFlags & 0x01u) != 0u);
     const bool m2SelftestRunning = ((m2shadow.selftestFlags & 0x01u) != 0u);
 
@@ -710,17 +711,34 @@ static String buildWsStateLiteJson()
     const bool m1WarningPresent = ((m1s.flags & SYS_WARNING_PRESENT) != 0u);
     const uint16_t m1FailMask = (uint16_t)m1diag.selftestFailMask & 0x0FFFu;
 
-    // ⚠️ aktuell: kein reserved-Feld im ShadowYardStatus vorhanden
-    // → minimal: nur Selftest-Status verwenden
-    const uint8_t m2WarningMask = 0;
-    const bool m2WarningPresent = ((m2shadow.selftestFlags & 0x02u) != 0u);
+    const uint8_t m2WarningMask = (uint8_t)(m2.reserved & 0xFFu);
+    const bool m2WarningPresent = ((m2.flags & SYS_WARNING_PRESENT) != 0u);
 
     const bool warningPresent = m1WarningPresent || m2WarningPresent;
-
-    const auto& m2 = SystemRuntimeState::mega2Status();
     const bool safetyLock = SystemRuntimeState::safetyLock();
     const bool powerOn = (m2.flags & SYS_POWER_ON) != 0;
     const bool notausActive = (m2.flags & SYS_NOTAUS_ACTIVE) != 0;
+
+    // Autoritative Overlay-/Retry-Wahrheit fuer HMI und andere kleine Clients.
+    // Reihenfolge analog zur WebUI:
+    // 1) Startup-Checklist hat Vorrang
+    // 2) danach Mega1-Selftest-Overlay
+    // 3) danach SBHF-Selftest-Overlay
+    const bool uiStartupOverlayActive = startupChecklistActive;
+    const bool uiM1RetryOverlayActive = (!uiStartupOverlayActive) && m1SelftestRunning;
+    const bool uiM2RetryOverlayActive = (!uiStartupOverlayActive) && m2SelftestRunning;
+
+    const char* uiOverlayMode = "none";
+    const char* uiRetryScope  = "none";
+    if (uiStartupOverlayActive) {
+        uiOverlayMode = "startup";
+    } else if (uiM1RetryOverlayActive) {
+        uiOverlayMode = "retry";
+        uiRetryScope = "mega1";
+    } else if (uiM2RetryOverlayActive) {
+        uiOverlayMode = "retry";
+        uiRetryScope = "sbhf";
+    }
 
     bool ackRequired = (safetyLock &&
                         (notausActive || (SystemRuntimeState::safetyBlockReason() != 0)));
@@ -756,12 +774,25 @@ static String buildWsStateLiteJson()
     mega2["selftestRetryAvailable"] =
         m2online &&
         (!m2SelftestRunning) &&
-        (m2WarningPresent);
+        (m2WarningMask != 0u);
     mega2["defectList"] = buildMega2DefectList(m2WarningMask);
 
     JsonObject summary = doc["summary"].to<JsonObject>();
     summary["warningPresent"] = warningPresent;
     summary["emergencyPresent"] = notausActive;
+
+    JsonObject ui = doc["ui"].to<JsonObject>();
+    ui["overlayMode"] = uiOverlayMode;          // "none" | "startup" | "retry"
+    ui["retryScope"] = uiRetryScope;            // "none" | "mega1" | "sbhf"
+    ui["startupOverlayActive"] = uiStartupOverlayActive;
+    ui["m1RetryOverlayActive"] = uiM1RetryOverlayActive;
+    ui["m2RetryOverlayActive"] = uiM2RetryOverlayActive;
+    ui["m1SelftestRunning"] = m1SelftestRunning;
+    ui["m2SelftestRunning"] = m2SelftestRunning;
+    ui["startupNeeds"] = startupChecklistActive;
+    ui["titleKey"] = uiM1RetryOverlayActive ? "INFO_M1_SELFTEST_RUNNING"
+                   : uiM2RetryOverlayActive ? "INFO_SBHF_SELFTEST_RUNNING"
+                   : uiStartupOverlayActive ? "INFO_STARTUP_CHECKLIST" : "";
 
     JsonObject startup = doc["startup"].to<JsonObject>();
     startup["ready"] = startupReady;
