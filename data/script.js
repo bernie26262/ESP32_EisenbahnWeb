@@ -2050,7 +2050,7 @@ function renderPowerWarningsEmergencies(msg) {
       if (fm !== 0) {
         const names = [];
         for (let i = 0; i < 12; i++) {
-          if (fm & (1 << i)) names.push(`W${i+1}`);
+          if (fm & (1 << i)) names.push(`W${i}`);
         }
         const listTxt = names.length ? names.join(", ") : "-";
         pushUiText("WARN_M1_TURNOUTS_DEFECT_LIST", listTxt, "!");
