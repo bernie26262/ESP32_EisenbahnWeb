@@ -164,6 +164,35 @@ static void handleHmiActionLine(const String& line)
         return;
     }
 
+    if (!strcmp(action, "m1PowerSet")) {
+        const int bhf_i = doc["bhf"] | -1;
+        if (bhf_i < 0 || bhf_i > 3) {
+            EE_LOGI("HMI", "m1PowerSet reject: bhf=%d out of range", bhf_i);
+            return;
+        }
+        const uint8_t bhf = (uint8_t)bhf_i;
+
+        bool on = false;
+        JsonVariant vOn = doc["on"];
+        if (vOn.is<bool>()) {
+            on = vOn.as<bool>();
+        } else if (vOn.is<int>()) {
+            on = (vOn.as<int>() != 0);
+        } else if (vOn.is<const char*>()) {
+            const char* s = vOn.as<const char*>();
+            if (s) on = (!strcasecmp(s, "true") || !strcasecmp(s, "on") || !strcmp(s, "1"));
+        }
+
+        const bool ok = Mega1Link::queueBhfPowerSet(bhf, on);
+        EE_LOGI("HMI", "m1PowerSet bhf=%u on=%s ok=%d",
+            (unsigned)bhf,
+            on ? "true" : "false",
+            ok ? 1 : 0);
+
+        markStateDirtyAllAndForceHmi();
+        return;
+    }
+
     if (!strcmp(action, "sbhfSelftestRetry")) {
         Mega2Link::sbhfSelftestRetry();
         markStateDirtyAllAndForceHmi();
