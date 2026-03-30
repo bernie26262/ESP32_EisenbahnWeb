@@ -1674,17 +1674,16 @@ function connect(){
 
     statusModel.wsUp = true;
     renderStatus();
-    setDiagStatus("Diagnose inaktiv");
+    setDiagStatus("Diagnose inaktiv (nur lesen)");
 
     // Subscribe to both:
     // - base (state) for blocks table
     // - diag for diagnostics stream
     wsSend({ action:"subscribe", base:true, diag:true });
 
-    // Auto-enter diagnose mode on diag.htm (safe: server will reply isOwner=false if occupied)
-    // This prevents "forgetting to press Diagnose starten" and keeps the UX consistent.
-    // If we have a stored token from a previous owner session, try to resume by token.
-    diagEnterWithBestToken();
+    // WICHTIG:
+    // Beim Betreten von diag.htm KEIN automatisches Lease nehmen.
+    // Diagnose-Lease nur noch explizit per Klick auf "Diagnose starten".
 
     wsLog("open", {});
   };
@@ -1801,7 +1800,7 @@ function connect(){
         leaseModel.ownerId = 0;
         leaseModel.expiresAtMs = 0;
         stopLeaseCountdown();
-        setDiagStatus("Diagnose inaktiv");
+        setDiagStatus("Diagnose inaktiv (nur lesen)");
       }
     }
 
@@ -1918,7 +1917,7 @@ function connect(){
       if (exitBtn)  exitBtn.disabled = true;
       if (enterBtn) enterBtn.disabled = false;
 
-      setDiagStatus("Diagnose inaktiv");
+      setDiagStatus("Diagnose inaktiv (nur lesen)");
       return;
     } 
 
@@ -2007,7 +2006,7 @@ window.addEventListener("load", () => {
     if (exitBtn)  exitBtn.disabled = true;
     if (enterBtn) enterBtn.disabled = false;
     setWarnStatus("");
-    setDiagStatus("Diagnose inaktiv");
+    setDiagStatus("Diagnose inaktiv (nur lesen)");
   });
 
   connect();

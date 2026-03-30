@@ -728,12 +728,15 @@ try {
   console.warn("[UI] M1 selftest power-off hint failed:", e);
 }
 
+  // Schritt 2: rechter Bereich
+  try { renderControlStatus(msg); } catch (e) { console.warn('[UI] renderControlStatus failed:', e); }
+  try { renderDefectsRight(msg); } catch (e) { console.warn('[UI] renderDefectsRight failed:', e); }
 
-   // Schritt 2: rechts "Meldungen" befuellen (Safety + SBHF Masken)
-   renderPowerWarningsEmergencies(msg);
+  // Schritt 3: rechts "Meldungen" befuellen (ohne Defektlisten / Retry-Buttons)
+  renderPowerWarningsEmergencies(msg);
  
-   // Right-side Trafo section
-   try { renderTrafoRight(msg); } catch (e) { console.warn('[UI] renderTrafoRight failed:', e); }
+  // Schritt 4: rechter Trafo-Bereich
+  try { renderTrafoRight(msg); } catch (e) { console.warn('[UI] renderTrafoRight failed:', e); }
 
   // Schritt 3.5: links Betriebsuebersicht (SBHF/Bloecke/Weichen) + FROM->TO Signale
   renderOverviewLeft(msg);
@@ -1000,25 +1003,11 @@ if (bNo) {
 }
 
   // --------------------------------------------------
-  // Diag-Control banner: warn if someone holds exclusive diagnose control
+  // Bedienstatus / Schreibrechte (neuer rechter Block)
   // --------------------------------------------------
   try {
-    const el = document.getElementById("diag-banner");
-    const dc = msg && msg.diagCtrl;
-    const wc = msg && msg.wsClients;
-    const diagCount = (wc && typeof wc.diag === "number") ? wc.diag : 0;
-    if (el) {
-      if (dc && dc.active) {
-        const owner = (dc.ownerId != null) ? dc.ownerId : "?";
-        const sec = (dc.expiresInMs != null) ? Math.round((dc.expiresInMs || 0) / 1000) : "?";
-        el.textContent = `⚠ Diagnose aktiv (${diagCount} Client${diagCount === 1 ? "" : "s"}) – Schreibzugriffe gesperrt (Owner ${owner}, Timeout ~${sec}s)`;
-        el.classList.remove("hidden");
-      } else {
-        el.classList.add("hidden");
-      }
-    }
+    renderControlStatus(msg);
   } catch (e) {}
-
 
 
   // --------------------------------------------------
@@ -1043,23 +1032,115 @@ if (bNo) {
     btnPowerOff.textContent = " STOP / POWER OFF";
     btnPowerOff.classList.toggle("is-offline", !mega2online);
     // enabled nur wenn Power an
-    btnPowerOff.disabled = (!wsOk || !mega2online) ? true : (!powerOn);
+    btnPowerOff.disabled = (!wsOk || !mega2online) ? true
+                         : (!powerOn || lock);
   }
 
   const btnMode = document.getElementById("btn-mode");
   if (btnMode) {
-    btnMode.textContent = "AUTO / MANUELL";
-
+    btnMode.classList.toggle("is-offline", !mega1online);
     const modeRaw = msg?.mega1?.diag?.mode;
     const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
     const isAuto = (mode === 1);
-    const canUseMode = wsOk && mega2online && mega1online && !lock && !notausActive && (mode >= 0) && !Number.isNaN(mode);
 
-    btnMode.disabled = !canUseMode;
-    btnMode.classList.toggle("is-auto", isAuto && canUseMode);
-    btnMode.classList.toggle("is-manual", (!isAuto) && canUseMode);
-    btnMode.classList.toggle("is-offline", !mega1online);
+    btnMode.textContent = (mode < 0 || Number.isNaN(mode))
+      ? " AUTO / MANUELL"
+      : (isAuto ? " AUTO / MANUELL" : " AUTO / MANUELL");
+
+    // gesperrt bei offline / lock / startup checklist aktiv
+    const startupChecklistActive =
+      !!(startup && startup.ready === false);
+
+    btnMode.disabled = (!wsOk || !mega1online) ? true
+                      : (lock || startupChecklistActive);
   }
+}
+
+function renderControlStatus(msg) {
+  const el = document.getElementById("control-status");
+  if (!el) return;
+
+  const dc = msg && msg.diagCtrl;
+  const wc = msg && msg.wsClients;
+  const diagCount = (wc && typeof wc.diag === "number") ? wc.diag : 0;
+  const wsBase = (wc && typeof wc.base === "number") ? wc.base : 0;
+  const wsOk = (wsConnected === true);
+  const safetyLock = !!(msg?.safety?.lock);
+  const diagActive = !!(dc && dc.active);
+
+  let bedienung = "🟢 frei";
+  let grund = "—";
+  if (safetyLock) {
+    bedienung = "🔒 gesperrt";
+    grund = "Safety-Lock";
+  } else if (diagActive) {
+    bedienung = "🔒 gesperrt";
+    grund = "Diagnose aktiv";
+  }
+
+  let ownerText = "—";
+  if (diagActive) {
+    const owner = (dc && dc.ownerId != null) ? dc.ownerId : "?";
+    const sec = (dc && dc.expiresInMs != null) ? Math.round((dc.expiresInMs || 0) / 1000) : "?";
+    ownerText = `${owner} (Timeout ~${sec}s)`;
+  }
+
+  el.innerHTML = [
+    `<div><strong>Bedienung:</strong> ${bedienung}</div>`,
+    `<div><strong>Sperrgrund:</strong> ${escapeHtml(String(grund))}</div>`,
+    `<div><strong>Diagnose:</strong> ${diagActive ? `aktiv (${diagCount})` : "inaktiv"}</div>`,
+    `<div><strong>Diag-Owner:</strong> ${escapeHtml(String(ownerText))}</div>`,
+    `<div><strong>WS:</strong> ${wsOk ? "verbunden" : "getrennt"} (Base: ${wsBase}, Diag: ${diagCount})</div>`
+  ].join("");
+}
+
+function renderDefectsRight(msg) {
+  const elM1 = document.getElementById("defects-mega1");
+  const elM2 = document.getElementById("defects-mega2");
+  if (!elM1 || !elM2) return;
+
+  const canMega2 = wsConnected && !!(msg && msg.mega2 && msg.mega2.online);
+  const selftestRunning = !!(msg?.mega2?.sbhf?.selftestRunning);
+  const lock = !!(msg?.safety?.lock);
+
+  const canMega1 = wsConnected && !!(msg && msg.mega1 && msg.mega1.online);
+  const m1SelftestRunning = !!(msg?.mega1?.diag?.selftestRunning);
+
+  // ---------------------------
+  // Mega1 Defekte
+  // ---------------------------
+  const fm = Number(msg?.mega1?.diag?.selftestFailMask || 0) & 0x0fff;
+  const m1Names = [];
+  for (let i = 0; i < 12; i++) {
+    if (fm & (1 << i)) m1Names.push(`W${i}`);
+  }
+
+  const retryBtnM1 = m1Names.length
+    ? `<div class="msg-actions"><button class="btn-mini" ${(canMega1 && !m1SelftestRunning && !lock) ? "" : "disabled"} onclick="sendM1SelftestRetry()"> Mega1 Selbsttest erneut</button></div>`
+    : "";
+
+  elM1.innerHTML = m1Names.length
+    ? `<div><strong>Mega1 Defekte:</strong> ${escapeHtml(m1Names.join(", "))}</div>${retryBtnM1}`
+    : `<div><strong>Mega1 Defekte:</strong> keine</div>`;
+
+  // ---------------------------
+  // SBHF / Mega2 Defekte
+  // ---------------------------
+  const warn = Number(msg?.mega2?.sbhf?.warningMask || 0) & 0xff;
+  const m2Names = [];
+  if (warn & 0x02) m2Names.push("W12 defekt");
+  if (warn & 0x04) m2Names.push("W13 defekt");
+  if (warn & 0x08) m2Names.push("W14 Störung");
+  if (warn & 0x10) m2Names.push("W15 Störung");
+  if (warn & 0x20) m2Names.push("Service erforderlich");
+
+  const retryBtnM2 = m2Names.length
+    ? `<div class="msg-actions"><button class="btn-mini" ${(canMega2 && !selftestRunning) ? "" : "disabled"} onclick="sendSbhfSelftestRetry()"> SBHF Selbsttest erneut</button></div>`
+    : "";
+
+  elM2.innerHTML = m2Names.length
+    ? `<div><strong>SBHF / Mega2 Defekte:</strong> ${escapeHtml(m2Names.join(", "))}</div>${retryBtnM2}`
+    : `<div><strong>SBHF / Mega2 Defekte:</strong> keine</div>`;
 }
 
 /* =========================================================
@@ -2028,11 +2109,6 @@ function renderPowerWarningsEmergencies(msg) {
       (allowed !== 0x07 && allowed !== 0x00);
 
     if (restricted) pushUiText("WARN_SBHF_RESTRICTED_MODE", undefined, "!");
-    if (warn & WARN_W12_DEFECT) pushUiText("WARN_W12_DEFECT", undefined, "!");
-    if (warn & WARN_W13_DEFECT) pushUiText("WARN_W13_DEFECT", undefined, "!");
-    if (warn & WARN_W14_DEFECT) pushUiText("INFO_W14_ISSUE", undefined, "i");
-    if (warn & WARN_W15_DEFECT) pushUiText("INFO_W15_ISSUE", undefined, "i");
-    if (warn & WARN_SBH_SERVICE_REQUIRED) pushUiText("WARN_SBH_SERVICE_REQUIRED", undefined, "!");
   }
 
     // 2b) Mega1 Warnings / Weichen-Selbsttest (Diagnoseliste)
@@ -2044,73 +2120,11 @@ function renderPowerWarningsEmergencies(msg) {
     // Bit 0: WARN_WEICHEN_NO_SWITCH (canonical)
     if (m1WarnMask & 0x01) {
       pushUiText("WARN_WEICHEN_NO_SWITCH", undefined, "!");
-
-      // Details: defekte Weichen aus selftestFailMask (nur Anzeige, keine Entscheidung)
-      const fm = Number(m1.diag.selftestFailMask || 0) & 0x0fff;
-      if (fm !== 0) {
-        const names = [];
-        for (let i = 0; i < 12; i++) {
-          if (fm & (1 << i)) names.push(`W${i}`);
-        }
-        const listTxt = names.length ? names.join(", ") : "-";
-        pushUiText("WARN_M1_TURNOUTS_DEFECT_LIST", listTxt, "!");
-      }
-      
     }
     
     // Bit 1: WARN_BAHNHOF_DURCHFAHRT (reserved / TODO)
     // if (m1WarnMask & 0x02) pushUiText("WARN_BAHNHOF_DURCHFAHRT", undefined, "!");
   }
-
-
-  
-
-// 3) " Pruefen" (PollNow), wenn Warnings/Restricted aktiv sind
-let warningActive = false;
-if (m2 && m2.sbhf) {
-  const warn = Number(m2.sbhf.warningMask || 0);
-  const allowed = Number(m2.sbhf.allowedMask || 0);
-	  const restrictedFlag = !!m2.sbhf.restricted;
-	  const restricted =
-	    restrictedFlag ||
-	    (warn !== 0) ||
-	    (allowed !== 0x07 && allowed !== 0x00);
-	  warningActive = restricted;
-}
-
-const canMega2 = wsConnected && !!(msg && msg.mega2 && msg.mega2.online);
-const selftestRunning = !!(msg?.mega2?.sbhf?.selftestRunning);
-const lock = !!(msg?.safety?.lock);
-
-const canMega1 = wsConnected && !!(msg && msg.mega1 && msg.mega1.online);
-const m1SelftestRunning = !!(msg?.mega1?.diag?.selftestRunning);
-
-let weicheWarnActive = false;
-if (m2 && m2.sbhf) {
-  const warn = Number(m2.sbhf.warningMask || 0) & 0xff;
-  // W12..W15 + Service erforderlich (UI-contract bits)
-  const WEICHE_WARN_MASK = 0x02 | 0x04 | 0x08 | 0x10 | 0x20;
-  weicheWarnActive = (warn & WEICHE_WARN_MASK) !== 0;
-}
-
-let m1WeicheWarnActive = false;
-if (msg?.mega1?.online && msg?.mega1?.diag) {
-  const fm = Number(msg.mega1.diag.selftestFailMask || 0) & 0x0fff;
-  m1WeicheWarnActive = (fm !== 0);
-}
-
-
-const retryBtn = weicheWarnActive
-  ? `<button class="btn-mini" ${(canMega2 && !selftestRunning) ? "" : "disabled"} onclick="sendSbhfSelftestRetry()"> SBHF Selftest erneut</button>`
-  : "";
-
-const retryBtnM1 = m1WeicheWarnActive
-  ? `<button class="btn-mini" ${(canMega1 && !m1SelftestRunning && !lock) ? "" : "disabled"} onclick="sendM1SelftestRetry()"> Mega1 Selftest erneut</button>`
-  : "";
-
-const actionsHtml = (retryBtn || retryBtnM1)
-  ? `<div class="msg-actions">${retryBtn}${retryBtn ? " " : ""}${retryBtnM1}</div>`
-  : "";
 
   // Render messages without "i/!/¡" text prefixes (avoid weird glyphs)
   // items contains strings like: "i <text>" or "! <text>"
@@ -2128,7 +2142,7 @@ const actionsHtml = (retryBtn || retryBtnM1)
     return `<div class="msg-line"><span class="msg-ico">${ico}</span><span class="msg-txt">${txt}</span></div>`;
   };
 
-  const html = (items.length ? items.map(renderMsg).join("") : "<em>Keine Meldungen</em>") + actionsHtml;
+  const html = (items.length ? items.map(renderMsg).join("") : "<em>Keine Meldungen</em>");
 
   // If user is currently clicking in this area, defer DOM replacement
   if (el.__ptrDown === true) {

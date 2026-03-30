@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <title>Eisenbahn – Safety & Status</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css?v=20260329154031">
+    <link rel="stylesheet" href="style.css?v=20260330102158">
     
 </head>
 
@@ -60,58 +60,71 @@
 
     <!-- ===================== RIGHT / SAFETY ===================== -->
     <aside class="panel panel-right safety-panel ok" id="safety-panel">
-<!-- POWER (Toggle) -->
-<section class="power-toggle">
-    <button id="btn-power-on" class="btn-power btn-power-on" onclick="sendPowerOn()" disabled>
-        ⚡ POWER ON
-    </button>
-    <button id="btn-power-off" class="btn-power btn-power-off" onclick="sendPowerOff()" disabled>
-        ⏻ STOP / POWER OFF
-    </button>
-    <button id="btn-mode" class="btn-mode" onclick="sendModeToggle()" disabled>
-        AUTO / MANUELL
-    </button>
-    <div class="hint" style="margin-top:.5rem;">
-        HW-NOT-AUS ist separat verdrahtet (fail-safe).
-    </div>
-</section>
+        <!-- 1. Aktionen -->
+        <section class="power-toggle">
+            <button id="btn-power-on" class="btn-power btn-power-on" onclick="sendPowerOn()" disabled>
+                ⚡ POWER ON
+            </button>
+            <button id="btn-power-off" class="btn-power btn-power-off" onclick="sendPowerOff()" disabled>
+                ⏻ STOP / POWER OFF
+            </button>
+            <button id="btn-mode" class="btn-mode" onclick="sendModeToggle()" disabled>
+                AUTO / MANUELL
+            </button>
+        </section>
 
         <div class="panel-separator"></div>
 
-        <!-- STATUS -->
+        <!-- 2. Bedienstatus / Schreibrechte -->
+        <section>
+            <h2>Bedienstatus</h2>
+            <div id="control-status">
+                <em>Keine Daten</em>
+            </div>
+        </section>
+
+        <div class="panel-separator"></div>
+
+        <!-- 3. Systemstatus -->
         <section>
             <h2>Systemstatus</h2>
 
             <div id="safety-status" class="status-box status-ok">
                 🟢 System OK
             </div>
-            <!-- Status (WS / Mega / Power / HW-NOT-AUS) -->
-            <div id="status-badges" class="status-badges-inline">
-                <div class="badge-row">
-                    <span id="badge-ws" class="badge badge-warn">WS: ?</span>
-                    <span id="badge-mega2" class="badge badge-warn">Mega2: ?</span>
-                    <span id="badge-mega1" class="badge badge-warn">Mega1: ?</span>
-                </div>
-                <div class="badge-row">
-                    <span id="badge-mode" class="badge badge-warn">Mode: ?</span>
-                    <span id="badge-power" class="badge badge-warn">Power: ?</span>
-                    <span id="badge-notaus" class="badge badge-warn">HW-NOT AUS: ?</span>
+
+            <div id="system-status">
+                <!-- Bestehende Status-Elemente bleiben für JS zunächst erhalten -->
+                <div id="status-badges" class="status-badges-inline">
+                    <div class="badge-row">
+                        <span id="badge-ws" class="badge badge-warn">WS: ?</span>
+                        <span id="badge-mega2" class="badge badge-warn">Mega2: ?</span>
+                        <span id="badge-mega1" class="badge badge-warn">Mega1: ?</span>
+                    </div>
+                    <div class="badge-row">
+                        <span id="badge-mode" class="badge badge-warn">Mode: ?</span>
+                        <span id="badge-power" class="badge badge-warn">Power: ?</span>
+                    </div>
                 </div>
             </div>
 
-            <!-- Diagnose aktiv: Warnbanner (wird via script.js ein/ausgeblendet) -->
-            <div id="diag-banner" class="diag-banner hidden"></div>
-
-            <!-- Quick link: Diagnose-Seite -->
             <div style="margin-top:10px; display:flex; gap:.5rem; flex-wrap:wrap;">
                 <a class="btn-mini" href="diag.htm" title="Diagnose / Service (Lease) öffnen">🛠 Diagnose</a>
             </div>
-
         </section>
 
         <div class="panel-separator"></div>
 
-        <!-- MELDUNGEN -->
+        <!-- 4. Defekte -->
+        <section>
+            <h2>Defekte</h2>
+            <div id="defects-mega1"><em>Keine Defekte</em></div>
+            <div id="defects-mega2"><em>Keine Defekte</em></div>
+        </section>
+
+        <div class="panel-separator"></div>
+
+        <!-- TRAFO -->
         <section>
             <h2>Meldungen</h2>
             <div id="safety-messages-list">
@@ -121,7 +134,7 @@
 
         <div class="panel-separator"></div>
 
-        <!-- TRAFO -->
+        <!-- 6. Trafo -->
         <section>
             <h2>Trafo</h2>
             <div id="trafo-a">Trafo A: – V</div>
@@ -151,7 +164,7 @@
     </div>
 </div>
 
-<script src="safety_ui_texts.js?v=20260329154031"></script>
-<script src="script.js?v=20260329154031"></script>
+<script src="safety_ui_texts.js?v=20260330102158"></script>
+<script src="script.js?v=20260330102158"></script>
 </body>
 </html>
