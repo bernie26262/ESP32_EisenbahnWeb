@@ -164,6 +164,35 @@ static void handleHmiActionLine(const String& line)
         return;
     }
 
+    if (!strcmp(action, "m1WeicheSet") || !strcmp(action, "m1TurnoutSet")) {
+        const int idx_i = doc["idx"] | -1;
+        if (idx_i < 0 || idx_i > 11) {
+            EE_LOGI("HMI", "m1WeicheSet reject: idx=%d out of range", idx_i);
+            return;
+        }
+        const uint8_t idx = (uint8_t)idx_i;
+
+        bool gerade = false;
+        JsonVariant vGerade = doc["gerade"];
+        if (vGerade.is<bool>()) {
+            gerade = vGerade.as<bool>();
+        } else if (vGerade.is<int>()) {
+            gerade = (vGerade.as<int>() != 0);
+        } else if (vGerade.is<const char*>()) {
+            const char* s = vGerade.as<const char*>();
+            if (s) gerade = (!strcasecmp(s, "true") || !strcasecmp(s, "on") || !strcmp(s, "1"));
+        }
+
+        const bool ok = Mega1Link::queueTurnoutSet(idx, gerade);
+        EE_LOGI("HMI", "m1WeicheSet idx=%u gerade=%s ok=%d",
+            (unsigned)idx,
+            gerade ? "true" : "false",
+            ok ? 1 : 0);
+
+        markStateDirtyAllAndForceHmi();
+        return;
+    }
+
     if (!strcmp(action, "m1PowerSet")) {
         const int bhf_i = doc["bhf"] | -1;
         if (bhf_i < 0 || bhf_i > 3) {
