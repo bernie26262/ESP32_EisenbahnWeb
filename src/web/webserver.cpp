@@ -762,6 +762,8 @@ static String buildWsStateLiteJson()
     mega1["modeAuto"] = modeAuto;
     mega1["warningMask"] = m1WarningMask;
     mega1["bahnhofMask"] = (uint8_t)m1diag.powerMask;
+    mega1["weicheIstBits"] = (uint16_t)(m1diag.weicheIstGeradeBits & 0x0FFFu);
+    mega1["weicheSollBits"] = (uint16_t)(m1diag.weicheSollGeradeBits & 0x0FFFu);
     mega1["selftestRetryAvailable"] =
         m1online &&
         (!m1SelftestRunning) &&
