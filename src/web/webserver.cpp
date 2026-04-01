@@ -773,6 +773,16 @@ static String buildWsStateLiteJson()
     JsonObject mega2 = doc["mega2"].to<JsonObject>();
     mega2["online"] = m2online;
     mega2["warningMask"] = m2WarningMask;
+
+    // Mega2 / SBHF-Weichen fuer HMI (read-only)
+    {
+        const auto& tt = SystemRuntimeState::mega2Turnouts();
+        const uint32_t ttAge = SystemRuntimeState::mega2TurnoutsAgeMs();
+        const bool ttValid = (ttAge != 0xFFFFFFFFu);
+        mega2["turnoutIstMask"]  = ttValid ? tt.istMask  : m2.turnoutIstMask;
+        mega2["turnoutSollMask"] = ttValid ? tt.sollMask : m2.turnoutSollMask;
+    }
+
     mega2["selftestRetryAvailable"] =
         m2online &&
         (!m2SelftestRunning) &&
