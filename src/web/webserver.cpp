@@ -683,6 +683,36 @@ static String buildMega2DefectList(uint8_t warningMask)
     return out;
 }
 
+static uint16_t buildMega2SignalGrantMaskLite()
+{
+   const uint16_t* ea = SystemRuntimeState::mega2EntryAllowed();
+    if (!ea) return 0u;
+
+    struct Pair { uint8_t from; uint8_t to; };
+    static const Pair kPairs[12] = {
+        {1, 2},
+        {2, 3},
+        {3, 4},
+        {4, 1},
+        {4, 5},
+        {5, 7},
+        {5, 8},
+        {5, 9},
+        {7, 6},
+        {8, 6},
+        {9, 6},
+        {6, 4},
+    };
+
+    uint16_t mask = 0u;
+    for (uint8_t i = 0; i < 12u; ++i) {
+        const uint8_t fromIdx = (uint8_t)(kPairs[i].from - 1u);
+        const uint8_t toIdx   = (uint8_t)(kPairs[i].to   - 1u);
+        if ((ea[fromIdx] & (uint16_t)(1u << toIdx)) != 0u) mask |= (uint16_t)(1u << i);
+    }
+    return mask;
+}
+
 static String buildWsStateLiteJson()
 {
     JsonDocument doc;
@@ -781,6 +811,10 @@ static String buildWsStateLiteJson()
         const bool ttValid = (ttAge != 0xFFFFFFFFu);
         mega2["turnoutIstMask"]  = ttValid ? tt.istMask  : m2.turnoutIstMask;
         mega2["turnoutSollMask"] = ttValid ? tt.sollMask : m2.turnoutSollMask;
+
+        // Mega2 / Blockdaten fuer HMI (ultraleicht)
+        mega2["blockOccMask"] = (uint16_t)(m2.blockOccupiedMask & 0x01FFu);
+        mega2["signalGrantMask"] = buildMega2SignalGrantMaskLite();
     }
 
     mega2["selftestRetryAvailable"] =
