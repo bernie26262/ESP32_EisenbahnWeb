@@ -1735,6 +1735,12 @@ function connect(){
         setWarnStatus("⚠️ Diagnose aktiv: Aktoren können direkt geschaltet werden (potenziell gefährlich). Not-Aus bleibt wirksam.");
         setDiagStatus(`Diagnose aktiv (Owner ${msg.ownerId})`);
         startHeartbeat();
+
+        // Wichtig:
+        // Mega1-Relais-Buttons hängen sonst am letzten renderM1Relays()-Stand,
+        // der nur bei neuer Relay-Seq aktualisiert wird.
+        if (lastDiagMsg) renderM1Relays(lastDiagMsg);
+        if (lastDiagMsg) m2RelaysUpdateOnly(lastDiagMsg);
       } else {
         diagIsOwner = false;
         // Token nur löschen, wenn Lease inaktiv ist (sonst "busy" behalten)
@@ -1750,6 +1756,10 @@ function connect(){
         if (bEnter) bEnter.disabled = false;
 
         setDiagStatus(msg.active ? `Diagnose belegt (Owner ${msg.ownerId})` : "Diagnose inaktiv");
+
+        // Buttons sofort wieder korrekt sperren/freigeben
+        if (lastDiagMsg) renderM1Relays(lastDiagMsg);
+        if (lastDiagMsg) m2RelaysUpdateOnly(lastDiagMsg);
       } 
 
       const tEnd = performance.now();
@@ -1917,6 +1927,10 @@ function connect(){
       if (exitBtn)  exitBtn.disabled = true;
       if (enterBtn) enterBtn.disabled = false;
 
+      // UI sofort auf read-only zurücksetzen
+      if (lastDiagMsg) renderM1Relays(lastDiagMsg);
+      if (lastDiagMsg) m2RelaysUpdateOnly(lastDiagMsg);
+
       setDiagStatus("Diagnose inaktiv (nur lesen)");
       return;
     } 
@@ -2007,6 +2021,10 @@ window.addEventListener("load", () => {
     if (enterBtn) enterBtn.disabled = false;
     setWarnStatus("");
     setDiagStatus("Diagnose inaktiv (nur lesen)");
+
+    // Optimistisch sofort alle Relais-Buttons wieder sperren
+    if (lastDiagMsg) renderM1Relays(lastDiagMsg);
+    if (lastDiagMsg) m2RelaysUpdateOnly(lastDiagMsg);
   });
 
   connect();
