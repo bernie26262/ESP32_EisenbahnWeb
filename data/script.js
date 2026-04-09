@@ -49,7 +49,7 @@ const SYS_WARNING_PRESENT = 0x10;
 // Wenn du nach einem Firmware-Flash "alte" Buttons siehst:
 // -> unbedingt auch "Upload File System Image" (UploadFS) ausfuehren.
 // Diese Version hilft beim Verifizieren, dass Browser + LittleFS wirklich neu sind.
-const UI_VERSION = "2026-01-14-p01";
+const UI_VERSION = "2026-04-09-p01";
 
 // ============ UI INVARIANTS (DO NOT BREAK) ============
 // 1) Overlay is driven ONLY by WS state; clicks may queue actions but never "pretend" state.
@@ -959,47 +959,55 @@ const bM2 = document.getElementById("badge-mega2");
 const bM1 = document.getElementById("badge-mega1");
 const bMode = document.getElementById("badge-mode");
 const bPw = document.getElementById("badge-power");
-const bNo = document.getElementById("badge-notaus");
+const bEth = document.getElementById("status-eth");
 
+const setStatusValue = (el, level, text) => {
+  if (!el) return;
+  el.className = "status-value status-" + level;
+  el.textContent = text;
+};
+
+if (bEth) {
+  const ethIp = String(msg?.eth?.ip || "-");
+  setStatusValue(bEth, (ethIp && ethIp !== "-" && ethIp !== "0.0.0.0") ? "ok" : "warn", ethIp);
+}
 if (bWs) {
-  bWs.className = "badge " + (wsOk ? "badge-ok" : "badge-err");
-  bWs.textContent = "WS: " + (wsOk ? "verbunden" : "getrennt");
+  setStatusValue(bWs, wsOk ? "ok" : "err", wsOk ? "verbunden" : "getrennt");
 }
 if (bM2) {
   const m2WarnMask = Number(msg?.mega2?.warningMask ?? 0) & 0xff;
   const m2Restricted = !!(msg?.mega2?.sbhf?.restricted);
   const m2WarnPresent = mega2online && ((m2WarnMask !== 0) || m2Restricted);
 
-  bM2.className = "badge " + (!mega2online ? "badge-err" : (m2WarnPresent ? "badge-warn" : "badge-ok"));
-  bM2.textContent = "Mega2: " + (mega2online ? (m2WarnPresent ? "online, warn" : "online") : "offline");
+  setStatusValue(
+    bM2,
+    !mega2online ? "err" : (m2WarnPresent ? "warn" : "ok"),
+    mega2online ? (m2WarnPresent ? "online, warn" : "online") : "offline"
+  );
 }
 if (bM1) {
   const m1WarnMask = Number(msg?.mega1?.warningMask ?? 0) & 0xff;
   const m1Flags = Number(msg?.mega1?.status?.flags ?? 0) & 0xffff;
   const m1WarnPresent = mega1online && ((m1WarnMask !== 0) || ((m1Flags & SYS_WARNING_PRESENT) !== 0));
 
-  bM1.className = "badge " + (!mega1online ? "badge-err" : (m1WarnPresent ? "badge-warn" : "badge-ok"));
-  bM1.textContent = "Mega1: " + (mega1online ? (m1WarnPresent ? "online, warn" : "online") : "offline");
+  setStatusValue(
+    bM1,
+    !mega1online ? "err" : (m1WarnPresent ? "warn" : "ok"),
+    mega1online ? (m1WarnPresent ? "online, warn" : "online") : "offline"
+  );
 }
 if (bMode) {
   const modeRaw = msg?.mega1?.diag?.mode;
   const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
   const isAuto = (mode === 1);
   if (mode < 0 || Number.isNaN(mode)) {
-    bMode.className = "badge badge-warn";
-    bMode.textContent = "Mode: ?";
+    setStatusValue(bMode, "warn", "?");
   } else {
-    bMode.className = "badge " + (isAuto ? "badge-ok" : "badge-info");
-    bMode.textContent = isAuto ? "Auto" : "Manuell";
+    setStatusValue(bMode, isAuto ? "ok" : "info", isAuto ? "Auto" : "Manuell");
   }
 }
 if (bPw) {
-  bPw.className = "badge " + (powerOn ? "badge-ok" : "badge-warn");
-  bPw.textContent = "Power: " + (powerOn ? "AN" : "aus");
-}
-if (bNo) {
-  bNo.className = "badge " + (notausActive ? "badge-err" : "badge-ok");
-  bNo.textContent = "HW-NOT AUS: " + (notausActive ? "AKTIV" : "nein");
+  setStatusValue(bPw, powerOn ? "ok" : "warn", powerOn ? "AN" : "aus");
 }
 
   // --------------------------------------------------
@@ -1053,6 +1061,22 @@ if (bNo) {
 
     btnMode.disabled = (!wsOk || !mega1online) ? true
                       : (lock || startupChecklistActive);
+  }
+
+  const ledPower = document.getElementById("led-power");
+  const ledStop = document.getElementById("led-stop");
+  const ledMode = document.getElementById("led-mode");
+
+  if (ledPower) {
+    ledPower.className = "status-led " + (powerOn ? "led-on" : "led-off");
+  }
+  if (ledStop) {
+    ledStop.className = "status-led " + ((!powerOn || lock || notausActive) ? "led-stop" : "led-off");
+  }
+  if (ledMode) {
+    const modeRaw = msg?.mega1?.diag?.mode;
+    const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
+    ledMode.className = "status-led " + ((mode === 1) ? "led-on" : "led-off");
   }
 }
 

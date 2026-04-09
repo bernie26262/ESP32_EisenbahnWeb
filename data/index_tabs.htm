@@ -2,60 +2,85 @@
 <html lang="de">
 <head>
     <meta charset="utf-8">
-    <title>Eisenbahn – Safety & Status</title>
+    <title>Eisenbahn – Safety & Status (Tabs)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css?v=20260409205329">
-    
 </head>
 
 <body>
 <div class="container">
 
-
-
-    <!-- ===================== LEFT ===================== -->
+    <!-- ===================== LEFT / TAB VIEW ===================== -->
     <main class="panel">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem;">
-            <h1 style="margin:0;">Betriebsübersicht</h1>
-            <div style="display:flex; gap:.75rem; flex-wrap:wrap;">
-                <a class="btn-mini" href="index_tabs.htm">🗂 Tabs</a>
-                <a class="btn-mini" href="diag.htm">⚙ Diagnose</a>
+        <div class="tabs-shell">
+            <div>
+                <h1>Betriebsübersicht – Tabs</h1>
             </div>
-        </div>
 
-        <div class="overview-grid">
-    <!-- 1.1 -->
-    <section class="overview-card">
-        <h2>SBHF + Weichen (Mega2)</h2>
-        <div id="ov-sbhf"><em>keine Daten</em></div>
-        <hr class="card-sep" />
-        <div id="ov-turnouts"><em>keine Daten</em></div>
-    </section>
+            <div class="tabs-toolbar">
+                <div class="tabs-nav" role="tablist" aria-label="Betriebsübersicht Tabs">
+                    <button class="tab-btn active" data-tab="weichen" role="tab" aria-selected="true">Weichen</button>
+                    <button class="tab-btn" data-tab="bahnhoefe" role="tab" aria-selected="false">Bahnhöfe</button>
+                    <button class="tab-btn" data-tab="bloecke" role="tab" aria-selected="false">Blöcke</button>
+                    <button class="tab-btn" data-tab="debug" role="tab" aria-selected="false">Debug</button>
+                </div>
 
-    <!-- 1.2 -->
-    <section class="overview-card">
-        <h2>Blöcke (Mega2)</h2>
-        <div id="ov-blocks"><em>keine Daten</em></div>
-    </section>
+                <div class="tab-link">
+                    <a href="index.htm">Klassische Ansicht</a>
+                    &nbsp;|&nbsp;
+                    <a href="diag.htm">⚙ Diagnose</a>
+                </div>
 
-    <!-- 2.2 -->
-    <section class="overview-card">
-        <h2>Weichen (Mega1)</h2>
-        <div id="ov-m1-turnouts"><em>keine Daten</em></div>
-    </section>
+            </div>
 
-    <!-- 2.2 -->
-    <section class="overview-card">
-        <h2>Bahnhöfe (Mega1)</h2>
-        <div id="ov-m1-stations"><em>keine Daten</em></div>
-    </section>
-</div>
+            <div class="tab-panels">
+                <section class="tab-panel active" data-tab-panel="weichen" aria-hidden="false">
+                    <div class="tab-grid-2">
+                        <section class="overview-card">
+                            <h2>SBHF (Mega2)</h2>
+                            <div id="ov-sbhf"><em>keine Daten</em></div>
+                        </section>
 
-        <div class="panel" style="margin-top: 1rem;">
-            <h1>Log</h1>
-            <div id="log-window"></div>
-            <div class="hint" style="margin-top:.75rem;">
-                UI-Version: <span id="ui-version">?</span>
+                        <section class="overview-card">
+                            <h2>Weichen SBHF (Mega2)</h2>
+                            <div id="ov-turnouts"><em>keine Daten</em></div>
+                        </section>
+
+                        <section class="overview-card" style="grid-column: 1 / -1;">
+                            <h2>Weichen (Mega1)</h2>
+                            <div id="ov-m1-turnouts"><em>keine Daten</em></div>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="tab-panel" data-tab-panel="bahnhoefe" aria-hidden="true">
+                    <div class="tab-stack">
+                        <section class="overview-card">
+                            <h2>Bahnhöfe (Mega1)</h2>
+                            <div id="ov-m1-stations"><em>keine Daten</em></div>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="tab-panel" data-tab-panel="bloecke" aria-hidden="true">
+                    <div class="tab-stack">
+                        <section class="overview-card">
+                            <h2>Blöcke (Mega2)</h2>
+                            <div id="ov-blocks"><em>keine Daten</em></div>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="tab-panel" data-tab-panel="debug" aria-hidden="true">
+                    <div class="debug-card">
+                        <h2>Debug / Log</h2>
+                        <div id="log-window"></div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="hint" style="margin-top: .75rem; text-align: left;">
+                UI-Version: <span id="ui-version">2026-04-09-p01</span>
             </div>
         </div>
     </main>
@@ -101,7 +126,7 @@
 
         <div class="panel-separator"></div>
 
-        <!-- 2. Trafo direkt unter Aktionen -->
+        <!-- 3. Trafo direkt unter Aktionen -->
         <section>
             <div id="trafo-a">Trafo A: – V</div>
             <div id="trafo-b">Trafo B: – V</div>
@@ -109,10 +134,8 @@
 
         <div class="panel-separator"></div>
 
-        <!-- 3. Systemstatus -->
+        <!-- 4. Systemstatus -->
         <section>
-            <h2>Systemstatus</h2>
-
             <div id="safety-status" class="status-box status-ok">
                 🟢 System OK
             </div>
@@ -147,7 +170,7 @@
 
         <div class="panel-separator"></div>
 
-        <!-- 4. Defekte / Retry -->
+        <!-- 5. Defekte / Retry -->
         <section>
             <h2>Defekte</h2>
             <div id="defects-mega1"><em>Keine Defekte</em></div>
@@ -156,16 +179,13 @@
 
         <div class="panel-separator"></div>
 
-        <!-- 5. Meldungen -->
+        <!-- 6. Meldungen -->
         <section>
             <h2>Meldungen</h2>
             <div id="safety-messages-list">
                 <em>Keine Meldungen</em>
             </div>
         </section>
-
-        <div class="panel-separator"></div>
-
     </aside>
 
 </div>
@@ -189,6 +209,7 @@
     </div>
 </div>
 
+<script src="tabs.js?v=20260409142826"></script>
 <script src="safety_ui_texts.js?v=20260409205329"></script>
 <script src="script.js?v=20260409205329"></script>
 </body>
