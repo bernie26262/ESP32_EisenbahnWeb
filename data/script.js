@@ -1722,9 +1722,12 @@ function showOverlay(title, lines, requireChecked, options = {}) {
         ackBtn.textContent =
           (tBtn && Array.isArray(tBtn.lines) && String(tBtn.lines[0] || "").trim())
           || "Quittieren";
-        // Enable rule: WS ok + Mega2 online + checkbox checked
+        
+        // Enable rule for startup checklist:
+        // as soon as both checklist steps are robustly complete and the checkbox is set,
+        // allow the ACK click path. confirmAck() validates the checklist again before sending.
         const syncAckEnabled = () => {
-          const enabled = (wsConnected === true) && (lastMega2Online === true) && (checkbox.checked === true);
+          const enabled = (wsConnected === true) && allDone && (checkbox.checked === true);
           ackBtn.disabled = !enabled;
         };
 
@@ -1788,8 +1791,10 @@ function showOverlay(title, lines, requireChecked, options = {}) {
   if (cancelBtn) cancelBtn.style.display = "";
   if (checkbox) checkbox.style.display = "";
 
-  // ACK senden ist nur sinnvoll, wenn WS ok und Mega2 online.
-  const canAckSend = (wsConnected === true) && (lastMega2Online === true);
+  // ACK senden ist nur sinnvoll, wenn das Backend die Aktion wirklich freigibt.
+  const canAckSend =
+    (window.lastStateMsg?.actions?.canAck === true);
+
 
   // Checkbox handling
   if (checkbox) {
@@ -1811,7 +1816,7 @@ function showOverlay(title, lines, requireChecked, options = {}) {
       checkbox.__ackListenerInstalled = true;
 
       const syncAckEnabled = () => {
-        const enabled = (wsConnected === true) && (lastMega2Online === true) && (checkbox.checked === true);
+        const enabled = (window.lastStateMsg?.actions?.canAck === true) && (checkbox.checked === true);
         ackBtn.disabled = !enabled;
       };
 
@@ -1844,8 +1849,7 @@ function confirmAck() {
   // User expects to see results and ACK there (no overlay switch surprise).
   const st = window.lastStateMsg || {};
   const stp = st.startup || {};
-  const startupNeeds = !!stp.m1Needs || !!stp.m2Needs;
-  const inStartupChecklist = (g_startupSessionActive === true) && startupNeeds;
+  const inStartupChecklist = (g_startupSessionActive === true);
 
   if (inStartupChecklist) {
     // Optional Komfort: nach Startup-Checkliste automatisch auf Automatik schalten
@@ -1855,8 +1859,25 @@ function confirmAck() {
   
     // The startup checklist is cleared on ESP ONLY through markMega*ChecklistDone.
     // safetyAck does NOT clear startupNeeds.
-    const m1Ok = (!stp.m1Needs) || !!stp.m1SelftestDone;
-    const m2Ok = (!stp.m2Needs) || !!stp.m2SelftestDone;
+    const m1diag = st.mega1?.diag;
+    const m1Flags = Number(m1diag?.selftestFlags ?? 0);
+    const m1SelftestDone =
+      !!m1diag?.selftestDone ||
+      ((m1Flags & 0x02) !== 0);
+    const m1Ok =
+      (!stp.m1Needs) ||
+      !!stp.m1SelftestDone ||
+      m1SelftestDone;
+
+    const m2Sbhf = st.mega2?.sbhf;
+    const m2ShadowFlags = Number(st.mega2?.shadow?.selftestFlags ?? 0);
+    const m2SelftestDone =
+      !!m2Sbhf?.selftestDone ||
+      ((m2ShadowFlags & 0x02) !== 0);
+    const m2Ok =
+      (!stp.m2Needs) ||
+      !!stp.m2SelftestDone ||
+      m2SelftestDone;
 
     if (!m1Ok || !m2Ok) {
       logLine("Startup-Checkliste noch nicht abgeschlossen (Selftest fehlt).");
@@ -1864,8 +1885,8 @@ function confirmAck() {
     }
 
     let okAll = true;
-    if (stp.m1Needs) okAll = wsSend({ action: "markMega1ChecklistDone" }) && okAll;
-    if (stp.m2Needs) okAll = wsSend({ action: "markMega2ChecklistDone" }) && okAll;
+    okAll = wsSend({ action: "markMega1ChecklistDone" }) && okAll;
+    okAll = wsSend({ action: "markMega2ChecklistDone" }) && okAll;
 
     // Only send safetyAck if a safety lock is actually active.
     if (st?.safety?.lock === true) {

@@ -734,7 +734,11 @@ static String buildWsStateLiteJson()
     const auto& m2shadow = SystemRuntimeState::mega2ShadowStatus();
     const auto& m2 = SystemRuntimeState::mega2Status();
     const bool m1SelftestRunning = ((m1diag.selftestFlags & 0x01u) != 0u);
-    const bool m2SelftestRunning = ((m2shadow.selftestFlags & 0x01u) != 0u);
+    // Prefer ShadowYardStatus.selftestFlags, but keep the same fallback as the full state:
+    // META bit 0x80 in sbhfOccupiedMask means "selftest running".
+    const bool m2SelftestRunning =
+        ((m2shadow.selftestFlags & 0x01u) != 0u) ||
+        ((m2.sbhfOccupiedMask & 0x80u) != 0u);
 
     const auto& m1s = SystemRuntimeState::mega1Status();
     const uint8_t m1WarningMask = (uint8_t)(m1s.reserved & 0xFFu);
@@ -747,6 +751,9 @@ static String buildWsStateLiteJson()
     const bool warningPresent = m1WarningPresent || m2WarningPresent;
     const bool safetyLock = SystemRuntimeState::safetyLock();
     const bool powerOn = (m2.flags & SYS_POWER_ON) != 0;
+    const uint8_t safetyBlockReason = SystemRuntimeState::safetyBlockReason();
+    const uint8_t safetyErrorType   = SystemRuntimeState::errorType;
+    const uint8_t safetyErrorIndex  = SystemRuntimeState::errorIndex;
     const bool notausActive = (m2.flags & SYS_NOTAUS_ACTIVE) != 0;
 
     // Autoritative Overlay-/Retry-Wahrheit fuer HMI und andere kleine Clients.
@@ -771,8 +778,8 @@ static String buildWsStateLiteJson()
     }
 
     bool ackRequired = (safetyLock &&
-                        (notausActive || (SystemRuntimeState::safetyBlockReason() != 0)));
-    if ((m1Needs || m2Needs) && !notausActive && (SystemRuntimeState::safetyBlockReason() == 1))
+                        (notausActive || (safetyBlockReason != 0)));
+    if ((m1Needs || m2Needs) && !notausActive && (safetyBlockReason == 1))
     {
         ackRequired = false;
     }
@@ -800,6 +807,15 @@ static String buildWsStateLiteJson()
         (m1FailMask != 0u);
     mega1["defectList"] = buildMega1DefectList();
 
+    // Zusätzliche authoritative Mega1-Selbsttest-Infos auch im state-lite,
+    // damit HMI Startup-/Retry-Zustände robust auswerten kann.
+    {
+        JsonObject d = mega1["diag"].to<JsonObject>();
+        d["selftestFlags"] = (uint8_t)m1diag.selftestFlags;
+        d["selftestRunning"] = m1SelftestRunning;
+        d["selftestDone"] = m1SelftestDone;
+    }
+
     JsonObject mega2 = doc["mega2"].to<JsonObject>();
     mega2["online"] = m2online;
     mega2["warningMask"] = m2WarningMask;
@@ -817,6 +833,21 @@ static String buildWsStateLiteJson()
         mega2["signalGrantMask"] = buildMega2SignalGrantMaskLite();
     }
 
+    // Zusätzliche authoritative Mega2-Selbsttest-Infos auch im state-lite,
+    // damit HMI den Startup-/Retry-Zustand robuster auswerten kann.
+    {
+        JsonObject sbhf = mega2["sbhf"].to<JsonObject>();
+        const bool stRunning =
+            ((m2shadow.selftestFlags & 0x01u) != 0u) ||
+            ((m2.sbhfOccupiedMask & 0x80u) != 0u);
+        const bool stDone =
+            ((m2shadow.selftestFlags & 0x02u) != 0u) ||
+            ((m2.sbhfOccupiedMask & 0x40u) != 0u);
+        sbhf["selftestRunning"] = stRunning;
+        sbhf["selftestDone"] = stDone;
+        mega2["shadow"]["selftestFlags"] = m2shadow.selftestFlags;
+    }
+
     mega2["selftestRetryAvailable"] =
         m2online &&
         (!m2SelftestRunning) &&
@@ -825,7 +856,7 @@ static String buildWsStateLiteJson()
 
     JsonObject summary = doc["summary"].to<JsonObject>();
     summary["warningPresent"] = warningPresent;
-    summary["emergencyPresent"] = notausActive;
+    summary["emergencyPresent"] = (safetyErrorType != 0u) || notausActive || (safetyBlockReason == SAFETY_BLOCK_EMERGENCY);
 
     JsonObject ui = doc["ui"].to<JsonObject>();
     ui["overlayMode"] = uiOverlayMode;          // "none" | "startup" | "retry"
@@ -853,6 +884,10 @@ static String buildWsStateLiteJson()
     JsonObject safety = doc["safety"].to<JsonObject>();
     safety["lock"] = safetyLock;
     safety["ackRequired"] = ackRequired;
+    safety["blockReason"] = safetyBlockReason;
+    safety["errorType"] = safetyErrorType;
+    safety["errorIndex"] = safetyErrorIndex;
+    safety["text"] = SystemRuntimeState::safetyErrorText(safetyErrorType, safetyErrorIndex);
     safety["notausActive"] = notausActive;
     safety["powerOn"] = powerOn;
 
@@ -879,11 +914,18 @@ static String buildWsStateLiteJson()
     const bool allChecklistDone =
         ((!m1Needs) || m1SelftestDone) &&
         ((!m2Needs) || m2SelftestDone);
+
+    // Startup-Quittieren nur freigeben, wenn die Checkliste fertig ist und
+    // kein inkonsistenter Safety-Lock-Zustand mehr offen ist.
+    const bool startupConfirmSafetyOk =
+        (!safetyLock) || ackRequired;
+
     actions["canStartupConfirm"] =
         (!writeLockedByDiag) &&
         startupChecklistActive &&
         m2online &&
-        allChecklistDone;
+        allChecklistDone &&
+        startupConfirmSafetyOk;
  
     JsonObject wsC = doc["wsClients"].to<JsonObject>();
     wsC["base"] = countSubBase();

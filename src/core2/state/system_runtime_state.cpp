@@ -228,9 +228,20 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
 
     // selftestRunning is encoded as META bit 0x80 in sbhfOccupiedMask.
     const bool selftestRunning = ((st.sbhfOccupiedMask & 0x80u) != 0);
+    // selftestDone is encoded as META bit 0x40 in sbhfOccupiedMask.
+    const bool selftestDoneMeta = ((st.sbhfOccupiedMask & 0x40u) != 0);
+
     // Step marker: Selftest finished (running -> not running) => remember "done".
     // IMPORTANT: does NOT close checklist (contract: only after full user flow incl. ACK).
     if (s_m2Boot.needsChecklist && s_m2SelftestRunningPrev && !selftestRunning)
+    {
+        s_m2SelftestDone = true;
+        markStateDirtyAll();
+    }
+    // Robust fallback:
+    // After cold start we may first observe Mega2 already in DONE state,
+    // without ever seeing the running->not running transition locally.
+    if (s_m2Boot.needsChecklist && selftestDoneMeta && !s_m2SelftestDone)
     {
         s_m2SelftestDone = true;
         markStateDirtyAll();
@@ -684,6 +695,25 @@ void SystemRuntimeState::updateMega2ShadowStatus(const ShadowYardStatus& st)
 {
     s_m2Shadow = st;
     s_lastShadowRxMs = millis();
+
+    const bool selftestRunning = ((st.selftestFlags & 0x01u) != 0u);
+    const bool selftestDone    = ((st.selftestFlags & 0x02u) != 0u);
+
+    // If Shadow status already reports RUNNING, remember that locally as well.
+    // This keeps the later running->not running transition detection robust even
+    // if status/shadow packets arrive in an unlucky order.
+    if (selftestRunning) {
+        s_m2SelftestRunningPrev = true;
+    }
+
+    // Robust/sticky startup step marker for Mega2:
+    // as soon as DONE is seen in the authoritative ShadowYardStatus, keep the
+    // startup selftest-step marked done until the next real Mega2 reboot.
+    if (s_m2Boot.needsChecklist && selftestDone && !s_m2SelftestDone) {
+        s_m2SelftestDone = true;
+        markStateDirtyAll();
+    }
+
     markStateDirtyAll();
 }
 
