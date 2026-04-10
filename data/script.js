@@ -386,6 +386,7 @@ function uiInitOnce() {
   console.log("[UI] version", UI_VERSION);
 
   bindMega1DelegatedClicks();
+  initTrackDiagramUi();
 
   // Extra safety: avoid opening multiple WS connections if someone calls uiInitOnce again
   try {
@@ -738,8 +739,12 @@ try {
   // Schritt 4: rechter Trafo-Bereich
   try { renderTrafoRight(msg); } catch (e) { console.warn('[UI] renderTrafoRight failed:', e); }
 
-  // Schritt 3.5: links Betriebsuebersicht (SBHF/Bloecke/Weichen) + FROM->TO Signale
-  renderOverviewLeft(msg);
+  updateTrackDiagramFromState(msg);
+
+  // Schritt 3.5: klassische linke Uebersicht nur auf index/index_tabs
+  if (!isTrackDiagramPage()) {
+    renderOverviewLeft(msg);
+  }
 }
 
 /* =========================================================
@@ -1951,6 +1956,172 @@ function logLine(txt) {
 }
 
 /* =========================================================
+ *  TRACK DIAGRAM
+ * ========================================================= */
+
+function tdHasDiagram() {
+  return !!document.querySelector(".track-diagram-stage");
+}
+
+function isTrackDiagramPage() {
+  return tdHasDiagram();
+}
+
+function tdSetVisible(id, visible) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = visible ? "block" : "none";
+}
+
+function tdSetTriState(prefix, state, values) {
+  values.forEach((v) => tdSetVisible(`${prefix}-${v}`, v === state));
+}
+
+function tdSetWeiche(key, state) {
+  tdSetTriState(key, state, ["g", "g-diff", "a", "a-diff", "undef"]);
+}
+
+function tdSetSignal(prefix, state) {
+  tdSetTriState(prefix, state, ["green", "red", "undef"]);
+}
+
+function tdSetBlock(key, state) {
+  // state: "occ" | "free" | "undef"
+  tdSetVisible(`block-${key}-occ`, state === "occ");
+  tdSetVisible(`block-${key}-undef`, state === "undef");
+}
+
+function tdSetButtonEnabled(id, enabled) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.disabled = !enabled;
+}
+
+function tdUpdateCommandButtons(msg) {
+  if (!tdHasDiagram()) return;
+
+  const m1online = !!(msg?.mega1?.online);
+  const wsOk = (wsConnected === true);
+  const lock = !!(msg?.safety?.lock === true);
+  const notausActive = !!(msg?.safety?.notausActive === true);
+  const canCmd = wsOk && m1online && !lock && !notausActive;
+
+  tdSetButtonEnabled("td-btn-w9", canCmd);
+  tdSetButtonEnabled("td-btn-w10", canCmd);
+  tdSetButtonEnabled("td-btn-w11", canCmd);
+  tdSetButtonEnabled("td-btn-bhf2", canCmd);
+  tdSetButtonEnabled("td-btn-bhf3", canCmd);
+}
+
+function initTrackDiagramUi() {
+  if (!tdHasDiagram()) return;
+
+  // Default vor erster WS-Nachricht: alles undef / unbekannt
+  tdSetWeiche("w9", "undef");
+  tdSetWeiche("w10", "undef");
+  tdSetWeiche("w11", "undef");
+
+  tdSetSignal("bhf2", "undef");
+  tdSetSignal("bhf3", "undef");
+
+  tdSetSignal("grant-1-2", "undef");
+  tdSetSignal("grant-2-3", "undef");
+
+  tdSetBlock("e1-b1", "undef");
+  tdSetBlock("e1-b2", "undef");
+  tdSetBlock("e1-b3", "undef");
+
+  tdSetButtonEnabled("td-btn-w9", false);
+  tdSetButtonEnabled("td-btn-w10", false);
+  tdSetButtonEnabled("td-btn-w11", false);
+  tdSetButtonEnabled("td-btn-bhf2", false);
+  tdSetButtonEnabled("td-btn-bhf3", false);
+}
+
+function tdBit(mask, i) {
+  return (((Number(mask) >>> 0) >> i) & 1) !== 0;
+}
+
+function updateTrackDiagramFromState(msg) {
+  if (!tdHasDiagram()) return;
+
+  // -------------------------
+  // Mega1 -> Weichen / BHF
+  // -------------------------
+  const m1online = !!(msg?.mega1?.online);
+  const m1diag = msg?.mega1?.diag;
+
+  if (m1online && m1diag) {
+    const istBits = Number(m1diag.weicheIstBits ?? 0);
+    const sollBits = Number(m1diag.weicheSollBits ?? 0);
+
+    const tdWeicheStateFromIstSoll = (idx) => {
+      const istG = tdBit(istBits, idx);
+      const sollG = tdBit(sollBits, idx);
+
+      if (istG && sollG) return "g";
+      if (!istG && !sollG) return "a";
+      if (istG && !sollG) return "g-diff";
+      return "a-diff";
+    };
+
+    tdSetWeiche("w9",  tdWeicheStateFromIstSoll(9));
+    tdSetWeiche("w10", tdWeicheStateFromIstSoll(10));
+    tdSetWeiche("w11", tdWeicheStateFromIstSoll(11));
+
+    // Annahme passend zur bestehenden WebUI: BHF2/BHF3 entsprechen powerMask Bits 2/3
+    const powerMask = Number(m1diag.powerMask ?? 0);
+    tdSetSignal("bhf2", tdBit(powerMask, 2) ? "green" : "red");
+    tdSetSignal("bhf3", tdBit(powerMask, 3) ? "green" : "red");
+  } else {
+    tdSetWeiche("w9", "undef");
+    tdSetWeiche("w10", "undef");
+    tdSetWeiche("w11", "undef");
+    tdSetSignal("bhf2", "undef");
+    tdSetSignal("bhf3", "undef");
+  }
+
+  // -------------------------
+  // Mega2 -> Blockbelegung / Freigaben
+  // -------------------------
+  const m2online = !!(msg?.mega2?.online);
+
+  // Blockbelegung:
+  // - bevorzugt mega2.blocks.status[i].besetzt
+  // - fallback occupiedMask
+  // - sonst undef
+  const bs = msg?.mega2?.blocks?.status;
+  if (m2online && Array.isArray(bs) && bs.length >= 3) {
+    tdSetBlock("e1-b1", bs[0]?.besetzt ? "occ" : "free");
+    tdSetBlock("e1-b2", bs[1]?.besetzt ? "occ" : "free");
+    tdSetBlock("e1-b3", bs[2]?.besetzt ? "occ" : "free");
+  } else if (m2online && (msg?.mega2?.blocks?.occupiedMask !== undefined || msg?.mega2?.blockOccupiedMask !== undefined)) {
+    const occMask = Number(msg?.mega2?.blocks?.occupiedMask ?? msg?.mega2?.blockOccupiedMask ?? 0);
+    tdSetBlock("e1-b1", tdBit(occMask, 0) ? "occ" : "free");
+    tdSetBlock("e1-b2", tdBit(occMask, 1) ? "occ" : "free");
+    tdSetBlock("e1-b3", tdBit(occMask, 2) ? "occ" : "free");
+  } else {
+    tdSetBlock("e1-b1", "undef");
+    tdSetBlock("e1-b2", "undef");
+    tdSetBlock("e1-b3", "undef");
+  }
+
+  // Freigaben 1->2 und 2->3 aus mega2.entryAllowed
+  const entryNow = msg?.mega2?.entryAllowed;
+  if (m2online && Array.isArray(entryNow) && entryNow.length >= 3) {
+    const grant12 = ((Number(entryNow[0] ?? 0) & (1 << 1)) !== 0);
+    const grant23 = ((Number(entryNow[1] ?? 0) & (1 << 2)) !== 0);
+    tdSetSignal("grant-1-2", grant12 ? "green" : "red");
+    tdSetSignal("grant-2-3", grant23 ? "green" : "red");
+  } else {
+    tdSetSignal("grant-1-2", "undef");
+    tdSetSignal("grant-2-3", "undef");
+  }
+
+  tdUpdateCommandButtons(msg);
+}
+
+/* =========================================================
  *  HELPER
  * ========================================================= */
 
@@ -2861,3 +3032,46 @@ function renderBlocksLeft(msg) {
   }
 
 }
+
+function tdSetVisible(id, v) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = v ? 'block' : 'none';
+}
+
+function tdTri(prefix, state, vals) {
+  vals.forEach(v => tdSetVisible(`${prefix}-${v}`, v === state));
+}
+
+function tdWeiche(key, s) {
+  tdTri(key, s, ['g', 'a', 'undef']);
+}
+
+function tdSignal(key, s) {
+  tdTri(key, s, ['green', 'red', 'undef']);
+}
+
+function tdBlock(id, occ) {
+  tdSetVisible(id, !!occ);
+}
+
+/* === TEST / DUMMY === */
+function updateTrackDemo() {
+  tdWeiche('w9', 'g');
+  tdWeiche('w10', 'a');
+  tdWeiche('w11', 'undef');
+
+  tdSignal('bhf2', 'green');
+  tdSignal('bhf3', 'red');
+
+  tdBlock('block-e1-b1-occ', true);
+  tdBlock('block-e1-b2-occ', false);
+  tdBlock('block-e1-b3-occ', true);
+
+  tdSignal('grant-1-2', 'green');
+  tdSignal('grant-2-3', 'red');
+}
+
+window.addEventListener('load', () => {
+  setTimeout(updateTrackDemo, 500);
+});
