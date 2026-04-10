@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <title>Eisenbahn – Gleisbild</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css?v=20260410112443">
+    <link rel="stylesheet" href="style.css?v=20260410135937">
 
     <style>
         /* ================= TRACK DIAGRAM ================= */
@@ -234,18 +234,9 @@
             </div>
 
             <div class="hint" style="margin-top:.75rem;">
-                UI-Version: <span id="ui-version">2026-04-09-p01</span>
+                UI-Version: <span id="ui-version">2026-04-10-p01</span>
             </div>
 
-        </div>
-
-        <!-- Versteckte Platzhalter fuer script.js / UI-Contract -->
-        <div style="display:none;">
-            <div id="ov-sbhf"></div>
-            <div id="ov-turnouts"></div>
-            <div id="ov-blocks"></div>
-            <div id="ov-m1-stations"></div>
-            <div id="ov-m1-turnouts"></div>
         </div>
     </main>
 
@@ -373,39 +364,7 @@
     </div>
 </div>
 
-<script src="safety_ui_texts.js?v=20260410112443"></script>
-<script src="script.js?v=20260410112443"></script>
-<script>
-document.addEventListener("DOMContentLoaded", () => {
-    const tabButtons = Array.from(document.querySelectorAll(".tabs-nav .tab-btn[data-tab]"));
-    const tabPanels = Array.from(document.querySelectorAll(".tab-panels .tab-panel[data-tab-panel]"));
-
-    function activateTab(tabName) {
-        tabButtons.forEach((btn) => {
-            const active = (btn.dataset.tab === tabName);
-            btn.classList.toggle("active", active);
-            btn.setAttribute("aria-selected", active ? "true" : "false");
-        });
-
-        tabPanels.forEach((panel) => {
-            const active = (panel.dataset.tabPanel === tabName);
-            panel.classList.toggle("active", active);
-            panel.setAttribute("aria-hidden", active ? "false" : "true");
-            panel.style.display = active ? "" : "none";
-        });
-    }
-
-    tabButtons.forEach((btn) => {
-        btn.addEventListener("click", () => activateTab(btn.dataset.tab));
-    });
-
-    // Initialzustand robust setzen
-    const initiallyActive =
-        tabButtons.find((b) => b.classList.contains("active"))?.dataset.tab ||
-        tabButtons[0]?.dataset.tab;
-
-    if (initiallyActive) activateTab(initiallyActive);
-});
-</script>
+<script src="safety_ui_texts.js?v=20260410135937"></script>
+<script src="trackdiagram.js?v=20260410153000"></script>
 </body>
 </html>

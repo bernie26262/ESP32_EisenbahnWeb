@@ -161,6 +161,7 @@ h2 {
 .overlay {
     position: fixed;
     inset: 0;
+    z-index: 10000;
     background: rgba(0,0,0,0.35);
     display: flex;
     align-items: center;
@@ -172,6 +173,8 @@ h2 {
 
 .overlay-box {
     width: min(560px, 95vw);
+    position: relative;
+    z-index: 10001;
     background: #fff;
     border-radius: 14px;
     padding: 1rem;
