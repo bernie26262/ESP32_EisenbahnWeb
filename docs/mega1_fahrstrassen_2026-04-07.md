@@ -1,4 +1,4 @@
-# Mega1 Fahrstraßen – Stand 2026-04 (aktualisiert)
+# Mega1 Fahrstraßen – Stand 2026-04-10 (aktualisiert)
 
 Dieses Dokument beschreibt die aktuell implementierten Fahrstraßen auf Mega1.
 Stand nach finaler Abstimmung und Tests an der Anlage.
@@ -7,13 +7,14 @@ Stand nach finaler Abstimmung und Tests an der Anlage.
 
 ## Übersicht
 
-| FS  | Trigger | Reset      | Besonderheit                    |
-|-----|--------|-----------|---------------------------------|
-| FS0 | S0     | S3, S6    | W8 alternierend (1./≥2)         |
-| FS1 | S2     | S6        | Odd/Even Logik                  |
-| FS2 | S4     | –         | feste Schaltung + W8 gerade     |
-| FS3 | S7     | –         | feste Schaltung erweitert       |
-| FS4 | S8     | S10       | W9 bei 1./3. Überfahrt          |
+| FS  | Trigger | Reset      | Besonderheit                                  |
+|-----|--------|-----------|-----------------------------------------------|
+| FS0 | S0     | S3, S6    | W8 alternierend (1./≥2) + W1 gerade bei W0=G |
+| FS1 | S2     | S6        | Odd/Even Logik                                |
+| FS2 | S4     | –         | feste Schaltung + W0 abbiegen + W8 gerade     |
+| FS3 | S7     | –         | feste Schaltung erweitert + W0 abbiegen       |
+| FS4 | S8     | S10       | W9 bei 1./3. Überfahrt                        |
+| FS5 | S18    | –         | neue Fahrstraße: W0 gerade                    |
 
 ---
 
@@ -27,6 +28,9 @@ Stand nach finaler Abstimmung und Tests an der Anlage.
 Bei jeder Überfahrt:
 - W2 → **Gerade**
 - W3 → **Abbiegen**
+Zusatzregel bei jeder Überfahrt:
+- Wenn **W0 IST = Gerade**, dann **W1 → Gerade**
+
 
 Zusätzlich:
 - 1. Überfahrt:  
@@ -64,7 +68,8 @@ Zusätzlich:
 
 ### Verhalten
 
-Bei jeder Überfahrt:
+Bei jeder Überfahrt, in dieser fachlichen Wirkung:
+- W0 → **Abbiegen**
 - W1 → **Abbiegen**
 - W7 → **Gerade**
 - W8 → **Gerade**  ← **NEU ergänzt**
@@ -78,11 +83,24 @@ Bei jeder Überfahrt:
 
 ### Verhalten
 
-Bei jeder Überfahrt:
+Bei jeder Überfahrt, in dieser fachlichen Wirkung:
+- W0 → **Abbiegen**
 - W2 → **Abbiegen**
 - W3 → **Gerade**
 - W6 → **Abbiegen**  ← **NEU ergänzt**
 - W7 → **Abbiegen**  ← **NEU ergänzt**
+
+---
+
+## FS5 – Folgefahrt ab S18
+
+- **Trigger:** S18  
+- **Reset:** keiner  
+
+### Verhalten
+
+Bei jeder Überfahrt:
+- W0 → **Gerade**
 
 ---
 
@@ -163,10 +181,12 @@ WeichenHub.enqueueWeiche(index, gerade)
 
 ## Stand
 
-- Fahrstraßen FS0–FS4 vollständig implementiert
+- Fahrstraßen FS0–FS5 vollständig implementiert
 - Verhalten an Anlage validiert
 - Letzte Änderungen:
+- FS0 um Zusatzregel W0→W1 ergänzt
 - FS1 Odd/Even eingeführt
-- FS2 um W8 ergänzt
-- FS3 erweitert (W6/W7)
+- FS2 um W0 ergänzt und W8 gerade bestätigt
+- FS3 erweitert (W0/W6/W7)
+- FS5 neu ergänzt (S18 → W0 gerade)
 - Reduktionslogik W6 sicherheitsfix

@@ -1,4 +1,4 @@
-# Mega1 Codes: Flags, Errors, Warnings, Masks (Stand 2026-01-27)
+# Mega1 Codes: Flags, Errors, Warnings, Masks (Stand 2026-04-10)
 
 Diese Datei dokumentiert die verwendeten Bitmasks/Enums sowie die relevanten I2C Command IDs & Payloads für **Mega1 (Weichen/Bahnhof)**.
 Analog zu `Mega2_Codes.md`.
@@ -185,17 +185,30 @@ Felder (Auszug):
 - `kontaktBits` (uint16)
 - `weichenBits / weichenIstBits / weichenOkBits` (uint16)
 - `modus` (uint8), `activeRoute` (int8), `errorFlags` (uint8)
-- `fsCounter[NUM_STW_FS]` (NUM_STW_FS=5)
+- `fsCounter[NUM_STW_FS]` (aktuell NUM_STW_FS=6)
 - diverse last* Debug Bytes
 - `bhfOccupied[4]`, `bhfPower[4]`, `bhfTimerRunning[4]`
 - `lastBhfEvent` (uint8)
+
+Wichtiger Hinweis:
+- `kontaktBits` ist der ältere Statuspfad und aktuell nur **16 Bit** breit.
+- Für die Diagnose-Seite `/diag.htm` werden die Sensorsignale maßgeblich über
+  `sensorActiveMask`, `sensorRiseMask` und `sensorFallMask` transportiert.
 
 ---
 
 ## 10) Fahrstraßen
 
 Aus `Fahrstrassen_defs.h`:
-- `NUM_STW_FS` = 5  (Index 0..4)
+- `NUM_STW_FS` = 6  (Index 0..5)
 
 Hinweis: Die konkreten Schrittdefinitionen (SensorIndex/ResetSensors/Steps) liegen i.d.R. in Implementierung/Arrays,
 die IDs werden typischerweise als Array-Index verwendet.
+
+Aktueller Stand fachlich:
+- `FS0`: Zusatzregel bei S0: wenn W0 IST gerade, dann W1 gerade
+- `FS1`: Odd/Even
+- `FS2`: bei S4 zusätzlich W0 abbiegen
+- `FS3`: bei S7 zusätzlich W0 abbiegen
+- `FS4`: W9 abhängig vom Zählerstand
+- `FS5`: neuer Trigger S18 → W0 gerade

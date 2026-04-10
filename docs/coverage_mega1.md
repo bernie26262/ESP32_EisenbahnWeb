@@ -1,4 +1,4 @@
-# Mega1 – Coverage-Matrix Sensor-Polling (Definiert ↔ gelesen ↔ Export ↔ UI)
+# Mega1 – Coverage-Matrix Sensor-Polling (Definiert ↔ gelesen ↔ Export ↔ UI, Stand 2026-04-10)
 
 Stand: basierend auf dem ZIP *Mega1.fuerPins.zip* und der aktuellen Scheduler-Logik (SensorHub/WeichenHub) im ESP-WS-State.
 
@@ -6,10 +6,10 @@ Stand: basierend auf dem ZIP *Mega1.fuerPins.zip* und der aktuellen Scheduler-Lo
 
 | Komponente | Was wird gelesen/aktualisiert? | Wo? | Frequenz | Ergebnis/State | Export/WS-State (ESP → Browser) |
 |---|---|---:|---:|---|---|
-| SensorHub | Schalt-/Kontakt-/Fahrstraßen-Sensoren, Einfahrt, Timerstart (digital) | `SensorHub::update()` (aus `loop()`) | ~5 ms | `trainPresent[]`, `changedMask()` | **aktuell nicht als eigene Maske exportiert** (nur indirekt über Logik) |
+| SensorHub | Schalt-/Kontakt-/Fahrstraßen-Sensoren, Einfahrt, Timerstart (digital) | `SensorHub::update()` (aus `loop()`) | ~5 ms | `trainPresent[]`, `changedMask()`, `activeMask()/riseMask()/fallMask()` | **über DIAG exportiert** |
 | WeichenHub | Weichen-Rückmelder (IST) | `weichenHub.pollRueckmelders(now)` | ~20 ms | `weicheIstBits` (IST) | `mega1.diag.weicheIstBits` |
 | WeichenHub | Weichen-Soll/Slow/Ansteuerung | `weichenHub.update()` (aus `loop()`) | ~5 ms | Soll/Slow/Outputs | `mega1.diag.weicheSollBits`, `mega1.diag.weicheSlowSelectedBits` |
-| Fahrstraße/Bahnhof | nutzt SensorEvents | `fahrstrassen.handleSensorEvents(...)`, `bfController.update(...)` | ~10 ms (nur AUTO) | Fahrstraßen-/Bahnhof-Logik | überwiegend **indirekt** (keine reine Sensor-Maske im DIAG) |
+| Fahrstraße/Bahnhof | nutzt SensorEvents | `fahrstrassen.handleSensorEvents(...)`, `bfController.update(...)` | ~10 ms (nur AUTO) | Fahrstraßen-/Bahnhof-Logik | überwiegend **indirekt**, Sensorzustände aber zusätzlich über DIAG sichtbar |
 | Selftest | Ablauf & Status | (Selftest-Logik) | – | `selftestRunning`, `selftestDone`, `failMask`, `currentIdx` | `mega1.diag.selftestRunning`, `mega1.diag.selftestDone`, `mega1.diag.selftestFailMask`, `mega1.diag.selftestCurrentIdx` |
 
 > **Wichtig (Robustheit):** Unbenutzte Sensor-Slots sind in `SENSOR_PINS[]` als `-1` markiert.  
@@ -23,7 +23,7 @@ Stand: basierend auf dem ZIP *Mega1.fuerPins.zip* und der aktuellen Scheduler-Lo
 
 | SensorIndex | Funktion | Pin | Aktiv-Level | Wird gelesen in | Verwendung (Logik) | Export/WS-State (Browser) |
 |---:|---|---:|---|---|---|---|
-| S0 | Schaltgleis (Fahrstraße) | D22 | LOW=aktiv | `SensorHub::update()` | Fahrstraßen-Trigger | **nicht direkt exportiert** (aktuell nur indirekt) |
+| S0 | Schaltgleis (Fahrstraße) | D22 | LOW=aktiv | `SensorHub::update()` | Fahrstraßen-Trigger | `mega1.diag.sensorActiveMask` / rise / fall |
 | S1 | Fahrstraße | D28 | LOW=aktiv | `SensorHub::update()` | Fahrstraße | **nicht direkt exportiert** |
 | S2 | **Einfahrt Bhf0/1 (shared)** | D23 | LOW=aktiv | `SensorHub::update()` | Bahnhof-Logik | **nicht direkt exportiert** |
 | S3 | Fahrstraße | D33 | LOW=aktiv | `SensorHub::update()` | Fahrstraße | **nicht direkt exportiert** |
@@ -33,20 +33,21 @@ Stand: basierend auf dem ZIP *Mega1.fuerPins.zip* und der aktuellen Scheduler-Lo
 | S7 | Fahrstraße | D31 | LOW=aktiv | `SensorHub::update()` | Fahrstraße | **nicht direkt exportiert** |
 | S8 | **Einfahrt Bhf2/3 (shared)** | D27 | LOW=aktiv | `SensorHub::update()` | Bahnhof-Logik | **nicht direkt exportiert** |
 | S9 | Fahrstraße | D35 | LOW=aktiv | `SensorHub::update()` | Fahrstraße | **nicht direkt exportiert** |
-| S10 | Fahrstraße | D34 | LOW=aktiv | `SensorHub::update()` | Fahrstraße | **nicht direkt exportiert** |
+| S10 | Fahrstraße | D34 | LOW=aktiv | `SensorHub::update()` | Fahrstraße | `mega1.diag.sensorActiveMask` / rise / fall |
 | S11–S17 | unbenutzt | -1 | – | (sollte übersprungen werden) | – | – |
-| S18 | Timerstart Bhf1 | D29 | LOW=aktiv | `SensorHub::update()` | Bahnhof-Logik | **nicht direkt exportiert** |
-| S19 | Timerstart Bhf0 | D26 | LOW=aktiv | `SensorHub::update()` | Bahnhof-Logik | **nicht direkt exportiert** |
+| S18 | Timerstart Bhf1 / FS5 Trigger | D29 | LOW=aktiv | `SensorHub::update()` | Bahnhof-Logik + Fahrstraße FS5 | `mega1.diag.sensorActiveMask` / rise / fall |
+| S19 | Timerstart Bhf0 | D26 | LOW=aktiv | `SensorHub::update()` | Bahnhof-Logik | `mega1.diag.sensorActiveMask` / rise / fall |
 | S20–S21 | unbenutzt | -1 | – | (sollte übersprungen werden) | – | – |
-| S22 | Timerstart Bhf2 | D30 | LOW=aktiv | `SensorHub::update()` | Bahnhof-Logik | **nicht direkt exportiert** |
-| S23 | Timerstart Bhf3 | D36 | LOW=aktiv | `SensorHub::update()` | Bahnhof-Logik | **nicht direkt exportiert** |
+| S22 | Timerstart Bhf2 | D30 | LOW=aktiv | `SensorHub::update()` | Bahnhof-Logik | `mega1.diag.sensorActiveMask` / rise / fall |
+| S23 | Timerstart Bhf3 | D36 | LOW=aktiv | `SensorHub::update()` | Bahnhof-Logik | `mega1.diag.sensorActiveMask` / rise / fall |
 
 **Interpretation:**  
 - **Definiert:** ja (Pin-Mapping)  
 - **Gelesen:** ja (SensorHub 5 ms)  
-- **Export/UI:** aktuell überwiegend indirekt (über Logik-/Statusfelder), keine reine „Sensor-Maske“ im DIAG-Paket.
+- **Export/UI:** zusätzlich direkt über die DIAG-Sensormasken sichtbar.
 
-➡️ **Empfehlung für /diag.htm:** Eine reine Anzeige-Maske exportieren, z. B. `mega1.diag.sensorActiveMaskLo/Hi` oder `mega1.sensors.activeMaskLo/Hi`.
+➡️ **Aktueller Stand:** Die reine Anzeige erfolgt bereits über
+`mega1.diag.sensorActiveMask`, `mega1.diag.sensorRiseMask`, `mega1.diag.sensorFallMask`.
 
 ---
 
