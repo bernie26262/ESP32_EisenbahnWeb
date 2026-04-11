@@ -261,66 +261,6 @@ h2 {
     font-size: 0.95rem;
 }
 
-/* =====================================================
- *  TAB VIEW (index_tabs.htm)
- * ===================================================== */
-.tabs-shell {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
-.tabs-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.tabs-nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-
-.tab-btn {
-    padding: 0.65rem 0.95rem;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: #fff;
-    color: var(--text);
-    cursor: pointer;
-    font-weight: 700;
-}
-
-.tab-btn:hover {
-    background: #f8fafc;
-}
-
-.tab-btn.active {
-    background: #eaf2ff;
-    border-color: #9ec1ff;
-    color: #174ea6;
-}
-
-.tab-link {
-    color: var(--subtext);
-    font-size: 0.95rem;
-}
-
-.tab-panels {
-    min-height: 320px;
-}
-
-.tab-panel {
-    display: none;
-}
-
-.tab-panel.active {
-    display: block;
-}
-
 .tab-stack {
     display: grid;
     gap: 0.75rem;

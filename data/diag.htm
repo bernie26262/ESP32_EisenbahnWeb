@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Diagnose</title>
-  <link rel="stylesheet" href="style.css?v=20260410135937">
+  <link rel="stylesheet" href="style.css?v=20260411182423">
   <link rel="stylesheet" href="diagstyle.css">
 
 </head>
@@ -25,6 +25,7 @@
 
     <p><strong>Hinweis:</strong> Solange Diagnose aktiv ist, sind Schreibaktionen für andere Clients gesperrt.</p>
 
+    <div class="diag-panel">
     <h2 style="margin-top:1rem;">Kontakt- &amp; Schaltgleise</h2>
     <div class="diag-headrow diag-headrow-m2" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:1rem; clear:both;">
       <h3 style="margin:0;">Kontakt- &amp; Schaltgleise (Mega2)</h3>
@@ -49,11 +50,13 @@
       <tbody><tr class="diag-section"><td colspan="6"><strong>Weichenrückmelder W12..W15 (LOW=Abbiegen, HIGH=Gerade)</strong></td></tr></tbody>
       <tbody id="diag-m2-turnouts-body"></tbody>
     </table>
+    </div>
 
 
+    <div class="diag-panel">
     <h2 style="margin-top:1.25rem;">Schaltgleise Mega1</h2>
     <!-- Mega1 Sensoren: linksbündiger Block + Reset für Browser-Counter -->
-    <div class="diag-block-left">
+    <div class="diag-block-left diag-panel-body">
       <div class="diag-headrow diag-headrow-m1" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:1rem; clear:both;">
         <h3 style="margin:0;">Sensoren (Mega1) – S0..S10, S18, S19, S22, S23</h3>
         <button class="btn" id="m1-reset" type="button">Counter reset</button>
@@ -73,15 +76,23 @@
         <tbody id="diag-m1-sensors"></tbody>
       </table>
     </div>
+    </div>
+    
+    <div class="diag-panel">
     <h2 style="margin-top:1.25rem;">Analog (Mega2)</h2>
     <!-- Kleine Tabelle: Spannung/Ströme -->
-    <table class="diag-table small" id="diag-analog-table">
+    <table class="diag-table small diag-panel-body" id="diag-analog-table">
+      <colgroup>
+        <col style="width: 34%;">
+        <col style="width: 8ch;">
+        <col style="width: 66%;">
+      </colgroup>
      <thead>
-        <tr><th>Signal</th><th>Wert</th></tr>
+        <tr><th>Signal</th><th>Pin</th><th>Wert</th></tr>
       </thead>
       <tbody id="diag-analog-body">
-        <tr><td>vA10</td><td class="mono">–</td></tr>
-        <tr><td>vB10</td><td class="mono">–</td></tr>
+        <tr><td>vA10</td><td class="mono">A9</td><td class="mono">–</td></tr>
+        <tr><td>vB10</td><td class="mono">A10</td><td class="mono">–</td></tr>
         <tr><td>i_mA B1</td><td class="mono">–</td></tr>
         <tr><td>i_mA B2</td><td class="mono">–</td></tr>
         <tr><td>i_mA B3</td><td class="mono">–</td></tr>
@@ -93,10 +104,12 @@
         <tr><td>i_mA SBHF3</td><td class="mono">–</td></tr>
       </tbody>
     </table>
+    </div>
 
+    <div class="diag-panel">
     <h2 style="margin-top:1.25rem;">Relais (Mega2)</h2>
-    <div class="diag-block-left">
-      <div class="diag-headrow" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:.5rem; clear:both;">
+    <div class="diag-block-left diag-panel-body">
+      <div class="diag-headrow diag-panel-head" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:.5rem; clear:both;">
         <h3 style="margin:0;">Relaiszustände (Read-Only)</h3>
         <div class="mono small" id="diag-m2-relays-sub">telemetry: –</div>
         </div>
@@ -118,10 +131,12 @@
         Die <b>Bedeutung</b> ("Strom an" vs. "Strom getrennt") hängt von der NO/NC‑Verdrahtung des jeweiligen Relais ab.
       </div>
     </div>
+    </div>
     
+    <div class="diag-panel">
     <h2 style="margin-top:1.25rem;">Relais (Mega1)</h2>
-    <div class="diag-block-left">
-      <div class="diag-headrow" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:.5rem; clear:both;">
+    <div class="diag-block-left diag-panel-body">
+      <div class="diag-headrow diag-panel-head" style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-top:.5rem; clear:both;">
         <h3 style="margin:0;">Relaiszustände (Read-Only)</h3>
         <div class="mono small" id="diag-m1-relays-sub">seq: – · age: –</div>
       </div>
@@ -136,6 +151,7 @@
         </thead>
         <tbody id="diag-m1-relays-body"></tbody>
       </table>
+    </div>
     </div>
 
     <h2 style="margin-top:1.25rem;">Status</h2>

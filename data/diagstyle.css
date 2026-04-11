@@ -39,6 +39,29 @@
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
 .small { font-size: .9rem; }
 
+/* ---- Unified section/panel layout ---- */
+.diag-panel{
+  max-width: var(--diag-table-w);
+  width: 100%;
+  margin: 0 0 1rem 0;
+}
+
+.diag-panel > h2{
+  max-width: var(--diag-table-w);
+  width: 100%;
+  margin-bottom: .35rem;
+}
+
+.diag-panel-body{
+  max-width: var(--diag-table-w);
+  width: 100%;
+}
+
+.diag-panel-head{
+  width: 100%;
+  max-width: var(--diag-table-w);
+}
+
 /* ---- Blocks: left aligned (Sensor tables etc.) ---- */
 .diag-block-left{
   max-width: var(--diag-table-w);
@@ -56,11 +79,12 @@
 body.diag-page #diag-m2-relays-table,
 body.diag-page #diag-m1-relays-table{ table-layout: fixed; }
 
+/* Name */
 body.diag-page #diag-m2-relays-table th:nth-child(1),
 body.diag-page #diag-m2-relays-table td:nth-child(1),
 body.diag-page #diag-m1-relays-table th:nth-child(1),
 body.diag-page #diag-m1-relays-table td:nth-child(1){
-  width: calc(100% - 70px - 120px - 230px); /* Name = rest */
+  width: 180px;
 }
 
 /* ---- LED indicator (Level) ---- */
@@ -110,7 +134,9 @@ body.diag-page main.container > *{
 
 /* Tabellen + Headrow: exakt gleiche Breite, linksbündig */
 body.diag-page .diag-table.small,
-body.diag-page .diag-headrow{
+body.diag-page .diag-headrow,
+body.diag-page .diag-panel,
+body.diag-page .diag-panel > h2{
   width:100% !important;
   max-width: var(--diag-table-w) !important;
   margin: 0 !important;
@@ -128,6 +154,11 @@ body.diag-page .diag-headrow{
   justify-content:space-between !important;
   gap:.75rem !important;
 }
+body.diag-page .diag-panel > h2{
+  margin-top:1.25rem !important;
+  margin-bottom:.35rem !important;
+}
+body.diag-page .diag-panel:first-of-type > h2{ margin-top:1rem !important; }
 body.diag-page .diag-headrow h3{ flex: 1 1 auto; min-width: 0; }
 body.diag-page .diag-headrow .btn{ flex: 0 0 auto; }
 
@@ -165,7 +196,25 @@ body.diag-page #diag-m1-relays-table td:nth-child(3){ width: 120px; } /* Level *
 body.diag-page #diag-m2-relays-table th:nth-child(4),
 body.diag-page #diag-m2-relays-table td:nth-child(4),
 body.diag-page #diag-m1-relays-table th:nth-child(4),
-body.diag-page #diag-m1-relays-table td:nth-child(4){ width: 230px; } /* Aktion */
+body.diag-page #diag-m1-relays-table td:nth-child(4){
+  width: auto;
+}
+
+/* ------------------------------------------------------------
+ * 3-column analog table
+ * Columns: 1=Signal, 2=Pin, 3=Wert
+ * Override the generic 6-column sensor widths above.
+ * ------------------------------------------------------------ */
+body.diag-page #diag-analog-table th:nth-child(1),
+body.diag-page #diag-analog-table td:nth-child(1){ width: 90px; }   /* Signal */
+
+body.diag-page #diag-analog-table th:nth-child(2),
+body.diag-page #diag-analog-table td:nth-child(2){ width: 70px; }   /* Pin */
+
+body.diag-page #diag-analog-table th:nth-child(3),
+body.diag-page #diag-analog-table td:nth-child(3){
+  width: auto;                                                      /* Wert = Rest */
+}
 
 /* Optional: keine Umbrüche in Tabellen (HIGH/LOW bleibt stabil) */
 body.diag-page .diag-table th,

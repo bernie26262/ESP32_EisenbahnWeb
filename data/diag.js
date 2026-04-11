@@ -260,10 +260,10 @@ const M2_KONTAKT_INFO = [
   { key:"SBHF2",     name:"SBHF Kontakt GF2",         pin:28 },
   { key:"SBHF3",     name:"SBHF Kontakt GF3",         pin:29 },
   { key:"NOTHALT",   name:"Nothalt-Kontakt",          pin:19 },
-  { key:"BHF2_A",    name:"Bahnhof Block2 A",         pin:14 },
-  { key:"BHF2_B",    name:"Bahnhof Block2 B",         pin:15 },
-  { key:"BHF4_A",    name:"Bahnhof Block4 A",         pin:16 },
-  { key:"BHF4_B",    name:"Bahnhof Block4 B",         pin:11 },
+  { key:"BHF0",      name:"Bahnhof BHF0",             pin:16 },
+  { key:"BHF1",      name:"Bahnhof BHF1",             pin:11 },
+  { key:"BHF2",      name:"Bahnhof BHF2",             pin:14 },
+  { key:"BHF3",      name:"Bahnhof BHF3",             pin:15 },
 ];
 
 // Mega2 Schaltgleise S11..S16: Map nach sid (11..16)
@@ -970,16 +970,26 @@ function renderAnalogRows(an){
   const vB10 = fmtV10(an?.vB10);
   const i = Array.isArray(an?.i_mA) ? an.i_mA : [];
 
-  const labels = ["B1","B2","B3","B4","B5","B6","SBHF1","SBHF2","SBHF3"];
+  const labels = [
+    { name:"B1",    pin:"A0"  },
+    { name:"B2",    pin:"A1"  },
+    { name:"B3",    pin:"A2"  },
+    { name:"B4",    pin:"A3"  },
+    { name:"B5",    pin:"A4"  },
+    { name:"B6",    pin:"A8"  },
+    { name:"SBHF1", pin:"A5"  },
+    { name:"SBHF2", pin:"A6"  },
+    { name:"SBHF3", pin:"A7"  },
+  ];
 
   let html = "";
-  html += `<tr><td>vA10</td><td class="mono">${vA10}</td></tr>`;
-  html += `<tr><td>vB10</td><td class="mono">${vB10}</td></tr>`;
+  html += `<tr><td>vA10</td><td class="mono">A9</td><td class="mono">${vA10}</td></tr>`;
+  html += `<tr><td>vB10</td><td class="mono">A10</td><td class="mono">${vB10}</td></tr>`;
   for (let k=0;k<labels.length;k++){
     const raw = !!(an && (an.flags & 0x10));
     const suffixI = raw ? " cnt" : " mA";
     const val = (typeof i[k] === "number") ? `${i[k]}${suffixI}` : "–";
-    html += `<tr><td>i_mA ${labels[k]}</td><td class="mono">${val}</td></tr>`;
+    html += `<tr><td>i_mA ${labels[k].name}</td><td class="mono">${labels[k].pin}</td><td class="mono">${val}</td></tr>`;
   }
   body.innerHTML = html;
   return true;

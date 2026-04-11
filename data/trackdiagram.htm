@@ -4,78 +4,9 @@
     <meta charset="utf-8">
     <title>Eisenbahn – Gleisbild</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css?v=20260410135937">
-
-    <style>
-        /* ================= TRACK DIAGRAM ================= */
-
-        .track-diagram-wrap {
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            padding: 8px;
-            box-sizing: border-box;
-        }
-
-        .track-diagram-stage {
-            position: relative;
-            width: 100%;
-            max-width: 1280px;
-            aspect-ratio: 16 / 9;
-            background: #fff;
-            border: 1px solid #d0d7de;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-
-        .track-layer {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-        }
-
-        .track-base {
-            z-index: 1;
-        }
-
-        .track-overlay {
-            z-index: 2;
-            display: none;
-        }
-
-        .track-placeholder {
-            padding: 16px;
-            color: #666;
-        }
-
-        .track-hitbox {
-            position: absolute;
-            z-index: 10;
-            background: transparent;
-            border: none;
-            padding: 0;
-            margin: 0;
-            cursor: pointer;
-            pointer-events: auto;
-        }
-
-        .track-hitbox:disabled {
-            cursor: default;
-        }
-
-        .track-hitbox:focus-visible {
-            outline: 2px solid rgba(37, 99, 235, 0.9);
-            outline-offset: 2px;
-            border-radius: 6px;
-        }
-
-        .track-hitbox:hover:not(:disabled) {
-            box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.18);
-            border-radius: 6px;
-        }
-    </style>
+    <link rel="stylesheet" href="style.css?v=20260411182423">
+    <link rel="stylesheet" href="tabs.css?v=20260411190500">
+    <link rel="stylesheet" href="trackdiagram.css?v=20260411190000">
 </head>
 
 <body>
@@ -116,7 +47,7 @@
 
                             <!-- BASE -->
                             <img class="track-layer track-base"
-                                 src="img/track/ebene1/ebene1_base.png">
+                                 src="img/track/ebene1/ebene1_base.svg">
 
                             <!-- W9 -->
                             <img id="w9-g" class="track-layer track-overlay" src="img/track/ebene1/weiche_w9_g.png">
@@ -233,7 +164,7 @@
 
             </div>
 
-            <div class="hint" style="margin-top:.75rem;">
+            <div class="hint trackdiagram-version">
                 UI-Version: <span id="ui-version">2026-04-10-p01</span>
             </div>
 
@@ -364,7 +295,7 @@
     </div>
 </div>
 
-<script src="safety_ui_texts.js?v=20260410135937"></script>
+<script src="safety_ui_texts.js?v=20260411182423"></script>
 <script src="trackdiagram.js?v=20260410153000"></script>
 </body>
 </html>

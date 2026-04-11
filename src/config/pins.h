@@ -10,10 +10,10 @@
 // ========================================================
 // DataReady von den Mega2560-Slaves (freie Pins!)
 // ========================================================
-#define PIN_DATAREADY_1  36
-#define PIN_DATAREADY_2  37
-#define PIN_DATAREADY_3  38
-#define PIN_DATAREADY_4  39
+#define PIN_DATAREADY_1  36   // Mega1
+#define PIN_DATAREADY_2  37   // Mega2
+#define PIN_DATAREADY_3  38   // noch nicht verwendet
+#define PIN_DATAREADY_4  39   // noch nicht verwendet
 
 // ========================================================
 // Status LED (frei verfügbar)
@@ -38,3 +38,5 @@
 // RST   9
 
 #endif
+
+// Reset: Der Pin heißt 3V3.EN
