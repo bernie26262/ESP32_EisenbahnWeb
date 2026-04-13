@@ -1,0 +1,64 @@
+/* =====================================================
+ *  Overlay / ACK / Startup / Info-Wait
+ * ===================================================== */
+
+.overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: rgba(0,0,0,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.overlay.hidden {
+    display: none;
+}
+
+.overlay-box {
+    width: min(560px, 95vw);
+    position: relative;
+    z-index: 10001;
+    background: #fff;
+    border-radius: 14px;
+    padding: 1rem;
+    border: 1px solid var(--border);
+}
+
+.ack-checkbox {
+    display: flex;
+    gap: 0.5rem;
+    margin: 0.75rem 0;
+    color: var(--subtext);
+}
+
+.overlay-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+#ack-overlay.is-info-wait #ack-text::before {
+    content: "";
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(0,0,0,0.25);
+    border-top-color: rgba(0,0,0,0.85);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+    vertical-align: -3px;
+    margin-right: 8px;
+}
+
+.btn-ack {
+    background: var(--ok);
+    color: #fff;
+    border-color: var(--ok);
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

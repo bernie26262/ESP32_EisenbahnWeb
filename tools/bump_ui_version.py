@@ -11,7 +11,19 @@ _env = globals()["env"]
 
 print("[UI-BUMP] PROJECT_DIR:", _env["PROJECT_DIR"])
 
-ASSETS = {"style.css", "script.js", "safety_ui_texts.js"}
+ASSETS = {
+    "style.css",
+    "tabs.css",
+    "controls.css",
+    "overlay.css",
+    "trackdiagram.css",
+    "diagstyle.css",
+    "script.js",
+    "trackdiagram.js",
+    "tabs.js",
+    "diag.js",
+    "safety_ui_texts.js",
+}
 TOKEN = datetime.now().strftime("%Y%m%d%H%M%S")
 
 ATTR_RE = re.compile(
@@ -20,7 +32,7 @@ ATTR_RE = re.compile(
 )
 
 BROKEN_RE = re.compile(
-    r"^(style\.css|script\.js|safety_ui_texts\.js|diag\.js|diagstyle\.css)[A-Za-z0-9_-]+$"
+    r"^(style\.css|tabs\.css|controls\.css|overlay\.css|trackdiagram\.css|diagstyle\.css|script\.js|trackdiagram\.js|tabs\.js|diag\.js|safety_ui_texts\.js)[A-Za-z0-9_-]+$"
 )
 
 def fix_url(url: str) -> str:
@@ -30,7 +42,7 @@ def fix_url(url: str) -> str:
     # Repariere kaputte Fälle:
     # 1) style.cssP123...
     # 2) style.cssv=2026...   (fehlendes '?')
-    m = re.match(r"^(style\.css|script\.js|safety_ui_texts\.js|diag\.js|diagstyle\.css)(?:[A-Za-z0-9_-]+|v=\d+)$", tail)
+    m = re.match(r"^(style\.css|tabs\.css|controls\.css|overlay\.css|trackdiagram\.css|diagstyle\.css|script\.js|trackdiagram\.js|tabs\.js|diag\.js|safety_ui_texts\.js)(?:[A-Za-z0-9_-]+|v=\d+)$", tail)
     if m:
         asset = m.group(1)
         prefix = url[: url.rfind(asset)]

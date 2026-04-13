@@ -581,35 +581,15 @@ function setStatusValue(el, level, text) {
 function renderControlStatus(msg) {
   const el = document.getElementById("control-status");
   if (!el) return;
-  const dc = msg?.diagCtrl;
-  const wc = msg?.wsClients;
-  const diagCount = (wc && typeof wc.diag === "number") ? wc.diag : 0;
-  const wsBase = (wc && typeof wc.base === "number") ? wc.base : 0;
   const safetyLock = !!(msg?.safety?.lock);
-  const diagActive = !!(dc?.active);
+  const diagActive = !!(msg?.diagCtrl?.active);
 
   let bedienung = "🟢 frei";
-  let grund = "—";
-  if (safetyLock) {
+  if (safetyLock || diagActive) {
     bedienung = "🔒 gesperrt";
-    grund = "Safety-Lock";
-  } else if (diagActive) {
-    bedienung = "🔒 gesperrt";
-    grund = "Diagnose aktiv";
   }
-  let ownerText = "—";
-  if (diagActive) {
-    const owner = (dc?.ownerId != null) ? dc.ownerId : "?";
-    const sec = (dc?.expiresInMs != null) ? Math.round((dc.expiresInMs || 0) / 1000) : "?";
-    ownerText = `${owner} (Timeout ~${sec}s)`;
-  }
-  el.innerHTML = [
-    `<div><strong>Bedienung:</strong> ${bedienung}</div>`,
-    `<div><strong>Sperrgrund:</strong> ${escapeHtml(String(grund))}</div>`,
-    `<div><strong>Diagnose:</strong> ${diagActive ? `aktiv (${diagCount})` : "inaktiv"}</div>`,
-    `<div><strong>Diag-Owner:</strong> ${escapeHtml(String(ownerText))}</div>`,
-    `<div><strong>WS:</strong> ${wsConnected ? "verbunden" : "getrennt"} (Base: ${wsBase}, Diag: ${diagCount})</div>`
-  ].join("");
+
+  el.innerHTML = `<div><strong>Bedienung:</strong> ${bedienung}</div>`;
 }
 
 function renderDefectsRight(msg) {
@@ -674,6 +654,25 @@ function renderPowerWarningsEmergencies(msg) {
     if (typeof x !== "undefined") line = line.replaceAll("{x}", String(x));
     items.push(`${prefix || "i"} ${escapeHtml(line)}`);
   };
+
+  // --- WS / Diagnose Status (nach oben verschoben aus Schreibrechte) ---
+  const dc = msg?.diagCtrl;
+  const wc = msg?.wsClients;
+  const diagCount = (wc && typeof wc.diag === "number") ? wc.diag : 0;
+  const wsBase = (wc && typeof wc.base === "number") ? wc.base : 0;
+  const diagActive = !!(dc?.active);
+
+  if (!wsConnected) {
+    items.push("! WS getrennt");
+  }
+
+  if (diagActive) {
+    const owner = (dc?.ownerId != null) ? dc.ownerId : "?";
+    const sec = (dc?.expiresInMs != null)
+      ? Math.round((dc.expiresInMs || 0) / 1000)
+      : "?";
+    items.push(`! Diagnose aktiv (Owner ${owner}, Timeout ~${sec}s, Base: ${wsBase}, Diag: ${diagCount})`);
+  }
 
   const safety = msg?.safety;
   if (safety && (safety.lock === true || safety.ackRequired === true || (safety.errorType ?? safety.errType) > 0)) {
@@ -747,7 +746,8 @@ function applyUiState(ui, msg) {
   const powerOn = !!(lastSafetyState?.powerOn === true);
   const startup = msg?.startup;
 
-  setStatusValue(document.getElementById("status-eth"), ((msg?.eth?.ip && msg.eth.ip !== "0.0.0.0") ? "ok" : "warn"), String(msg?.eth?.ip || "-"));
+  const ethOnline = !!(msg?.eth?.ip && msg.eth.ip !== "0.0.0.0");
++  setStatusValue(document.getElementById("status-eth"), ethOnline ? "ok" : "err", ethOnline ? "online" : "offline");
   setStatusValue(document.getElementById("badge-ws"), wsOk ? "ok" : "err", wsOk ? "verbunden" : "getrennt");
 
   const m2WarnMask = Number(msg?.mega2?.warningMask ?? 0) & 0xff;
@@ -808,6 +808,30 @@ function tdUpdateCommandButtons(msg) {
 
 function initTrackDiagramUi() {
   if (!tdHasDiagram()) return;
+
+  /* Ebene 0 */
+  tdSetWeiche("w0", "undef");
+  tdSetWeiche("w1", "undef");
+  tdSetWeiche("w2", "undef");
+  tdSetWeiche("w3", "undef");
+  tdSetWeiche("w4", "undef");
+  tdSetWeiche("w5", "undef");
+  tdSetWeiche("w6", "undef");
+  tdSetWeiche("w7", "undef");
+  tdSetWeiche("w8", "undef");
+  tdSetSignal("bhf0", "undef");
+  tdSetSignal("bhf1", "undef");
+  tdSetSignal("grant-3-4", "undef");
+  tdSetSignal("grant-6-4", "undef");
+  tdSetSignal("grant-4-5", "undef");
+  tdSetSignal("grant-4-1", "undef");
+  tdSetBlock("e0-b1", "undef");
+  tdSetBlock("e0-b3", "undef");
+  tdSetBlock("e0-b4", "undef");
+  tdSetBlock("e0-b5", "undef");
+  tdSetBlock("e0-b6", "undef");
+
+  /* Ebene 1 */
   tdSetWeiche("w9", "undef");
   tdSetWeiche("w10", "undef");
   tdSetWeiche("w11", "undef");
@@ -840,44 +864,107 @@ function updateTrackDiagramFromState(msg) {
       if (istG && !sollG) return "g-diff";
       return "a-diff";
     };
+
+    /* Ebene 0: W0..W8 */
+    tdSetWeiche("w0", tdWeicheStateFromIstSoll(0));
+    tdSetWeiche("w1", tdWeicheStateFromIstSoll(1));
+    tdSetWeiche("w2", tdWeicheStateFromIstSoll(2));
+    tdSetWeiche("w3", tdWeicheStateFromIstSoll(3));
+    tdSetWeiche("w4", tdWeicheStateFromIstSoll(4));
+    tdSetWeiche("w5", tdWeicheStateFromIstSoll(5));
+    tdSetWeiche("w6", tdWeicheStateFromIstSoll(6));
+    tdSetWeiche("w7", tdWeicheStateFromIstSoll(7));
+    tdSetWeiche("w8", tdWeicheStateFromIstSoll(8));
+
+    /* Ebene 1: W9..W11 */
     tdSetWeiche("w9", tdWeicheStateFromIstSoll(9));
     tdSetWeiche("w10", tdWeicheStateFromIstSoll(10));
     tdSetWeiche("w11", tdWeicheStateFromIstSoll(11));
+
     const powerMask = Number(m1diag.powerMask ?? 0);
+    tdSetSignal("bhf0", tdBit(powerMask, 0) ? "green" : "red");
+    tdSetSignal("bhf1", tdBit(powerMask, 1) ? "green" : "red");
     tdSetSignal("bhf2", tdBit(powerMask, 2) ? "green" : "red");
     tdSetSignal("bhf3", tdBit(powerMask, 3) ? "green" : "red");
   } else {
+    tdSetWeiche("w0", "undef");
+    tdSetWeiche("w1", "undef");
+    tdSetWeiche("w2", "undef");
+    tdSetWeiche("w3", "undef");
+    tdSetWeiche("w4", "undef");
+    tdSetWeiche("w5", "undef");
+    tdSetWeiche("w6", "undef");
+    tdSetWeiche("w7", "undef");
+    tdSetWeiche("w8", "undef");
     tdSetWeiche("w9", "undef");
     tdSetWeiche("w10", "undef");
     tdSetWeiche("w11", "undef");
+    tdSetSignal("bhf0", "undef");
+    tdSetSignal("bhf1", "undef");
     tdSetSignal("bhf2", "undef");
     tdSetSignal("bhf3", "undef");
   }
 
   const m2online = !!(msg?.mega2?.online);
   const bs = msg?.mega2?.blocks?.status;
-  if (m2online && Array.isArray(bs) && bs.length >= 3) {
+  if (m2online && Array.isArray(bs) && bs.length >= 6) {
+    /* Ebene 0 */
+    tdSetBlock("e0-b1", bs[0]?.besetzt ? "occ" : "free");
+    tdSetBlock("e0-b3", bs[2]?.besetzt ? "occ" : "free");
+    tdSetBlock("e0-b4", bs[3]?.besetzt ? "occ" : "free");
+    tdSetBlock("e0-b5", bs[4]?.besetzt ? "occ" : "free");
+    tdSetBlock("e0-b6", bs[5]?.besetzt ? "occ" : "free");
+
+    /* Ebene 1 */
     tdSetBlock("e1-b1", bs[0]?.besetzt ? "occ" : "free");
     tdSetBlock("e1-b2", bs[1]?.besetzt ? "occ" : "free");
     tdSetBlock("e1-b3", bs[2]?.besetzt ? "occ" : "free");
   } else if (m2online && (msg?.mega2?.blocks?.occupiedMask !== undefined || msg?.mega2?.blockOccupiedMask !== undefined)) {
     const occMask = Number(msg?.mega2?.blocks?.occupiedMask ?? msg?.mega2?.blockOccupiedMask ?? 0);
+
+    /* Ebene 0 */
+    tdSetBlock("e0-b1", tdBit(occMask, 0) ? "occ" : "free");
+    tdSetBlock("e0-b3", tdBit(occMask, 2) ? "occ" : "free");
+    tdSetBlock("e0-b4", tdBit(occMask, 3) ? "occ" : "free");
+    tdSetBlock("e0-b5", tdBit(occMask, 4) ? "occ" : "free");
+    tdSetBlock("e0-b6", tdBit(occMask, 5) ? "occ" : "free");
+
+    /* Ebene 1 */
     tdSetBlock("e1-b1", tdBit(occMask, 0) ? "occ" : "free");
     tdSetBlock("e1-b2", tdBit(occMask, 1) ? "occ" : "free");
     tdSetBlock("e1-b3", tdBit(occMask, 2) ? "occ" : "free");
   } else {
+    tdSetBlock("e0-b1", "undef");
+    tdSetBlock("e0-b3", "undef");
+    tdSetBlock("e0-b4", "undef");
+    tdSetBlock("e0-b5", "undef");
+    tdSetBlock("e0-b6", "undef");
     tdSetBlock("e1-b1", "undef");
     tdSetBlock("e1-b2", "undef");
     tdSetBlock("e1-b3", "undef");
   }
 
   const entryNow = msg?.mega2?.entryAllowed;
-  if (m2online && Array.isArray(entryNow) && entryNow.length >= 3) {
+  if (m2online && Array.isArray(entryNow) && entryNow.length >= 6) {
+    const grant34 = ((Number(entryNow[2] ?? 0) & (1 << 3)) !== 0); /* 3 -> 4 */
+    const grant64 = ((Number(entryNow[5] ?? 0) & (1 << 3)) !== 0); /* 6 -> 4 */
+    const grant45 = ((Number(entryNow[3] ?? 0) & (1 << 4)) !== 0); /* 4 -> 5 */
+    const grant41 = ((Number(entryNow[3] ?? 0) & (1 << 0)) !== 0); /* 4 -> 1 */
+
     const grant12 = ((Number(entryNow[0] ?? 0) & (1 << 1)) !== 0);
     const grant23 = ((Number(entryNow[1] ?? 0) & (1 << 2)) !== 0);
+
+    tdSetSignal("grant-3-4", grant34 ? "green" : "red");
+    tdSetSignal("grant-6-4", grant64 ? "green" : "red");
+    tdSetSignal("grant-4-5", grant45 ? "green" : "red");
+    tdSetSignal("grant-4-1", grant41 ? "green" : "red");
     tdSetSignal("grant-1-2", grant12 ? "green" : "red");
     tdSetSignal("grant-2-3", grant23 ? "green" : "red");
   } else {
+    tdSetSignal("grant-3-4", "undef");
+    tdSetSignal("grant-6-4", "undef");
+    tdSetSignal("grant-4-5", "undef");
+    tdSetSignal("grant-4-1", "undef");
     tdSetSignal("grant-1-2", "undef");
     tdSetSignal("grant-2-3", "undef");
   }

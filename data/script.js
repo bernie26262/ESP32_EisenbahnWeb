@@ -974,7 +974,8 @@ const setStatusValue = (el, level, text) => {
 
 if (bEth) {
   const ethIp = String(msg?.eth?.ip || "-");
-  setStatusValue(bEth, (ethIp && ethIp !== "-" && ethIp !== "0.0.0.0") ? "ok" : "warn", ethIp);
+  const ethOnline = !!(ethIp && ethIp !== "-" && ethIp !== "0.0.0.0");
+  setStatusValue(bEth, ethOnline ? "ok" : "err", ethOnline ? "online" : "offline");
 }
 if (bWs) {
   setStatusValue(bWs, wsOk ? "ok" : "err", wsOk ? "verbunden" : "getrennt");
@@ -1089,38 +1090,15 @@ function renderControlStatus(msg) {
   const el = document.getElementById("control-status");
   if (!el) return;
 
-  const dc = msg && msg.diagCtrl;
-  const wc = msg && msg.wsClients;
-  const diagCount = (wc && typeof wc.diag === "number") ? wc.diag : 0;
-  const wsBase = (wc && typeof wc.base === "number") ? wc.base : 0;
-  const wsOk = (wsConnected === true);
   const safetyLock = !!(msg?.safety?.lock);
-  const diagActive = !!(dc && dc.active);
+  const diagActive = !!(msg?.diagCtrl?.active);
 
   let bedienung = "🟢 frei";
-  let grund = "—";
-  if (safetyLock) {
+  if (safetyLock || diagActive) {
     bedienung = "🔒 gesperrt";
-    grund = "Safety-Lock";
-  } else if (diagActive) {
-    bedienung = "🔒 gesperrt";
-    grund = "Diagnose aktiv";
   }
 
-  let ownerText = "—";
-  if (diagActive) {
-    const owner = (dc && dc.ownerId != null) ? dc.ownerId : "?";
-    const sec = (dc && dc.expiresInMs != null) ? Math.round((dc.expiresInMs || 0) / 1000) : "?";
-    ownerText = `${owner} (Timeout ~${sec}s)`;
-  }
-
-  el.innerHTML = [
-    `<div><strong>Bedienung:</strong> ${bedienung}</div>`,
-    `<div><strong>Sperrgrund:</strong> ${escapeHtml(String(grund))}</div>`,
-    `<div><strong>Diagnose:</strong> ${diagActive ? `aktiv (${diagCount})` : "inaktiv"}</div>`,
-    `<div><strong>Diag-Owner:</strong> ${escapeHtml(String(ownerText))}</div>`,
-    `<div><strong>WS:</strong> ${wsOk ? "verbunden" : "getrennt"} (Base: ${wsBase}, Diag: ${diagCount})</div>`
-  ].join("");
+  el.innerHTML = `<div><strong>Bedienung:</strong> ${bedienung}</div>`;
 }
 
 function renderDefectsRight(msg) {
@@ -2270,6 +2248,25 @@ function renderPowerWarningsEmergencies(msg) {
     const pre = (prefix !== undefined) ? prefix : "i";
     items.push(`${pre} ${escapeHtml(line)}`);
   };
+
+  // --- WS / Diagnose Status (aus Schreibrechte hierhin verschoben) ---
+  const dc = msg && msg.diagCtrl;
+  const wc = msg && msg.wsClients;
+  const diagCount = (wc && typeof wc.diag === "number") ? wc.diag : 0;
+  const wsBase = (wc && typeof wc.base === "number") ? wc.base : 0;
+  const diagActive = !!(dc && dc.active);
+
+  if (!wsConnected) {
+    items.push("! WS getrennt");
+  }
+
+  if (diagActive) {
+    const owner = (dc && dc.ownerId != null) ? dc.ownerId : "?";
+    const sec = (dc && dc.expiresInMs != null)
+      ? Math.round((dc.expiresInMs || 0) / 1000)
+      : "?";
+    items.push(`! Diagnose aktiv (Owner ${owner}, Timeout ~${sec}s, Base: ${wsBase}, Diag: ${diagCount})`);
+  }
 
   // 1) Emergencies / Safety-Text
   const safety = msg && msg.safety;

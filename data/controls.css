@@ -1,0 +1,271 @@
+/* =====================================================
+ *  Controls / Right Panel / Status / Buttons
+ * ===================================================== */
+
+/* Right panel sections */
+.panel-right section{
+  display: grid;
+  gap: .55rem;
+  padding-bottom: .1rem;
+}
+
+.panel-right h2{
+  margin-bottom: .15rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.panel-right .status-box{
+  margin-bottom: .5rem;
+}
+
+#safety-status{
+  margin-bottom: .5rem;
+}
+
+.panel-right em{
+  color: var(--subtext);
+}
+
+/* Safety box coloring */
+.safety-panel.ok .status-box { border-left: 6px solid var(--ok); }
+.safety-panel.warn .status-box { border-left: 6px solid var(--warn); }
+.safety-panel.err .status-box { border-left: 6px solid var(--err); }
+
+.status-box {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+/* Actions */
+.power-toggle {
+  display: grid;
+  gap: .5rem;
+}
+
+.action-row {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  align-items: center;
+  gap: .65rem;
+}
+
+/* LEDs */
+.status-led {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #9aa4b2;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.10);
+}
+
+.status-led.led-on{
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(45,164,78,0.16);
+}
+
+.status-led.led-off{
+  background: #9aa4b2;
+}
+
+.status-led.led-stop{
+  background: var(--err);
+  box-shadow: 0 0 0 3px rgba(207,34,46,0.14);
+}
+
+/* Buttons */
+.btn-power {
+  width: 100%;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.btn-power-on {
+  width: 100%;
+  margin-top: 0;
+  background: var(--ok);
+  color: #fff;
+  border: none;
+  font-weight: 800;
+}
+
+.btn-power-off {
+  width: 100%;
+  margin-top: 0;
+  background: rgba(200, 45, 45, 0.85);
+  color: #fff;
+  border: none;
+  font-weight: 800;
+}
+
+.btn-mode {
+  width: 100%;
+  padding: 0.65rem;
+  margin-top: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.btn-mode.is-auto{
+  background: var(--ok);
+  color: #fff;
+  border: none;
+}
+
+.btn-mode.is-manual{
+  background: #1f6feb;
+  color: #fff;
+  border: none;
+}
+
+.btn-mini {
+  padding: 0.25rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.btn-mini:hover {
+  filter: brightness(0.98);
+}
+
+.btn-power:disabled {
+  box-shadow: none;
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-mode:disabled{
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-mode.is-offline{
+  opacity: 0.75;
+}
+
+/* Status blocks */
+.status-box {
+  margin-top: 0.75rem;
+}
+
+.status-list {
+  display: grid;
+  gap: .5rem;
+}
+
+.status-line {
+  display: grid;
+  grid-template-columns: minmax(64px, auto) 1fr;
+  align-items: center;
+  gap: .75rem;
+  padding: .6rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fbfcfd;
+}
+
+.status-label {
+  font-weight: 700;
+  color: var(--subtext);
+}
+
+.status-value {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.status-value.status-ok::before{ content:"🟢"; }
+.status-value.status-warn::before{ content:"🟡"; }
+.status-value.status-err::before{ content:"🔴"; }
+.status-value.status-info::before{ content:"🔵"; }
+
+/* Messages & defects */
+.msg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: .1rem;
+}
+
+.msg-line {
+  display: grid;
+  grid-template-columns: 1.2rem 1fr;
+  gap: .45rem;
+  align-items: start;
+}
+
+.msg-ico {
+  line-height: 1.2;
+}
+
+.msg-txt {
+  line-height: 1.35;
+}
+
+/* Shared box styling */
+#control-status {
+  display: grid;
+  gap: .4rem;
+}
+
+#control-status,
+#defects-mega1,
+#defects-mega2,
+#safety-messages-list,
+#trafo-a,
+#trafo-b{
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fbfcfd;
+  padding: .7rem .8rem;
+}
+
+#control-status > div{
+  line-height: 1.35;
+}
+
+#defects-mega1,
+#defects-mega2{
+  display: grid;
+  gap: .55rem;
+}
+
+#defects-mega2{
+  margin-top: .5rem;
+}
+
+#defects-mega1 .btn-mini,
+#defects-mega2 .btn-mini{
+  width: 100%;
+  justify-content: center;
+  padding: .45rem .7rem;
+  font-weight: 700;
+}
+
+#safety-messages-list{
+  display: grid;
+  gap: .45rem;
+}
+
+#trafo-a,
+#trafo-b{
+  font-weight: 600;
+}
+
+#trafo-b{
+  margin-top: .5rem;
+}
