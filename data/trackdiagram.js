@@ -788,7 +788,37 @@ function applyUiState(ui, msg) {
 }
 
 function tdHasDiagram() { return !!document.querySelector(".track-diagram-stage"); }
-function tdSetVisible(id, visible) { const el = document.getElementById(id); if (el) el.style.display = visible ? "block" : "none"; }
+
+function tdIsPanelActive(el) {
+  const panel = el?.closest?.(".tab-panel[data-tab-panel]");
+  return !!panel && panel.classList.contains("active");
+}
+
+function tdEnsureImageLoaded(el) {
+  if (!el) return;
+  if (el.dataset?.loaded === "1") return;
+  const deferredSrc = el.dataset?.src;
+  if (!deferredSrc) return;
+  el.src = deferredSrc;
+  el.dataset.loaded = "1";
+}
+
+function tdLoadVisibleAssetsInPanel(panel) {
+  if (!panel) return;
+  panel.querySelectorAll("img[data-src]").forEach((el) => {
+    if (el.classList.contains("track-base") || el.style.display !== "none") tdEnsureImageLoaded(el);
+  });
+}
+
+let tdWarmPrefetchScheduled = false;
+function tdScheduleWarmPrefetch() {
+  if (tdWarmPrefetchScheduled) return;
+  tdWarmPrefetchScheduled = true;
+  window.setTimeout(() => {
+    document.querySelectorAll('.tab-panel img[data-src]').forEach((el) => tdEnsureImageLoaded(el));
+  }, 1500);
+}
+function tdSetVisible(id, visible) { const el = document.getElementById(id); if (!el) return; el.style.display = visible ? "block" : "none"; if (visible && tdIsPanelActive(el)) tdEnsureImageLoaded(el); }
 function tdSetTriState(prefix, state, values) { values.forEach((v) => tdSetVisible(`${prefix}-${v}`, v === state)); }
 function tdSetWeiche(key, state) { tdSetTriState(key, state, ["g", "g-diff", "a", "a-diff", "undef"]); }
 function tdSetSignal(prefix, state) { tdSetTriState(prefix, state, ["green", "red", "undef"]); }
@@ -820,39 +850,9 @@ function tdUpdateCommandButtons(msg) {
 function initTrackDiagramUi() {
   if (!tdHasDiagram()) return;
 
-  /* Ebene 0 */
-  tdSetWeiche("w0", "undef");
-  tdSetWeiche("w1", "undef");
-  tdSetWeiche("w2", "undef");
-  tdSetWeiche("w3", "undef");
-  tdSetWeiche("w4", "undef");
-  tdSetWeiche("w5", "undef");
-  tdSetWeiche("w6", "undef");
-  tdSetWeiche("w7", "undef");
-  tdSetWeiche("w8", "undef");
-  tdSetSignal("bhf0", "undef");
-  tdSetSignal("bhf1", "undef");
-  tdSetSignal("grant-3-4", "undef");
-  tdSetSignal("grant-6-4", "undef");
-  tdSetSignal("grant-4-5", "undef");
-  tdSetSignal("grant-4-1", "undef");
-  tdSetBlock("e0-b1", "undef");
-  tdSetBlock("e0-b3", "undef");
-  tdSetBlock("e0-b4", "undef");
-  tdSetBlock("e0-b5", "undef");
-  tdSetBlock("e0-b6", "undef");
-
-  /* Ebene 1 */
-  tdSetWeiche("w9", "undef");
-  tdSetWeiche("w10", "undef");
-  tdSetWeiche("w11", "undef");
-  tdSetSignal("bhf2", "undef");
-  tdSetSignal("bhf3", "undef");
-  tdSetSignal("grant-1-2", "undef");
-  tdSetSignal("grant-2-3", "undef");
-  tdSetBlock("e1-b1", "undef");
-  tdSetBlock("e1-b2", "undef");
-  tdSetBlock("e1-b3", "undef");
+  document.querySelectorAll(".track-layer.track-overlay").forEach((el) => {
+    el.style.display = "none";
+  });
 
   tdSetButtonEnabled("td-btn-w0", false);
   tdSetButtonEnabled("td-btn-w1", false);
@@ -870,6 +870,8 @@ function initTrackDiagramUi() {
   tdSetButtonEnabled("td-btn-bhf1", false);
   tdSetButtonEnabled("td-btn-bhf2", false);
   tdSetButtonEnabled("td-btn-bhf3", false);
+
+  tdLoadVisibleAssetsInPanel(document.querySelector('.tab-panel.active[data-tab-panel]'));
 }
 
 function updateTrackDiagramFromState(msg) {
@@ -1027,6 +1029,7 @@ function handleWsMessage(msg) {
 
   const uiState = getUiStateFromWs(msg, lastSafetyState, lastMega2Online);
   applyUiState(uiState, msg);
+  tdScheduleWarmPrefetch();
 }
 
 function connectWebSocket() {
@@ -1093,6 +1096,7 @@ function initTrackTabs() {
   const tabButtons = Array.from(document.querySelectorAll(".tabs-nav .tab-btn[data-tab]"));
   const tabPanels = Array.from(document.querySelectorAll(".tab-panels .tab-panel[data-tab-panel]"));
   const activateTab = (tabName) => {
+    let activePanel = null;
     tabButtons.forEach((btn) => {
       const active = (btn.dataset.tab === tabName);
       btn.classList.toggle("active", active);
@@ -1103,7 +1107,9 @@ function initTrackTabs() {
       panel.classList.toggle("active", active);
       panel.setAttribute("aria-hidden", active ? "false" : "true");
       panel.style.display = active ? "" : "none";
+      if (active) activePanel = panel;
     });
+    tdLoadVisibleAssetsInPanel(activePanel);
   };
   tabButtons.forEach((btn) => btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
   const initiallyActive = tabButtons.find((b) => b.classList.contains("active"))?.dataset.tab || tabButtons[0]?.dataset.tab;

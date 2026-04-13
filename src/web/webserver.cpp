@@ -2017,9 +2017,52 @@ void Web::begin()
     ws.onEvent(onWsEvent);
     server.addHandler(&ws);
 
+    // HTML bewusst nicht hart cachen, damit UI-Änderungen / neue Versionen
+    // beim nächsten Seitenaufruf sicher sichtbar werden.
+    server.serveStatic("/index.htm", LittleFS, "/index.htm")
+        .setCacheControl("no-cache, must-revalidate");
+    server.serveStatic("/index_tabs.htm", LittleFS, "/index_tabs.htm")
+        .setCacheControl("no-cache, must-revalidate");
+    server.serveStatic("/trackdiagram.htm", LittleFS, "/trackdiagram.htm")
+        .setCacheControl("no-cache, must-revalidate");
+    server.serveStatic("/diag.htm", LittleFS, "/diag.htm")
+        .setCacheControl("no-cache, must-revalidate");
+
+    // JS/CSS dürfen aggressiv gecacht werden.
+    server.serveStatic("/script.js", LittleFS, "/script.js")
+        .setCacheControl("public, max-age=31536000, immutable");
+    server.serveStatic("/tabs.js", LittleFS, "/tabs.js")
+        .setCacheControl("public, max-age=31536000, immutable");
+    server.serveStatic("/trackdiagram.js", LittleFS, "/trackdiagram.js")
+        .setCacheControl("public, max-age=31536000, immutable");
+    server.serveStatic("/diag.js", LittleFS, "/diag.js")
+        .setCacheControl("public, max-age=31536000, immutable");
+    server.serveStatic("/safety_ui_texts.js", LittleFS, "/safety_ui_texts.js")
+        .setCacheControl("public, max-age=31536000, immutable");
+
+    server.serveStatic("/style.css", LittleFS, "/style.css")
+        .setCacheControl("public, max-age=31536000, immutable");
+    server.serveStatic("/tabs.css", LittleFS, "/tabs.css")
+        .setCacheControl("public, max-age=31536000, immutable");
+    server.serveStatic("/trackdiagram.css", LittleFS, "/trackdiagram.css")
+        .setCacheControl("public, max-age=31536000, immutable");
+    server.serveStatic("/controls.css", LittleFS, "/controls.css")
+        .setCacheControl("public, max-age=31536000, immutable");
+    server.serveStatic("/overlay.css", LittleFS, "/overlay.css")
+        .setCacheControl("public, max-age=31536000, immutable");
+    server.serveStatic("/diagstyle.css", LittleFS, "/diagstyle.css")
+        .setCacheControl("public, max-age=31536000, immutable");
+
+    // Bilder/Track-Assets ebenfalls aggressiv cachen.
+    server.serveStatic("/img", LittleFS, "/img")
+        .setCacheControl("public, max-age=31536000, immutable");
+    server.serveStatic("/favicon.ico", LittleFS, "/favicon.ico")
+        .setCacheControl("public, max-age=31536000, immutable");
+
+    // Fallback für sonstige statische Dateien: nicht cachen.
     server.serveStatic("/", LittleFS, "/")
         .setDefaultFile("index.htm")
-        .setCacheControl("no-store, no-cache, must-revalidate, max-age=0");
+        .setCacheControl("no-cache, must-revalidate");
     
     
     // -------------------------------------------------
