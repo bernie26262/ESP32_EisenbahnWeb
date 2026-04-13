@@ -1,0 +1,67 @@
+Ebene 0
+
+BHF0
+Top left		Size
+810, 580		60, 70
+
+BHF1
+Top left		Size
+380, 470		60, 70
+
+W0
+Top left		Size
+290, 590		110, 80
+
+W1
+Top left		Size
+880, 590		110, 80
+
+W2
+Top left		Size
+430, 490		110, 80
+
+W3
+Top left		Size
+780, 500		110, 80
+
+W4
+Top left		Size
+470, 400		110, 80
+
+W5
+Top left		Size
+700, 400		110, 80
+
+W6
+Top left		Size
+630, 220		80, 110
+
+W7
+Top left		Size
+430, 60			110, 80
+
+W8
+Top left		Size
+720, 60			110, 80
+
+
+Ebene 1
+BHF2
+Top left		Size
+220, 430		60, 70
+
+BHF3
+Top left		Size
+610, 240		60, 70
+
+W9
+Top left		Size
+810, 500		110, 80
+
+W10
+Top left		Size
+540, 140		110, 80
+
+W11
+Top left		Size
+450, 50			110, 80

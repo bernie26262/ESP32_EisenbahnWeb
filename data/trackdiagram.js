@@ -799,9 +799,20 @@ function tdBit(mask, i) { return (((Number(mask) >>> 0) >> i) & 1) !== 0; }
 function tdUpdateCommandButtons(msg) {
   if (!tdHasDiagram()) return;
   const canCmd = (wsConnected === true) && !!(msg?.mega1?.online) && !(msg?.safety?.lock === true) && !(msg?.safety?.notausActive === true);
+  tdSetButtonEnabled("td-btn-w0", canCmd);
+  tdSetButtonEnabled("td-btn-w1", canCmd);
+  tdSetButtonEnabled("td-btn-w2", canCmd);
+  tdSetButtonEnabled("td-btn-w3", canCmd);
+  tdSetButtonEnabled("td-btn-w4", canCmd);
+  tdSetButtonEnabled("td-btn-w5", canCmd);
+  tdSetButtonEnabled("td-btn-w6", canCmd);
+  tdSetButtonEnabled("td-btn-w7", canCmd);
+  tdSetButtonEnabled("td-btn-w8", canCmd);
   tdSetButtonEnabled("td-btn-w9", canCmd);
   tdSetButtonEnabled("td-btn-w10", canCmd);
   tdSetButtonEnabled("td-btn-w11", canCmd);
+  tdSetButtonEnabled("td-btn-bhf0", canCmd);
+  tdSetButtonEnabled("td-btn-bhf1", canCmd);
   tdSetButtonEnabled("td-btn-bhf2", canCmd);
   tdSetButtonEnabled("td-btn-bhf3", canCmd);
 }
@@ -842,9 +853,21 @@ function initTrackDiagramUi() {
   tdSetBlock("e1-b1", "undef");
   tdSetBlock("e1-b2", "undef");
   tdSetBlock("e1-b3", "undef");
+
+  tdSetButtonEnabled("td-btn-w0", false);
+  tdSetButtonEnabled("td-btn-w1", false);
+  tdSetButtonEnabled("td-btn-w2", false);
+  tdSetButtonEnabled("td-btn-w3", false);
+  tdSetButtonEnabled("td-btn-w4", false);
+  tdSetButtonEnabled("td-btn-w5", false);
+  tdSetButtonEnabled("td-btn-w6", false);
+  tdSetButtonEnabled("td-btn-w7", false);
+  tdSetButtonEnabled("td-btn-w8", false);
   tdSetButtonEnabled("td-btn-w9", false);
   tdSetButtonEnabled("td-btn-w10", false);
   tdSetButtonEnabled("td-btn-w11", false);
+  tdSetButtonEnabled("td-btn-bhf0", false);
+  tdSetButtonEnabled("td-btn-bhf1", false);
   tdSetButtonEnabled("td-btn-bhf2", false);
   tdSetButtonEnabled("td-btn-bhf3", false);
 }

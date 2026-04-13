@@ -4,11 +4,11 @@
     <meta charset="utf-8">
     <title>Eisenbahn – Gleisbild</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css?v=20260413153609">
-    <link rel="stylesheet" href="tabs.css?v=20260413153609">
-    <link rel="stylesheet" href="controls.css?v=20260413153609">
-    <link rel="stylesheet" href="overlay.css?v=20260413153609">
-    <link rel="stylesheet" href="trackdiagram.css?v=20260413153609">
+    <link rel="stylesheet" href="style.css?v=20260413162955">
+    <link rel="stylesheet" href="tabs.css?v=20260413162955">
+    <link rel="stylesheet" href="controls.css?v=20260413162955">
+    <link rel="stylesheet" href="overlay.css?v=20260413162955">
+    <link rel="stylesheet" href="trackdiagram.css?v=20260413162955">
 </head>
 
 <body>
@@ -268,6 +268,117 @@
                             <img id="grant-4-1-red" class="track-layer track-overlay" src="img/track/ebene0/grant_4_1_red.svg">
                             <img id="grant-4-1-undef" class="track-layer track-overlay" src="img/track/ebene0/grant_4_1_undef.svg">
 
+                            <!-- INTERAKTIVE HITBOXEN EBENE 0 (1280x720 -> Prozent) -->
+                            <button
+                                id="td-btn-w0"
+                                class="track-hitbox"
+                                type="button"
+                                title="Weiche W0 schalten"
+                                aria-label="Weiche W0 schalten"
+                                onclick="sendM1WeicheToggle(0)"
+                                style="left:22.65625%; top:81.94444%; width:8.59375%; height:11.11111%;">
+                            </button>
+
+                            <button
+                                id="td-btn-w1"
+                                class="track-hitbox"
+                                type="button"
+                                title="Weiche W1 schalten"
+                                aria-label="Weiche W1 schalten"
+                                onclick="sendM1WeicheToggle(1)"
+                                style="left:68.75%; top:81.94444%; width:8.59375%; height:11.11111%;">
+                            </button>
+
+                            <button
+                                id="td-btn-w2"
+                                class="track-hitbox"
+                                type="button"
+                                title="Weiche W2 schalten"
+                                aria-label="Weiche W2 schalten"
+                                onclick="sendM1WeicheToggle(2)"
+                                style="left:33.59375%; top:68.05556%; width:8.59375%; height:11.11111%;">
+                            </button>
+
+                            <button
+                                id="td-btn-w3"
+                                class="track-hitbox"
+                                type="button"
+                                title="Weiche W3 schalten"
+                                aria-label="Weiche W3 schalten"
+                                onclick="sendM1WeicheToggle(3)"
+                                style="left:60.9375%; top:69.44444%; width:8.59375%; height:11.11111%;">
+                            </button>
+
+                            <button
+                                id="td-btn-w4"
+                                class="track-hitbox"
+                                type="button"
+                                title="Weiche W4 schalten"
+                                aria-label="Weiche W4 schalten"
+                                onclick="sendM1WeicheToggle(4)"
+                                style="left:36.71875%; top:55.55556%; width:8.59375%; height:11.11111%;">
+                            </button>
+
+                            <button
+                                id="td-btn-w5"
+                                class="track-hitbox"
+                                type="button"
+                                title="Weiche W5 schalten"
+                                aria-label="Weiche W5 schalten"
+                                onclick="sendM1WeicheToggle(5)"
+                                style="left:54.6875%; top:55.55556%; width:8.59375%; height:11.11111%;">
+                            </button>
+
+                            <button
+                                id="td-btn-w6"
+                                class="track-hitbox"
+                                type="button"
+                                title="Weiche W6 schalten"
+                                aria-label="Weiche W6 schalten"
+                                onclick="sendM1WeicheToggle(6)"
+                                style="left:49.21875%; top:30.55556%; width:6.25%; height:15.27778%;">
+                            </button>
+
+                            <button
+                                id="td-btn-w7"
+                                class="track-hitbox"
+                                type="button"
+                                title="Weiche W7 schalten"
+                                aria-label="Weiche W7 schalten"
+                                onclick="sendM1WeicheToggle(7)"
+                                style="left:33.59375%; top:8.33333%; width:8.59375%; height:11.11111%;">
+                            </button>
+
+                            <button
+                                id="td-btn-w8"
+                                class="track-hitbox"
+                                type="button"
+                                title="Weiche W8 schalten"
+                                aria-label="Weiche W8 schalten"
+                                onclick="sendM1WeicheToggle(8)"
+                                style="left:56.25%; top:8.33333%; width:8.59375%; height:11.11111%;">
+                            </button>
+
+                            <button
+                                id="td-btn-bhf0"
+                                class="track-hitbox"
+                                type="button"
+                                title="BHF0 schalten"
+                                aria-label="BHF0 schalten"
+                                onclick="sendM1BhfToggle(1)"
+                                style="left:63.28125%; top:80.55556%; width:4.6875%; height:9.72222%;">
+                            </button>
+
+                            <button
+                                id="td-btn-bhf1"
+                                class="track-hitbox"
+                                type="button"
+                                title="BHF1 schalten"
+                                aria-label="BHF1 schalten"
+                                onclick="sendM1BhfToggle(2)"
+                                style="left:29.6875%; top:65.27778%; width:4.6875%; height:9.72222%;">
+                            </button>
+
                         </div>
                     </div>
 
@@ -409,7 +520,7 @@
     </div>
 </div>
 
-<script src="safety_ui_texts.js?v=20260413153609"></script>
-<script src="trackdiagram.js?v=20260413153609"></script>
+<script src="safety_ui_texts.js?v=20260413162955"></script>
+<script src="trackdiagram.js?v=20260413162955"></script>
 </body>
 </html>
