@@ -20,6 +20,7 @@ ASSETS = {
     "diagstyle.css",
     "script.js",
     "trackdiagram.js",
+    "trackdiagram-warmup.js",
     "tabs.js",
     "diag.js",
     "safety_ui_texts.js",

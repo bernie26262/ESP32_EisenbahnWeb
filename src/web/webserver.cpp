@@ -464,6 +464,8 @@ static String buildWsStateJson(bool includeAnalog)
         // UI compatibility: provide both naming variants.
         sbhf["currentGleis"] = m2s.sbhfCurrentGleis;
         sbhf["currentTrack"] = m2s.sbhfCurrentGleis;
+        sbhf["block5ToSbhfActive"] =
+            ((m2s.sbhfFlags & 0x01u) != 0u);
 
         // Masks (source: reserved field in SystemStatus)
         sbhf["allowedMask"]  = allowedMask;
@@ -843,6 +845,10 @@ static String buildWsStateLiteJson()
         const bool stDone =
             ((m2shadow.selftestFlags & 0x02u) != 0u) ||
             ((m2.sbhfOccupiedMask & 0x40u) != 0u);
+        sbhf["state"] = m2.sbhfState;
+        sbhf["currentGleis"] = m2.sbhfCurrentGleis;
+        sbhf["currentTrack"] = m2.sbhfCurrentGleis;
+        sbhf["block5ToSbhfActive"] = ((m2.sbhfFlags & 0x01u) != 0u);
         sbhf["selftestRunning"] = stRunning;
         sbhf["selftestDone"] = stDone;
         mega2["shadow"]["selftestFlags"] = m2shadow.selftestFlags;

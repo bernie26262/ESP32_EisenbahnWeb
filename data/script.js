@@ -2727,11 +2727,11 @@ function renderSbhfLeft(msg) {
    if (!el.__built) {
      el.__built = true;
      el.innerHTML = `
-       <div class="info-row"><span>State:</span><strong id="m2-sbhf-state">—</strong></div>
-       <div class="info-row"><span>Ausfahr-Gleis:</span><strong id="m2-sbhf-gleis">—</strong></div>
-       <div class="info-row"><span>Belegt:</span><strong id="m2-sbhf-occ">—</strong></div>
-       <div class="info-row"><span>Erlaubt:</span><strong id="m2-sbhf-allow">—</strong></div>
-       <div class="info-row"><span>Restricted:</span><strong id="m2-sbhf-restr">—</strong></div>
+       <div class="info-row"><span>State: </span><strong id="m2-sbhf-state">—</strong></div>
+      <div class="info-row"><span>Ausfahr-Gleis: </span><strong id="m2-sbhf-gleis">—</strong></div>
+      <div class="info-row"><span>Belegt: </span><strong id="m2-sbhf-occ">—</strong></div>
+      <div class="info-row"><span>Erlaubt: </span><strong id="m2-sbhf-allow">—</strong></div>
+      <div class="info-row"><span>Restricted: </span><strong id="m2-sbhf-restr">—</strong></div>
      `;
    }
  
@@ -2765,11 +2765,16 @@ function renderSbhfLeft(msg) {
   if (allowed & 0x04) allowList.push("G3");
 
   const set = (id, txt) => { const n = document.getElementById(id); if (n && n.textContent !== txt) n.textContent = txt; };
-   set("m2-sbhf-state", String(state));
-   set("m2-sbhf-gleis", String(g));
-   set("m2-sbhf-occ", (occList.length ? occList.join(", ") : "-"));
-   set("m2-sbhf-allow", (allowList.length ? allowList.join(", ") : "-"));
-   set("m2-sbhf-restr", (restricted ? "ja" : "nein"));
+  const stateText =
+    (window.SAFETY_UI_TEXTS && typeof window.SAFETY_UI_TEXTS.sbhfStateName === "function")
+      ? window.SAFETY_UI_TEXTS.sbhfStateName(state, g)
+      : String(state);
+
+  set("m2-sbhf-state", stateText);
+  set("m2-sbhf-gleis", (g >= 1 && g <= 3) ? `G${g}` : "-");
+  set("m2-sbhf-occ", (occList.length ? occList.join(", ") : "-"));
+  set("m2-sbhf-allow", (allowList.length ? allowList.join(", ") : "-"));
+  set("m2-sbhf-restr", (restricted ? "ja" : "nein"));
 }
 
 function renderTurnoutsLeft(msg) {
@@ -2898,12 +2903,20 @@ function renderBlocksLeft(msg) {
      const grid = sigWrap.querySelector("#m2-sig-grid");
      if (grid && !grid.__placeholderBuilt) {
        grid.__placeholderBuilt = true;
-       // show the standard pairs as grey placeholders
-       const pairs = [
-         [1,2],[2,3],[3,4],[4,1],[4,5],[5,7],[5,8],[5,9],[7,6],[8,6],[9,6],[6,4],
+       const labels = [
+         `${m2BlockLabel(1)}→${m2BlockLabel(2)}`,
+         `${m2BlockLabel(2)}→${m2BlockLabel(3)}`,
+         `${m2BlockLabel(3)}→${m2BlockLabel(4)}`,
+         `${m2BlockLabel(4)}→${m2BlockLabel(1)}`,
+         `${m2BlockLabel(4)}→${m2BlockLabel(5)}`,
+         `${m2BlockLabel(5)}→SBHF`,
+         `${m2BlockLabel(7)}→${m2BlockLabel(6)}`,
+         `${m2BlockLabel(8)}→${m2BlockLabel(6)}`,
+         `${m2BlockLabel(9)}→${m2BlockLabel(6)}`,
+         `${m2BlockLabel(6)}→${m2BlockLabel(4)}`,
        ];
-       grid.innerHTML = pairs.map(([f,t]) =>
-         `<span class="badge badge-info"><img class="signal-img" alt="Signal ${m2BlockLabel(f)}→${m2BlockLabel(t)}"><span class="sig-label">${m2BlockLabel(f)}→${m2BlockLabel(t)}</span></span>`
+       grid.innerHTML = labels.map((label) =>
+         `<span class="badge badge-info"><img class="signal-img" alt="Signal ${label}"><span class="sig-label">${label}</span></span>`
        ).join("");
      }
      return;
@@ -2959,20 +2972,23 @@ function renderBlocksLeft(msg) {
   occWrap.innerHTML = html;
 
   // 2) FROM->TO Signale (stabile DOM-Nodes, kein innerHTML-Churn -> kein Wackeln)
-  if (Array.isArray(entryPrev) && entryPrev.length >= 9 && Array.isArray(entryNow) && entryNow.length >= 9) {
-    const pairs = [
-      [1, 2],
-      [2, 3],
-      [3, 4],
-      [4, 1],
-      [4, 5],
-      [5, 7],
-      [5, 8],
-      [5, 9],
-      [7, 6],
-      [8, 6],
-      [9, 6],
-      [6, 4],
+  if (Array.isArray(entryPrev) && entryPrev.length >= 6 && Array.isArray(entryNow) && entryNow.length >= 6) {
+    const sbhfState = Number(msg?.mega2?.sbhf?.state ?? 0);
+    const currentGleis = Number(msg?.mega2?.sbhf?.currentGleis ?? 0);
+    const block5ToSbhfActive = !!msg?.mega2?.sbhf?.block5ToSbhfActive;
+    const exitRunning = (sbhfState === 4);
+
+    const signals = [
+      { id: "sig-1-2", label: `${m2BlockLabel(1)}→${m2BlockLabel(2)}`, prevOk: ((Number(entryPrev[0] ?? 0) & (1 << 1)) !== 0), nowOk: ((Number(entryNow[0] ?? 0) & (1 << 1)) !== 0) },
+      { id: "sig-2-3", label: `${m2BlockLabel(2)}→${m2BlockLabel(3)}`, prevOk: ((Number(entryPrev[1] ?? 0) & (1 << 2)) !== 0), nowOk: ((Number(entryNow[1] ?? 0) & (1 << 2)) !== 0) },
+      { id: "sig-3-4", label: `${m2BlockLabel(3)}→${m2BlockLabel(4)}`, prevOk: ((Number(entryPrev[2] ?? 0) & (1 << 3)) !== 0), nowOk: ((Number(entryNow[2] ?? 0) & (1 << 3)) !== 0) },
+      { id: "sig-4-1", label: `${m2BlockLabel(4)}→${m2BlockLabel(1)}`, prevOk: ((Number(entryPrev[3] ?? 0) & (1 << 0)) !== 0), nowOk: ((Number(entryNow[3] ?? 0) & (1 << 0)) !== 0) },
+      { id: "sig-4-5", label: `${m2BlockLabel(4)}→${m2BlockLabel(5)}`, prevOk: ((Number(entryPrev[3] ?? 0) & (1 << 4)) !== 0), nowOk: ((Number(entryNow[3] ?? 0) & (1 << 4)) !== 0) },
+      { id: "sig-5-sbhf", label: `${m2BlockLabel(5)}→SBHF`, prevOk: block5ToSbhfActive, nowOk: block5ToSbhfActive },
+      { id: "sig-7-6", label: `${m2BlockLabel(7)}→${m2BlockLabel(6)}`, prevOk: (exitRunning && currentGleis === 1), nowOk: (exitRunning && currentGleis === 1) },
+      { id: "sig-8-6", label: `${m2BlockLabel(8)}→${m2BlockLabel(6)}`, prevOk: (exitRunning && currentGleis === 2), nowOk: (exitRunning && currentGleis === 2) },
+      { id: "sig-9-6", label: `${m2BlockLabel(9)}→${m2BlockLabel(6)}`, prevOk: (exitRunning && currentGleis === 3), nowOk: (exitRunning && currentGleis === 3) },
+      { id: "sig-6-4", label: `${m2BlockLabel(6)}→${m2BlockLabel(4)}`, prevOk: ((Number(entryPrev[5] ?? 0) & (1 << 3)) !== 0), nowOk: ((Number(entryNow[5] ?? 0) & (1 << 3)) !== 0) },
     ];
 
     if (!sigWrap.__gridBuilt) {
@@ -2994,18 +3010,14 @@ function renderBlocksLeft(msg) {
       delete grid.__placeholderBuilt;
     }
 
-    for (const [from, to] of pairs) {
-      const maskPrev = entryPrev[from - 1] ?? 0;
-      const maskNow  = entryNow[from - 1] ?? 0;
-
-      const prevOk = (maskPrev & (1 << (to - 1))) !== 0;
-      const nowOk  = (maskNow  & (1 << (to - 1))) !== 0;
-
-      const id = `sig-${from}-${to}`;
+    for (const sig of signals) {
+      const prevOk = !!sig.prevOk;
+      const nowOk = !!sig.nowOk;
+      const id = sig.id;
       let node = grid.querySelector(`#${id}`);
       const sigImg = resolveSignalImg(nowOk ? "G" : "R");
       const cls = `badge ${prevOk ? "badge-ok" : "badge-err"}`;
-      const label = `${m2BlockLabel(from)}→${m2BlockLabel(to)}`;
+      const label = sig.label;
 
       if (!node) {
         node = document.createElement("span");

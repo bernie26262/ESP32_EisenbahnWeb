@@ -823,8 +823,78 @@ function tdSetTriState(prefix, state, values) { values.forEach((v) => tdSetVisib
 function tdSetWeiche(key, state) { tdSetTriState(key, state, ["g", "g-diff", "a", "a-diff", "undef"]); }
 function tdSetSignal(prefix, state) { tdSetTriState(prefix, state, ["green", "red", "undef"]); }
 function tdSetBlock(key, state) { tdSetVisible(`block-${key}-occ`, state === "occ"); tdSetVisible(`block-${key}-undef`, state === "undef"); }
+function tdSetWarn(key, visible) { tdSetVisible(`${key}-warn`, visible === true); }
 function tdSetButtonEnabled(id, enabled) { const el = document.getElementById(id); if (el) el.disabled = !enabled; }
 function tdBit(mask, i) { return (((Number(mask) >>> 0) >> i) & 1) !== 0; }
+function tdHasToken(list, token) {
+  if (!token) return false;
+
+  let raw = "";
+  if (Array.isArray(list)) {
+    raw = list.join(" ");
+  } else if (typeof list === "string") {
+    raw = list;
+  } else if (list !== null && list !== undefined) {
+    raw = String(list);
+  }
+
+  if (!raw.trim()) return false;
+
+  const norm = raw
+    .toUpperCase()
+    .replace(/[\[\]\(\)\{\},;:|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const wanted = String(token).toUpperCase();
+  const num = wanted.replace(/^W/, "");
+  const parts = norm.split(" ");
+
+  return parts.includes(wanted) || (num && parts.includes(num));
+}
+function tdSetText(id, txt) {
+  const el = document.getElementById(id);
+  if (el && el.textContent !== txt) el.textContent = txt;
+}
+function tdRenderSbhfStatus(msg) {
+  const sb = msg?.mega2?.sbhf;
+  const online = !!msg?.mega2?.online;
+  if (!online || !sb) {
+    tdSetText("m2-sbhf-state", "—");
+    tdSetText("m2-sbhf-gleis", "—");
+    tdSetText("m2-sbhf-occ", "—");
+    tdSetText("m2-sbhf-allow", "—");
+    tdSetText("m2-sbhf-restr", "—");
+    return;
+  }
+
+  const state = Number(sb.state ?? 0);
+  const g = Number(sb.currentGleis ?? 0);
+  const occ = Number(sb.occupiedMask ?? 0) & 0xff;
+  const allowed = Number(sb.allowedMask ?? 0) & 0xff;
+  const restricted = !!sb.restricted;
+
+  const occList = [];
+  if (occ & 0x01) occList.push("G1");
+  if (occ & 0x02) occList.push("G2");
+  if (occ & 0x04) occList.push("G3");
+
+  const allowList = [];
+  if (allowed & 0x01) allowList.push("G1");
+  if (allowed & 0x02) allowList.push("G2");
+  if (allowed & 0x04) allowList.push("G3");
+
+  const stateText =
+    (window.SAFETY_UI_TEXTS && typeof window.SAFETY_UI_TEXTS.sbhfStateName === "function")
+      ? window.SAFETY_UI_TEXTS.sbhfStateName(state, g)
+      : String(state);
+
+  tdSetText("m2-sbhf-state", stateText);
+  tdSetText("m2-sbhf-gleis", (g >= 1 && g <= 3) ? `G${g}` : "-");
+  tdSetText("m2-sbhf-occ", occList.length ? occList.join(", ") : "-");
+  tdSetText("m2-sbhf-allow", allowList.length ? allowList.join(", ") : "-");
+  tdSetText("m2-sbhf-restr", restricted ? "ja" : "nein");
+}
 
 function tdUpdateCommandButtons(msg) {
   if (!tdHasDiagram()) return;
@@ -871,6 +941,27 @@ function initTrackDiagramUi() {
   tdSetButtonEnabled("td-btn-bhf2", false);
   tdSetButtonEnabled("td-btn-bhf3", false);
 
+  tdSetWarn("w0", false);
+  tdSetWarn("w1", false);
+  tdSetWarn("w2", false);
+  tdSetWarn("w3", false);
+  tdSetWarn("w4", false);
+  tdSetWarn("w5", false);
+  tdSetWarn("w6", false);
+  tdSetWarn("w7", false);
+  tdSetWarn("w8", false);
+  tdSetWarn("w9", false);
+  tdSetWarn("w10", false);
+  tdSetWarn("w11", false);
+  tdSetWarn("w12", false);
+  tdSetWarn("w13", false);
+  tdSetWarn("w14", false);
+  tdSetWarn("w15", false);
+
+  tdSetVisible("target-sbhf1", false);
+  tdSetVisible("target-sbhf2", false);
+  tdSetVisible("target-sbhf3", false);
+
   tdLoadVisibleAssetsInPanel(document.querySelector('.tab-panel.active[data-tab-panel]'));
 }
 
@@ -911,6 +1002,20 @@ function updateTrackDiagramFromState(msg) {
     tdSetSignal("bhf1", tdBit(powerMask, 1) ? "green" : "red");
     tdSetSignal("bhf2", tdBit(powerMask, 2) ? "green" : "red");
     tdSetSignal("bhf3", tdBit(powerMask, 3) ? "green" : "red");
+
+    const m1FailMask = Number(msg?.mega1?.diag?.selftestFailMask ?? 0) & 0x0fff;
+    tdSetWarn("w0", tdBit(m1FailMask, 0));
+    tdSetWarn("w1", tdBit(m1FailMask, 1));
+    tdSetWarn("w2", tdBit(m1FailMask, 2));
+    tdSetWarn("w3", tdBit(m1FailMask, 3));
+    tdSetWarn("w4", tdBit(m1FailMask, 4));
+    tdSetWarn("w5", tdBit(m1FailMask, 5));
+    tdSetWarn("w6", tdBit(m1FailMask, 6));
+    tdSetWarn("w7", tdBit(m1FailMask, 7));
+    tdSetWarn("w8", tdBit(m1FailMask, 8));
+    tdSetWarn("w9", tdBit(m1FailMask, 9));
+    tdSetWarn("w10", tdBit(m1FailMask, 10));
+    tdSetWarn("w11", tdBit(m1FailMask, 11));
   } else {
     tdSetWeiche("w0", "undef");
     tdSetWeiche("w1", "undef");
@@ -928,6 +1033,19 @@ function updateTrackDiagramFromState(msg) {
     tdSetSignal("bhf1", "undef");
     tdSetSignal("bhf2", "undef");
     tdSetSignal("bhf3", "undef");
+
+    tdSetWarn("w0", false);
+    tdSetWarn("w1", false);
+    tdSetWarn("w2", false);
+    tdSetWarn("w3", false);
+    tdSetWarn("w4", false);
+    tdSetWarn("w5", false);
+    tdSetWarn("w6", false);
+    tdSetWarn("w7", false);
+    tdSetWarn("w8", false);
+    tdSetWarn("w9", false);
+    tdSetWarn("w10", false);
+    tdSetWarn("w11", false);
   }
 
   const m2online = !!(msg?.mega2?.online);
@@ -944,6 +1062,14 @@ function updateTrackDiagramFromState(msg) {
     tdSetBlock("e1-b1", bs[0]?.besetzt ? "occ" : "free");
     tdSetBlock("e1-b2", bs[1]?.besetzt ? "occ" : "free");
     tdSetBlock("e1-b3", bs[2]?.besetzt ? "occ" : "free");
+
+    /* Ebene -1 */
+    tdSetBlock("e-1-b4", bs[3]?.besetzt ? "occ" : "free");
+    tdSetBlock("e-1-b5", bs[4]?.besetzt ? "occ" : "free");
+    tdSetBlock("e-1-b6", bs[5]?.besetzt ? "occ" : "free");
+    tdSetBlock("e-1-sbhf1", tdBit(msg?.mega2?.sbhf?.occupiedMask ?? 0, 0) ? "occ" : "free");
+    tdSetBlock("e-1-sbhf2", tdBit(msg?.mega2?.sbhf?.occupiedMask ?? 0, 1) ? "occ" : "free");
+    tdSetBlock("e-1-sbhf3", tdBit(msg?.mega2?.sbhf?.occupiedMask ?? 0, 2) ? "occ" : "free");
   } else if (m2online && (msg?.mega2?.blocks?.occupiedMask !== undefined || msg?.mega2?.blockOccupiedMask !== undefined)) {
     const occMask = Number(msg?.mega2?.blocks?.occupiedMask ?? msg?.mega2?.blockOccupiedMask ?? 0);
 
@@ -958,6 +1084,14 @@ function updateTrackDiagramFromState(msg) {
     tdSetBlock("e1-b1", tdBit(occMask, 0) ? "occ" : "free");
     tdSetBlock("e1-b2", tdBit(occMask, 1) ? "occ" : "free");
     tdSetBlock("e1-b3", tdBit(occMask, 2) ? "occ" : "free");
+
+    /* Ebene -1 */
+    tdSetBlock("e-1-b4", tdBit(occMask, 3) ? "occ" : "free");
+    tdSetBlock("e-1-b5", tdBit(occMask, 4) ? "occ" : "free");
+    tdSetBlock("e-1-b6", tdBit(occMask, 5) ? "occ" : "free");
+    tdSetBlock("e-1-sbhf1", tdBit(msg?.mega2?.sbhf?.occupiedMask ?? 0, 0) ? "occ" : "free");
+    tdSetBlock("e-1-sbhf2", tdBit(msg?.mega2?.sbhf?.occupiedMask ?? 0, 1) ? "occ" : "free");
+    tdSetBlock("e-1-sbhf3", tdBit(msg?.mega2?.sbhf?.occupiedMask ?? 0, 2) ? "occ" : "free");
   } else {
     tdSetBlock("e0-b1", "undef");
     tdSetBlock("e0-b3", "undef");
@@ -967,10 +1101,21 @@ function updateTrackDiagramFromState(msg) {
     tdSetBlock("e1-b1", "undef");
     tdSetBlock("e1-b2", "undef");
     tdSetBlock("e1-b3", "undef");
+    tdSetBlock("e-1-b4", "undef");
+    tdSetBlock("e-1-b5", "undef");
+    tdSetBlock("e-1-b6", "undef");
+    tdSetBlock("e-1-sbhf1", "undef");
+    tdSetBlock("e-1-sbhf2", "undef");
+    tdSetBlock("e-1-sbhf3", "undef");
   }
 
   const entryNow = msg?.mega2?.entryAllowed;
   if (m2online && Array.isArray(entryNow) && entryNow.length >= 6) {
+    const sbhfState = Number(msg?.mega2?.sbhf?.state ?? 0);
+    const currentGleis = Number(msg?.mega2?.sbhf?.currentGleis ?? 0);
+    const block5ToSbhfActive = !!msg?.mega2?.sbhf?.block5ToSbhfActive;
+    const exitRunning = (sbhfState === 4);
+
     const grant34 = ((Number(entryNow[2] ?? 0) & (1 << 3)) !== 0); /* 3 -> 4 */
     const grant64 = ((Number(entryNow[5] ?? 0) & (1 << 3)) !== 0); /* 6 -> 4 */
     const grant45 = ((Number(entryNow[3] ?? 0) & (1 << 4)) !== 0); /* 4 -> 5 */
@@ -985,6 +1130,13 @@ function updateTrackDiagramFromState(msg) {
     tdSetSignal("grant-4-1", grant41 ? "green" : "red");
     tdSetSignal("grant-1-2", grant12 ? "green" : "red");
     tdSetSignal("grant-2-3", grant23 ? "green" : "red");
+
+    tdSetSignal("grant-sbhf-4-5", grant45 ? "green" : "red");
+    tdSetSignal("grant-sbhf-5-sbhf", block5ToSbhfActive ? "green" : "red");
+    tdSetSignal("grant-sbhf-sbhf1-6", (exitRunning && currentGleis === 1) ? "green" : "red");
+    tdSetSignal("grant-sbhf-sbhf2-6", (exitRunning && currentGleis === 2) ? "green" : "red");
+    tdSetSignal("grant-sbhf-sbhf3-6", (exitRunning && currentGleis === 3) ? "green" : "red");
+    tdSetSignal("grant-sbhf-6-4", grant64 ? "green" : "red");
   } else {
     tdSetSignal("grant-3-4", "undef");
     tdSetSignal("grant-6-4", "undef");
@@ -992,7 +1144,54 @@ function updateTrackDiagramFromState(msg) {
     tdSetSignal("grant-4-1", "undef");
     tdSetSignal("grant-1-2", "undef");
     tdSetSignal("grant-2-3", "undef");
+    
+    tdSetSignal("grant-sbhf-4-5", "undef");
+    tdSetSignal("grant-sbhf-5-sbhf", "undef");
+    tdSetSignal("grant-sbhf-sbhf1-6", "undef");
+    tdSetSignal("grant-sbhf-sbhf2-6", "undef");
+    tdSetSignal("grant-sbhf-sbhf3-6", "undef");
+    tdSetSignal("grant-sbhf-6-4", "undef");
   }
+
+  const m2turnouts = msg?.mega2?.turnouts;
+  if (m2online && m2turnouts) {
+    const istMask = Number(m2turnouts.istMask ?? 0);
+    const sollMask = Number(m2turnouts.sollMask ?? 0);
+    const tdM2WeicheState = (bit) => {
+      const istA = tdBit(istMask, bit);
+      const sollA = tdBit(sollMask, bit);
+      if (!istA && !sollA) return "g";
+      if (istA && sollA) return "a";
+      if (!istA && sollA) return "g-diff";
+      return "a-diff";
+    };
+    tdSetWeiche("w12", tdM2WeicheState(0));
+    tdSetWeiche("w13", tdM2WeicheState(1));
+    tdSetWeiche("w14", tdM2WeicheState(2));
+    tdSetWeiche("w15", tdM2WeicheState(3));
+
+    const m2WarnMask = Number(msg?.mega2?.sbhf?.warningMask ?? 0) & 0xff;
+    tdSetWarn("w12", (m2WarnMask & 0x02) !== 0);
+    tdSetWarn("w13", (m2WarnMask & 0x04) !== 0);
+    tdSetWarn("w14", (m2WarnMask & 0x08) !== 0);
+    tdSetWarn("w15", (m2WarnMask & 0x10) !== 0);
+  } else {
+    tdSetWeiche("w12", "undef");
+    tdSetWeiche("w13", "undef");
+    tdSetWeiche("w14", "undef");
+    tdSetWeiche("w15", "undef");
+    tdSetWarn("w12", false);
+    tdSetWarn("w13", false);
+    tdSetWarn("w14", false);
+    tdSetWarn("w15", false);
+  }
+
+  const currentGleis = Number(msg?.mega2?.sbhf?.currentGleis ?? 0);
+  tdSetVisible("target-sbhf1", currentGleis === 1);
+  tdSetVisible("target-sbhf2", currentGleis === 2);
+  tdSetVisible("target-sbhf3", currentGleis === 3);
+  tdRenderSbhfStatus(msg);
+
   tdUpdateCommandButtons(msg);
 }
 

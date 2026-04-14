@@ -453,6 +453,24 @@ window.SAFETY_UI_TEXTS.blockName = function(id, fallbackPrefix="Block ") {
   return fallbackPrefix + n;
 };
 
+// Klartext für ShadowYardController / SBHF-State
+window.SAFETY_UI_TEXTS.sbhfStateName = function(state, currentGleis) {
+  const s = Number(state);
+  const g = Number(currentGleis);
+  const gleisTxt = (g >= 1 && g <= 3) ? `SBHF-Gleis ${g}` : "SBHF-Gleis";
+
+  switch (s) {
+    case 0: return "Leerlauf";
+    case 1: return "Vorbereitung SBHF";
+    case 2: return "Stellen der Weichen";
+    case 3: return "Warten auf Ausfahrt Block 6";
+    case 4: return `Ausfahrt aus ${gleisTxt}`;
+    case 5: return "Warten auf Einfahrt";
+    case 6: return `Einfahrt in ${gleisTxt}`;
+    case 7: return "Fehler";
+    default: return `State ${String(state)}`;
+  }
+};
 
 // Direct lookup by key (INFO/WARN overlays etc.)
 // Returns { title, lines[] } or null
