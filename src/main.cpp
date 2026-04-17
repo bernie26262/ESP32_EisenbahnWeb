@@ -96,10 +96,33 @@ void setup()
     HMI::begin();
 }
 
+static constexpr uint32_t HMI_CMD_FORCEFULL_DELAY_MS = 100;
+static constexpr uint32_t HMI_CMD_STATELITE_SUPPRESS_MS = 200;
+static constexpr uint32_t HMI_CMD_ANALOG_SUPPRESS_MS = 200;
+static constexpr uint32_t HMI_TURNOUT_FORCEFULL_DELAY_MS = 50;
+static constexpr uint32_t HMI_TURNOUT_SUPPRESS_MS = 220;
+
 static inline void markStateDirtyAllAndForceHmi()
 {
     markStateDirtyAll();
     HmiPush::forceFull();
+}
+
+static inline void markStateDirtyAllAndForceHmiDelayed()
+{
+    HMI::resetTxAfterLocalCommand(HMI_CMD_STATELITE_SUPPRESS_MS, "hmi-cmd");
+    markStateDirtyAll();
+    HmiPush::suppressStateLiteUntil(HMI_CMD_STATELITE_SUPPRESS_MS);
+    HmiPush::forceFullDelayed(HMI_CMD_FORCEFULL_DELAY_MS);
+}
+
+static inline void markTurnoutDirtyAllAndForceHmiDelayed()
+{
+    HMI::resetTxAfterLocalCommand(HMI_TURNOUT_SUPPRESS_MS, "hmi-turnout");
+    markStateDirtyAll();
+    HmiPush::suppressStateLiteUntil(HMI_TURNOUT_SUPPRESS_MS);
+    HmiPush::suppressAnalogUntil(HMI_TURNOUT_SUPPRESS_MS);
+    HmiPush::forceFullDelayed(HMI_TURNOUT_FORCEFULL_DELAY_MS);
 }
 
 static void handleHmiActionLine(const String& line)
@@ -116,6 +139,16 @@ static void handleHmiActionLine(const String& line)
     const char* type   = doc["type"]   | "";
     const char* action = doc["action"] | "";
 
+    if (strcmp(type, "ack") == 0)
+    {
+        const uint32_t seq = doc["seq"] | 0;
+        if (seq != 0)
+        {
+            HMI::noteAck(seq);
+        }
+        return;
+    }
+
     if (strcmp(type, "action") != 0 || action[0] == '\0') {
         return;
     }
@@ -124,19 +157,19 @@ static void handleHmiActionLine(const String& line)
 
     if (!strcmp(action, "safetyAck")) {
         Mega2Link::safetyAck();
-        markStateDirtyAllAndForceHmi();
+        markStateDirtyAllAndForceHmiDelayed();
         return;
     }
 
     if (!strcmp(action, "powerOff")) {
         Mega2Link::powerOff();
-        markStateDirtyAllAndForceHmi();
+        markStateDirtyAllAndForceHmiDelayed();
         return;
     }
 
     if (!strcmp(action, "powerOn")) {
         Mega2Link::powerOn();
-        markStateDirtyAllAndForceHmi();
+        markStateDirtyAllAndForceHmiDelayed();
         return;
     }
 
@@ -153,14 +186,14 @@ static void handleHmiActionLine(const String& line)
 
         if (mode == 0 || mode == 1) {
             Mega1Link::queueSetMode((uint8_t)mode);
-            markStateDirtyAllAndForceHmi();
+            markStateDirtyAllAndForceHmiDelayed();
         }
         return;
     }
 
     if (!strcmp(action, "m1SelftestStart")) {
         Mega1Link::queueStartSelftest();
-        markStateDirtyAllAndForceHmi();
+        markStateDirtyAllAndForceHmiDelayed();
         return;
     }
 
@@ -189,7 +222,7 @@ static void handleHmiActionLine(const String& line)
             gerade ? "true" : "false",
             ok ? 1 : 0);
 
-        markStateDirtyAllAndForceHmi();
+        markTurnoutDirtyAllAndForceHmiDelayed();
         return;
     }
 
@@ -218,31 +251,31 @@ static void handleHmiActionLine(const String& line)
             on ? "true" : "false",
             ok ? 1 : 0);
 
-        markStateDirtyAllAndForceHmi();
+        markStateDirtyAllAndForceHmiDelayed();
         return;
     }
 
     if (!strcmp(action, "sbhfSelftestRetry")) {
         Mega2Link::sbhfSelftestRetry();
-        markStateDirtyAllAndForceHmi();
+        markStateDirtyAllAndForceHmiDelayed();
         return;
     }
 
     if (!strcmp(action, "sbhfSelftestStartup")) {
         Mega2Link::sbhfSelftestStartup();
-        markStateDirtyAllAndForceHmi();
+        markStateDirtyAllAndForceHmiDelayed();
         return;
     }
 
     if (!strcmp(action, "markMega1ChecklistDone")) {
         SystemRuntimeState::markMega1ChecklistDone();
-        markStateDirtyAllAndForceHmi();
+        markStateDirtyAllAndForceHmiDelayed();
         return;
     }
 
     if (!strcmp(action, "markMega2ChecklistDone")) {
         SystemRuntimeState::markMega2ChecklistDone();
-        markStateDirtyAllAndForceHmi();
+        markStateDirtyAllAndForceHmiDelayed();
         return;
     }
 }

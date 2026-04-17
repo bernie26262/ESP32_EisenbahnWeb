@@ -13,8 +13,15 @@ namespace
     static uint32_t s_lastHash = 0;
     static bool s_hasHash = false;
     static bool s_forceFull = true;
+    static bool s_forceFullDelayedPending = false;
+    static uint32_t s_forceFullEarliestMs = 0;
+    static uint32_t s_stateLiteSuppressUntilMs = 0;
+    static uint32_t s_analogSuppressUntilMs = 0;
+
     static uint32_t s_lastSendMs = 0;
     static uint32_t s_lastAnalogMs = 0;
+    static uint32_t s_lastAnalogHash = 0;
+    static bool s_hasAnalogHash = false;
 
     // Hybrid:
     // - periodischer Re-Send bleibt aktiv
@@ -44,6 +51,21 @@ namespace
         }
         return h;
     }
+
+    static String addSeqField(const String& json, uint32_t seq)
+    {
+        if (seq == 0) return json;
+        if (json.length() < 2) return json;
+        if (json[0] != '{') return json;
+
+        String out;
+        out.reserve(json.length() + 24);
+        out += "{\"seq\":";
+        out += String(seq);
+        out += ",";
+        out += json.substring(1);
+        return out;
+    }
 }
 
 namespace HmiPush
@@ -53,10 +75,34 @@ namespace HmiPush
         const uint32_t now = (uint32_t)millis();
         ++s_cntLoop;
 
-        const bool wantFull = s_forceFull || ((uint32_t)(now - s_lastFullMs) >= HMI_FULL_MS);
+        const bool suppressStateLite =
+            ((int32_t)(now - s_stateLiteSuppressUntilMs) < 0);
+
+        if (s_forceFullDelayedPending) {
+            if ((int32_t)(now - s_forceFullEarliestMs) >= 0) {
+                s_forceFull = true;
+                s_forceFullDelayedPending = false;
+                EE_LOGI("HMIPUSH",
+                        "forceFullDelayed due now=%lu",
+                        (unsigned long)now);
+            }
+        }
+
+        const bool wantPeriodicFull =
+            ((uint32_t)(now - s_lastFullMs) >= HMI_FULL_MS);
+        const bool wantFull =
+            !suppressStateLite && (s_forceFull || wantPeriodicFull);
+
         const bool dirtyDue =
             ((uint32_t)(now - s_lastSendMs) >= HMI_DIRTY_MIN_MS);
-        const bool wantDirty = g_hmiStateDirty && dirtyDue;
+        const bool wantDirty =
+            !suppressStateLite && g_hmiStateDirty && dirtyDue;
+
+        if (suppressStateLite) {
+            // Während des Guard-Windows keine großen state-lite-Frames senden.
+            // Analog läuft separat weiter.
+            return;
+        }
 
         if (g_hmiStateDirty) ++s_cntWantDirty;
         if (wantFull)  ++s_cntWantFull;
@@ -67,7 +113,7 @@ namespace HmiPush
             {
                 s_lastSummaryMs = now;
                 EE_LOGI("HMIPUSH",
-                        "summary loop=%lu dirty=%lu full=%lu ok=%lu fail=%lu hashSkip=%lu force=%d hmiDirty=%d dirtyDue=%d lastFullAgo=%lu lastSendAgo=%lu",
+                        "summary loop=%lu dirty=%lu full=%lu ok=%lu fail=%lu hashSkip=%lu force=%d hmiDirty=%d dirtyDue=%d lastFullAgo=%lu lastSendAgo=%lu q=%u waitAck=%d inFlight=%lu",
                         (unsigned long)s_cntLoop,
                         (unsigned long)s_cntWantDirty,
                         (unsigned long)s_cntWantFull,
@@ -78,28 +124,36 @@ namespace HmiPush
                         g_hmiStateDirty ? 1 : 0,
                         dirtyDue ? 1 : 0,
                         (unsigned long)(now - s_lastFullMs),
-                        (unsigned long)(now - s_lastSendMs));
+                        (unsigned long)(now - s_lastSendMs),
+                        (unsigned)HMI::queuedCount(),
+                        HMI::hasAckPending() ? 1 : 0,
+                        (unsigned long)HMI::inFlightSeq());
             }
             return;
         }
 
         const String json = buildHmiStateJson();
+        const uint32_t seq = HMI::nextTxSeq();
+        const String jsonWithSeq = addSeqField(json, seq);
         const uint32_t hash = fnv1a32(json);
 
         if (wantFull)
         {
-            const bool ok = HMI::sendJson(json);
+            const bool ok = HMI::enqueueJson(jsonWithSeq, HMI::TxKind::StateLite, seq);
             if ((uint32_t)(now - s_lastSendLogMs) >= 1000)
             {
                 s_lastSendLogMs = now;
                 EE_LOGI("HMIPUSH",
-                        "PERIODIC try ok=%d len=%u hash=%08lx force=%d hmiDirty=%d lastFullAgo=%lu",
+                        "PERIODIC enqueue ok=%d len=%u hash=%08lx force=%d hmiDirty=%d lastFullAgo=%lu q=%u waitAck=%d inFlight=%lu",
                         ok ? 1 : 0,
                         (unsigned)json.length(),
                         (unsigned long)hash,
                         s_forceFull ? 1 : 0,
                         g_hmiStateDirty ? 1 : 0,
-                        (unsigned long)(now - s_lastFullMs));
+                        (unsigned long)(now - s_lastFullMs),
+                        (unsigned)HMI::queuedCount(),
+                        HMI::hasAckPending() ? 1 : 0,
+                        (unsigned long)HMI::inFlightSeq());
             }
 
             if (!ok)
@@ -118,7 +172,6 @@ namespace HmiPush
             return;
         }
 
-        // Im periodic-only-Test sollte dieser Pfad nie erreicht werden.
         if (s_hasHash && hash == s_lastHash)
         {
             ++s_cntHashEqualSkip;
@@ -134,16 +187,19 @@ namespace HmiPush
             return;
         }
 
-        const bool ok = HMI::sendJson(json);
+        const bool ok = HMI::enqueueJson(jsonWithSeq, HMI::TxKind::StateLite, seq);
         if ((uint32_t)(now - s_lastSendLogMs) >= 1000)
         {
             s_lastSendLogMs = now;
             EE_LOGI("HMIPUSH",
-                    "DIRTY try ok=%d len=%u hash=%08lx dirtyMin=%lu",
+                    "DIRTY enqueue ok=%d len=%u hash=%08lx dirtyMin=%lu q=%u waitAck=%d inFlight=%lu",
                     ok ? 1 : 0,
                     (unsigned)json.length(),
                     (unsigned long)hash,
-                    (unsigned long)HMI_DIRTY_MIN_MS);
+                    (unsigned long)HMI_DIRTY_MIN_MS,
+                    (unsigned)HMI::queuedCount(),
+                    HMI::hasAckPending() ? 1 : 0,
+                    (unsigned long)HMI::inFlightSeq());
         }
 
         if (!ok)
@@ -157,29 +213,70 @@ namespace HmiPush
         s_hasHash = true;
         g_hmiStateDirty = false;
         ++s_cntSendOk;
-
-        // Kein return: danach darf im selben loop-Durchlauf trotzdem noch
-        // ein periodisches Analogpaket versucht werden, falls genug Zeit
-        // vergangen ist. Die UART-Rate-Limit-Logik in HMI::sendJson()
-        // verhindert zu dichtes Senden.
     }
 
     void forceFull()
     {
         s_forceFull = true;
-        EE_LOGI("HMIPUSH", "forceFull() [hybrid rate-limited]");
+        EE_LOGI("HMIPUSH", "forceFull() [hybrid queued+ack]");
+    }
+
+    void forceFullDelayed(unsigned long delayMs)
+    {
+        const uint32_t now = (uint32_t)millis();
+        s_forceFull = false;
+        s_forceFullDelayedPending = true;
+        s_forceFullEarliestMs = now + (uint32_t)delayMs;
+        EE_LOGI("HMIPUSH",
+                "forceFullDelayed delayMs=%lu earliest=%lu",
+                (unsigned long)delayMs,
+                (unsigned long)s_forceFullEarliestMs);
+    }
+
+    void suppressStateLiteUntil(unsigned long delayMs)
+    {
+        const uint32_t now = (uint32_t)millis();
+        s_stateLiteSuppressUntilMs = now + (uint32_t)delayMs;
+        EE_LOGI("HMIPUSH",
+                "suppressStateLite delayMs=%lu until=%lu",
+                (unsigned long)delayMs,
+                (unsigned long)s_stateLiteSuppressUntilMs);
+    }
+
+    void suppressAnalogUntil(unsigned long delayMs)
+    {
+        const uint32_t now = (uint32_t)millis();
+        s_analogSuppressUntilMs = now + (uint32_t)delayMs;
+        EE_LOGI("HMIPUSH",
+                "suppressAnalog delayMs=%lu until=%lu",
+                (unsigned long)delayMs,
+                (unsigned long)s_analogSuppressUntilMs);
     }
 
     void loopAnalog()
     {
         const uint32_t now = (uint32_t)millis();
+        if ((int32_t)(now - s_analogSuppressUntilMs) < 0)
+            return;
+
         if ((uint32_t)(now - s_lastAnalogMs) < HMI_ANALOG_MS)
             return;
 
         const String json = buildHmiAnalogJson();
-        if (HMI::sendJson(json))
+        const uint32_t hash = fnv1a32(json);
+        if (s_hasAnalogHash && hash == s_lastAnalogHash)
         {
             s_lastAnalogMs = now;
+            return;
+        }
+
+        const uint32_t seq = HMI::nextTxSeq();
+        const String jsonWithSeq = addSeqField(json, seq);
+        if (HMI::enqueueJson(jsonWithSeq, HMI::TxKind::Analog, seq))
+        {
+            s_lastAnalogMs = now;
+            s_lastAnalogHash = hash;
+            s_hasAnalogHash = true;
         }
     }
 }
