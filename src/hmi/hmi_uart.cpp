@@ -147,7 +147,7 @@ namespace HMI
 
     void begin()
     {
-        uart.begin(115200, SERIAL_8N1, PIN_HMI_UART_RX, PIN_HMI_UART_TX);
+        uart.begin(230400, SERIAL_8N1, PIN_HMI_UART_RX, PIN_HMI_UART_TX);
         rxLine.reserve(192);
     }
 

@@ -917,14 +917,12 @@ static String buildWsStateLiteJson()
 
     // Entspricht der WebUI-Overlay-Logik:
     // Quittieren erst wenn alle benötigten Schritte erledigt sind.
-    const bool allChecklistDone =
-        ((!m1Needs) || m1SelftestDone) &&
-        ((!m2Needs) || m2SelftestDone);
+    const bool allChecklistDone = ((!m1Needs) || m1SelftestDone) && ((!m2Needs) || m2SelftestDone);
 
     // Startup-Quittieren nur freigeben, wenn die Checkliste fertig ist und
     // kein inkonsistenter Safety-Lock-Zustand mehr offen ist.
     const bool startupConfirmSafetyOk =
-        (!safetyLock) || ackRequired;
+        (!safetyLock) || ackRequired || ((!notausActive) && (safetyBlockReason == SAFETY_BLOCK_BOOT));
 
     actions["canStartupConfirm"] =
         (!writeLockedByDiag) &&

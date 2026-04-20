@@ -69,16 +69,10 @@ static bool         s_m1OnlinePrev = false;
 // ----------------------------------------------------
 // Boot-Detection / Startup-Checklist
 // ----------------------------------------------------
-// Guard-Zeit: nur fuer den Sonderfall "ESP rebootet und hat sein RAM verloren".
-// Wenn ein Mega laenger als diese Zeit laeuft, behandeln wir ihn beim ersten
-// Empfang nach ESP-Boot als "nicht frisch gebootet".
-static constexpr uint32_t ESP_REBOOT_GUARD_MS = 60000; // 60s konservativ
-
 struct BootTrack {
     bool     seen = false;
     uint16_t lastBootId = 0;
     bool     bootChanged = false;   // sticky within ESP session
-    bool     needsChecklist = false;
     uint32_t lastUptimeMs = 0;
 };
 
@@ -88,11 +82,11 @@ static BootTrack s_m2Boot{};
 // Selftest edge tracking (Mega2 SBHF)
 static bool s_m2SelftestRunningPrev = false;
 static bool s_m2SelftestDone = false; // Step marker (does NOT auto-complete checklist)
-
-
+static bool s_m2ChecklistClosed = false; // Startup-Checklist fuer aktuellen Mega2-Boot explizit quittiert
 
 // Selftest tracking (Mega1 Weichen)
 static bool s_m1SelftestDone = false; // Step marker (does NOT auto-complete checklist)
+static bool s_m1ChecklistClosed = false; // Startup-Checklist fuer aktuellen Mega1-Boot explizit quittiert
 static bool s_m1SelftestRunningPrev = false;
 static bool s_m1SelftestEverRunning = false;
 
@@ -120,9 +114,9 @@ static bool updateBootTrack(BootTrack& bt, const SystemStatus& st)
         bt.lastBootId = st.bootId;
         bt.lastUptimeMs = st.uptimeMs;
 
-        // ESP-Reboot-Fall: Mega lief schon -> keine neue Checklist erzwingen
-        bt.needsChecklist = (st.uptimeMs <= ESP_REBOOT_GUARD_MS);
-        rebootDetected = bt.needsChecklist; // treat "fresh" as requiring checklist
+        // Keine Checklist-Heuristik mehr beim ersten Wiedersehen nach ETH-Reboot.
+        // Die Startup-Pflicht wird aus den autoritativen Mega-Selbsttestdaten abgeleitet.
+        rebootDetected = false;
         return rebootDetected;
     }
 
@@ -133,7 +127,6 @@ static bool updateBootTrack(BootTrack& bt, const SystemStatus& st)
     {
         rebootDetected = true;
         bt.bootChanged = true;      // treat as reboot event
-        bt.needsChecklist = true;
         bt.lastBootId = st.bootId;  // keep for completeness
         bt.lastUptimeMs = st.uptimeMs;
         return rebootDetected;
@@ -151,7 +144,6 @@ static bool updateBootTrack(BootTrack& bt, const SystemStatus& st)
         rebootDetected = true;
         bt.lastBootId = st.bootId;
         bt.bootChanged = true;
-        bt.needsChecklist = true;
     }
 
     return rebootDetected;
@@ -233,7 +225,7 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
 
     // Step marker: Selftest finished (running -> not running) => remember "done".
     // IMPORTANT: does NOT close checklist (contract: only after full user flow incl. ACK).
-    if (s_m2Boot.needsChecklist && s_m2SelftestRunningPrev && !selftestRunning)
+    if (s_m2SelftestRunningPrev && !selftestRunning)
     {
         s_m2SelftestDone = true;
         markStateDirtyAll();
@@ -241,7 +233,7 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     // Robust fallback:
     // After cold start we may first observe Mega2 already in DONE state,
     // without ever seeing the running->not running transition locally.
-    if (s_m2Boot.needsChecklist && selftestDoneMeta && !s_m2SelftestDone)
+    if (selftestDoneMeta && !s_m2SelftestDone)
     {
         s_m2SelftestDone = true;
         markStateDirtyAll();
@@ -261,6 +253,7 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     if (rebootDetected)
     { 
         s_m2SelftestDone = false;
+        s_m2ChecklistClosed = false;
         // boot-related UI fields changed (bootId/uptime/checklist)
         markStateDirtyAll();
     }
@@ -322,6 +315,7 @@ void SystemRuntimeState::updateMega1Status(const SystemStatus& st)
         // Reset startup-checklist step markers only on real Mega1 reboot
         // (bootId/uptime detection). Do NOT reset on short online flaps.
         s_m1SelftestDone = false;
+        s_m1ChecklistClosed = false;
         s_m1SelftestRunningPrev = false;
         s_m1SelftestEverRunning = false;
     }
@@ -567,7 +561,10 @@ uint8_t SystemRuntimeState::safetyBlockReason()
 // ----------------------------------------------------
 bool SystemRuntimeState::mega1NeedsStartupChecklist()
 {
-    return s_m1Boot.needsChecklist;
+    if (!mega1Online())
+        return false;
+
+    return !s_m1ChecklistClosed;
 }
 
 bool SystemRuntimeState::mega2NeedsStartupChecklist()
@@ -575,7 +572,11 @@ bool SystemRuntimeState::mega2NeedsStartupChecklist()
     // SIM helper: when bypass is enabled, treat SBHF startup checklist as not required.
     if (s_bypassSbhfSelftest)
         return false;
-    return s_m2Boot.needsChecklist;
+    
+    if (!mega2Online())
+        return false;
+
+    return !s_m2ChecklistClosed;
 }
 
 bool SystemRuntimeState::mega1BootChanged()
@@ -590,13 +591,13 @@ bool SystemRuntimeState::mega2BootChanged()
 
 void SystemRuntimeState::markMega1ChecklistDone()
 {
-    s_m1Boot.needsChecklist = false;
+    s_m1ChecklistClosed = true;
     markStateDirtyAll();
 }
 
 void SystemRuntimeState::markMega2ChecklistDone()
 {
-    s_m2Boot.needsChecklist = false;
+    s_m2ChecklistClosed = true;
     markStateDirtyAll();
 }
 
@@ -709,7 +710,7 @@ void SystemRuntimeState::updateMega2ShadowStatus(const ShadowYardStatus& st)
     // Robust/sticky startup step marker for Mega2:
     // as soon as DONE is seen in the authoritative ShadowYardStatus, keep the
     // startup selftest-step marked done until the next real Mega2 reboot.
-    if (s_m2Boot.needsChecklist && selftestDone && !s_m2SelftestDone) {
+    if (selftestDone && !s_m2SelftestDone) {
         s_m2SelftestDone = true;
         markStateDirtyAll();
     }

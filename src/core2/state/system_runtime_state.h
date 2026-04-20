@@ -93,13 +93,13 @@ namespace SystemRuntimeState
     const char* safetyLockText();
 
     // ----------------------------------------------------
-    // Boot-Detection / Startup-Checklist (Supervisor)
+    // Boot-Detection / Startup-Checklist
     //
     // Zweck:
-    // - ESP-Reboot soll NICHT automatisch eine neue Checklist erzwingen,
-    //   wenn die Megas bereits laenger laufen.
-    // - Mega-Reboot (bootId-Wechsel) soll fuer genau diesen Mega die
-    //   Checklist wieder oeffnen.
+    // - Mega-Reboot (bootId/Uptime-Wechsel) wird ESP-seitig erkannt.
+    // - Die fachliche Startup-Pflicht wird aus den autoritativen
+    //   Mega-Selbsttestdaten fuer den aktuellen Boot abgeleitet.
+    // - Ein ETH-Reboot darf die Startup-Pflicht daher nicht verlieren.
     
     
 
