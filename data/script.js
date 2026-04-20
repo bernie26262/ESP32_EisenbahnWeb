@@ -2732,6 +2732,7 @@ function renderSbhfLeft(msg) {
       <div class="info-row"><span>Belegt: </span><strong id="m2-sbhf-occ">—</strong></div>
       <div class="info-row"><span>Erlaubt: </span><strong id="m2-sbhf-allow">—</strong></div>
       <div class="info-row"><span>Restricted: </span><strong id="m2-sbhf-restr">—</strong></div>
+      <div class="info-row"><span>Start: </span><strong id="m2-sbhf-start">—</strong></div>
      `;
    }
  
@@ -2745,6 +2746,7 @@ function renderSbhfLeft(msg) {
      set("m2-sbhf-occ", "—");
      set("m2-sbhf-allow", "—");
      set("m2-sbhf-restr", "—");
+     set("m2-sbhf-start", "—");
      return;
    }
 
@@ -2753,6 +2755,7 @@ function renderSbhfLeft(msg) {
   const occ = sb.occupiedMask ?? 0;
   const allowed = (sb.allowedMask ?? 0) & 0xff;
   const restricted = !!sb.restricted;
+  const startPending = !!sb.startPending;
 
   const occList = [];
   if (occ & 0x01) occList.push("G1");
@@ -2775,6 +2778,7 @@ function renderSbhfLeft(msg) {
   set("m2-sbhf-occ", (occList.length ? occList.join(", ") : "-"));
   set("m2-sbhf-allow", (allowList.length ? allowList.join(", ") : "-"));
   set("m2-sbhf-restr", (restricted ? "ja" : "nein"));
+  set("m2-sbhf-start", (startPending ? "SBHF-Start vorgemerkt" : "-"));
 }
 
 function renderTurnoutsLeft(msg) {

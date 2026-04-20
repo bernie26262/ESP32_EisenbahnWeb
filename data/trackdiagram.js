@@ -865,6 +865,7 @@ function tdRenderSbhfStatus(msg) {
     tdSetText("m2-sbhf-occ", "—");
     tdSetText("m2-sbhf-allow", "—");
     tdSetText("m2-sbhf-restr", "—");
+    tdSetText("m2-sbhf-start", "—");
     return;
   }
 
@@ -873,6 +874,7 @@ function tdRenderSbhfStatus(msg) {
   const occ = Number(sb.occupiedMask ?? 0) & 0xff;
   const allowed = Number(sb.allowedMask ?? 0) & 0xff;
   const restricted = !!sb.restricted;
+  const startPending = !!sb.startPending;
 
   const occList = [];
   if (occ & 0x01) occList.push("G1");
@@ -894,6 +896,7 @@ function tdRenderSbhfStatus(msg) {
   tdSetText("m2-sbhf-occ", occList.length ? occList.join(", ") : "-");
   tdSetText("m2-sbhf-allow", allowList.length ? allowList.join(", ") : "-");
   tdSetText("m2-sbhf-restr", restricted ? "ja" : "nein");
+  tdSetText("m2-sbhf-start", startPending ? "SBHF-Start vorgemerkt" : "-");
 }
 
 function tdUpdateCommandButtons(msg) {

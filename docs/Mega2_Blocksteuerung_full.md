@@ -45,18 +45,75 @@ canEnter(from, to)
 
 updateBlockGrantRelays()
 
-## Freeze (Trafo EIN)
+## Sperre bei Trafo AUS / Erholung nach Trafo EIN
 
-Trigger: - Trafo von 0V → \>4V - Kontakt belegt
+### Aktuell wirksame Logik
 
-Wirkung: - keine neuen Grants - Relais bleiben stabil - Belegung läuft
-weiter
+Im aktuellen Implementierungsstand wird die Einfahrt nicht primär über den
+früheren Grant-Freeze geschützt, sondern über die Kombination aus:
 
-Variable: m_grantFreezeUntilMs
+- `m_powerUnavailable`
+- `m_powerRecoveryBlockUntilMs
 
-Logs: \[BLK\] freeze start \[BLK\] freeze end
+### 1. Power unavailable
+
+Sobald mindestens einer der beiden Trafos unter die AUS-Schwelle fällt,
+setzt `updateTrafoPowerRecoveryBlock()`:
+
+- `setPowerUnavailable(true)`
+
+Folge:
+
+- `canEnter()` liefert sofort `false`
+- alle neuen Einfahrten sind gesperrt
+
+Log:
+
+- `[BLK] power unavailable -> block all entries`
+
+### 2. Power recovery block
+
+Sobald nach einer Low-Phase **beide** Trafos wieder oberhalb der
+EIN-Schwelle liegen, wird gestartet:
+
+- `startPowerRecoveryBlock(now)`
+
+Dauer:
+
+- **4000 ms**
+
+Folge:
+
+- `canEnter()` bleibt weiterhin gesperrt
+- auch nach Rückkehr der Trafospannung werden zunächst keine neuen Einfahrten
+  erlaubt
+
+Log:
+
+- `[BLK] power recovery block start (4000 ms)`
+- `[BLK] power recovery block end`
+
+### Technische Wirkung
+
+`canEnter()` blockiert im aktuellen Stand über:
+
+- `m_powerUnavailable || isPowerRecoveryBlockActive(now)`
+
+Die Belegungserkennung selbst läuft weiter.
+
+### Abgrenzung zum alten Grant-Freeze
+
+Im `BlockController` existiert weiterhin zusätzlich:
+
+- `m_grantFreezeUntilMs`
+- `GRANT_FREEZE_MS = 2000`
+
+Dieser Mechanismus ist im aktuellen Hauptpfad jedoch **nicht** die maßgebliche
+Trafo-Erholsperre.
 
 ## Ziel
 
 -   kein ungewolltes Losfahren
 -   deterministisch
+-   keine Freigabe unmittelbar nach Wiederkehr der Trafospannung
+-   stabile Belegungs- und Stromauswertung vor neuen Einfahrten

@@ -491,10 +491,12 @@ static String buildWsStateJson(bool includeAnalog)
         // Startup-Checklist Flags (Mega2): prefer ShadowYardStatus.selftestFlags.
         // Fallback to META bits in sbhfOccupiedMask (0x80 running, 0x40 done).
         const uint8_t stf = sh.selftestFlags;
+        const bool startPending = ((stf & 0x04) != 0);
         const bool stRunning = ((stf & 0x01) != 0) || ((m2s.sbhfOccupiedMask & 0x80) != 0);
         const bool stDone    = ((stf & 0x02) != 0) || ((m2s.sbhfOccupiedMask & 0x40) != 0);
         sbhf["selftestRunning"] = stRunning;
         sbhf["selftestDone"]    = stDone;
+        sbhf["startPending"]    = startPending;
 
         // optional: diagnostics
         shj["selftestFlags"] = stf;
@@ -839,6 +841,7 @@ static String buildWsStateLiteJson()
     // damit HMI den Startup-/Retry-Zustand robuster auswerten kann.
     {
         JsonObject sbhf = mega2["sbhf"].to<JsonObject>();
+        const bool startPending = ((m2shadow.selftestFlags & 0x04u) != 0u);
         const bool stRunning =
             ((m2shadow.selftestFlags & 0x01u) != 0u) ||
             ((m2.sbhfOccupiedMask & 0x80u) != 0u);
@@ -850,6 +853,7 @@ static String buildWsStateLiteJson()
         sbhf["currentTrack"] = m2.sbhfCurrentGleis;
         sbhf["block5ToSbhfActive"] = ((m2.sbhfFlags & 0x01u) != 0u);
         sbhf["selftestRunning"] = stRunning;
+        sbhf["startPending"] = startPending;
         sbhf["selftestDone"] = stDone;
         mega2["shadow"]["selftestFlags"] = m2shadow.selftestFlags;
     }

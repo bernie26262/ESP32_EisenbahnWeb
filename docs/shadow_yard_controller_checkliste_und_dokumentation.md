@@ -91,10 +91,18 @@ Einfahrt des neuen Zuges von Block 5 in das Ziel-SBHF-Gleis.
 
 - nur in diesem State ist `Block5 -> SBHF` aktiv
 - Ende der Einfahrt **nicht** über kombinierte Blockbelegung
-- Ende erst über den zielgleisspezifischen Kontakt:
-  - SBHF1 → GF1
-  - SBHF2 → GF2
-  - SBHF3 → GF3
+- Ende der Einfahrt erst dann, wenn
+  1. der zielgleisspezifische Einfahrmarker `S12/S13/S14` erkannt wurde und
+  2. danach der zugehörige Zielkontakt `GF1/GF2/GF3` erkannt wurde
+- Zuordnung:
+  - SBHF1 → zuerst `S12`, danach `GF1`
+  - SBHF2 → zuerst `S13`, danach `GF2`
+  - SBHF3 → zuerst `S14`, danach `GF3`
+
+Wichtig:
+
+- `S12/S13/S14` beenden `EntryRunning` **nicht allein**
+- `GF1/GF2/GF3` beendet `EntryRunning` nur dann, wenn zuvor der passende Einfahrmarker erkannt wurde
 
 ### `Error`
 Fehlerzustand.
@@ -106,6 +114,25 @@ Fehlerzustand.
 ---
 
 # 3. Ablauf des neuen Zyklus
+
+## Start über S11
+
+Der SBHF-Zyklus wird über `S11` gestartet.
+
+Dabei gilt:
+
+- `S11` wird nur im Zustand `Idle` ausgewertet
+- pro `Idle`-Phase darf `S11` den Zyklus nur **einmal** starten
+- nach vollständigem Zyklusende und Rückkehr nach `Idle` wird der Trigger wieder freigegeben
+
+Besonderheit bei aktiver Blocksperre:
+
+- Wenn `S11` im Zustand `Idle` erkannt wird, während die Blocksperre noch aktiv ist,
+  darf dieser Trigger **nicht verloren gehen**
+- Stattdessen wird ein Pending-Start gespeichert
+- Sobald die Blocksperre beendet ist und der SBHF noch immer in `Idle` steht,
+  wird der Zyklus automatisch genau einmal gestartet
+
 
 ## Fall A: Zielgleis ist zunächst belegt
 
@@ -119,9 +146,10 @@ Fehlerzustand.
 8. Zielgleis 1250 ms stabil frei
 9. `EntryRunning`
 10. `Block5 -> SBHF` EIN
-11. Zielkontakt GF1/GF2/GF3 wird ausgelöst
-12. `Block5 -> SBHF` AUS
-13. zurück nach `Idle`
+11. zielgleisspezifischer Einfahrmarker `S12/S13/S14` wird ausgelöst
+12. danach zugehöriger Zielkontakt `GF1/GF2/GF3` wird ausgelöst
+13. `Block5 -> SBHF` AUS
+14. zurück nach `Idle`
 
 ## Fall B: Zielgleis ist zunächst leer
 
@@ -132,9 +160,10 @@ Fehlerzustand.
 5. Zielgleis 1250 ms stabil frei
 6. `EntryRunning`
 7. `Block5 -> SBHF` EIN
-8. Zielkontakt GF1/GF2/GF3 wird ausgelöst
-9. `Block5 -> SBHF` AUS
-10. zurück nach `Idle`
+8. zielgleisspezifischer Einfahrmarker `S12/S13/S14` wird ausgelöst
+9. danach zugehöriger Zielkontakt `GF1/GF2/GF3` wird ausgelöst
+10. `Block5 -> SBHF` AUS
+11. zurück nach `Idle`
 
 ---
 
@@ -190,11 +219,27 @@ Für das Ende von `EntryRunning` gilt ausdrücklich:
 
 **Nicht** kombinierte Blockbelegung verwenden.
 
-Stattdessen nur den zielgleisspezifischen Kontakt verwenden:
+Stattdessen gilt die folgende Reihenfolge:
 
-- `k_sbhf1`
-- `k_sbhf2`
-- `k_sbhf3`
+1. zunächst muss der zielgleisspezifische Einfahrmarker erkannt werden:
+   - `S12` für SBHF-Gleis 1
+   - `S13` für SBHF-Gleis 2
+   - `S14` für SBHF-Gleis 3
+2. danach muss der zugehörige Zielkontakt erkannt werden:
+   - `GF1` für SBHF-Gleis 1
+   - `GF2` für SBHF-Gleis 2
+   - `GF3` für SBHF-Gleis 3
+
+Nur diese Kombination beendet `EntryRunning`.
+
+Wichtig:
+
+- `S12/S13/S14` allein beendet `EntryRunning` nicht
+- `GF1/GF2/GF3` allein beendet `EntryRunning` nicht
+- die Reihenfolge ist verbindlich:
+  - `S12 -> GF1`
+  - `S13 -> GF2`
+  - `S14 -> GF3`
 
 Das ist nötig, damit wirklich nachgewiesen wird, dass der Zug über den Einfahrpfad `Block5 -> SBHF` in das Zielgleis eingefahren ist.
 
@@ -237,7 +282,9 @@ Nach Fehler / NOTAUS / ACK soll die Anlage möglichst sinnvoll weiterlaufen kön
 
 ## Noch sicherzustellen
 
-- `EntryRunning` endet über GF1/GF2/GF3, nicht über kombinierte Blockbelegung
+- `S11` geht bei aktiver Blocksperre nicht verloren, sondern wird genau einmal nachgezogen
+- `EntryRunning` endet über `S12/S13/S14` **und danach** `GF1/GF2/GF3`
+- `S13` ist für SBHF-Gleis 2 symmetrisch zu `S12` und `S14` behandelt
 - vorhandene `SensorKontakt`-Instanzen verwenden
 - Status-/Debugpfade auf neue States prüfen
 
@@ -250,6 +297,7 @@ Nach Fehler / NOTAUS / ACK soll die Anlage möglichst sinnvoll weiterlaufen kön
 - [ ] `PrepareCycle` ist überall statt alter `PrepareExit`-Logik verwendet
 - [ ] `SettingWeichen` verzweigt korrekt nach `WaitBlock6` oder `WaitEntryAfterExitFree`
 - [ ] `EntryRunning` ist der einzige State mit aktivem `Block5 -> SBHF`
+- [ ] `S11` wird in `Idle` bei aktiver Blocksperre gepuffert und später genau einmal nachgezogen
 - [ ] `Error` setzt sichere Leistungslage
 
 ## B. Powerpfade
@@ -263,7 +311,8 @@ Nach Fehler / NOTAUS / ACK soll die Anlage möglichst sinnvoll weiterlaufen kön
 
 - [ ] `WaitEntryAfterExitFree` nutzt Freierkennung des Zielgleises
 - [ ] Freiverzögerung 1250 ms aktiv
-- [ ] `EntryRunning` endet ausschließlich über GF1/GF2/GF3
+- [ ] `EntryRunning` endet nur nach `S12/S13/S14` und anschließend `GF1/GF2/GF3`
+- [ ] Zuordnung ist korrekt: `S12->GF1`, `S13->GF2`, `S14->GF3`
 - [ ] `SensorKontakt`-Instanzen werden verwendet, kein paralleles `digitalRead()`-Nebenmodell
 
 ## D. Resume / Reset
@@ -287,6 +336,7 @@ Nach Fehler / NOTAUS / ACK soll die Anlage möglichst sinnvoll weiterlaufen kön
 ## Test 1 – Zielgleis belegt
 
 - [ ] `S11` startet Zyklus
+- [ ] `S11` geht bei aktiver Blocksperre nicht verloren, sondern startet den Zyklus nach Freigabe
 - [ ] Weichen werden korrekt gestellt
 - [ ] `WaitBlock6` wird erreicht
 - [ ] `ExitRunning` startet korrekt
@@ -294,7 +344,8 @@ Nach Fehler / NOTAUS / ACK soll die Anlage möglichst sinnvoll weiterlaufen kön
 - [ ] `WaitEntryAfterExitFree` wird erreicht
 - [ ] nach 1250 ms frei startet `EntryRunning`
 - [ ] `Block5 -> SBHF` wird aktiv
-- [ ] Ende der Einfahrt erst bei GF1/GF2/GF3
+- [ ] passender Einfahrmarker `S12/S13/S14` wird erkannt
+- [ ] Ende der Einfahrt erst nach anschließendem `GF1/GF2/GF3`
 - [ ] Rückkehr nach `Idle`
 
 ## Test 2 – Zielgleis leer
@@ -304,7 +355,8 @@ Nach Fehler / NOTAUS / ACK soll die Anlage möglichst sinnvoll weiterlaufen kön
 - [ ] `ExitRunning` wird übersprungen
 - [ ] direkt `WaitEntryAfterExitFree`
 - [ ] nach 1250 ms frei startet `EntryRunning`
-- [ ] Ende über GF1/GF2/GF3
+- [ ] passender Einfahrmarker `S12/S13/S14` wird erkannt
+- [ ] Ende erst nach anschließendem `GF1/GF2/GF3`
 
 ## Test 3 – Einfahrender Zug fährt nicht wieder aus
 
@@ -315,7 +367,9 @@ Nach Fehler / NOTAUS / ACK soll die Anlage möglichst sinnvoll weiterlaufen kön
 ## Test 4 – Ende der Einfahrt nur über Zielkontakt
 
 - [ ] kombinierte Blockbelegung allein beendet `EntryRunning` nicht
-- [ ] nur GF1/GF2/GF3 beendet `EntryRunning`
+- [ ] `S12/S13/S14` allein beendet `EntryRunning` nicht
+- [ ] `GF1/GF2/GF3` ohne vorherigen Einfahrmarker beendet `EntryRunning` nicht
+- [ ] nur `S12->GF1`, `S13->GF2`, `S14->GF3` beendet `EntryRunning`
 
 ## Test 5 – Resume nach Fehler
 

@@ -123,8 +123,9 @@ struct __attribute__((packed)) ShadowYardStatus
     uint8_t modus;              // 0=seriell, 1=zufall
     uint8_t state;              // interner Automat (nur Anzeige)
 
-    // Selftest flags from Mega2
-    // bit0 = running, bit1 = done
+    // SBHF runtime flags from Mega2
+    // bit0 = selftest running, bit1 = selftest done,
+    // bit2 = start pending (S11 in IDLE erkannt, wartet auf Freigabe)
     uint8_t selftestFlags;
 };
 
