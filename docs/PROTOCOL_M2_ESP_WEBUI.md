@@ -1,6 +1,6 @@
 # Protokoll: Mega2 ↔ ESP ↔ WebUI (Elektrische Eisenbahn)
 
-Stand: 2026-01-13  
+Stand: 2026-04-23  
 Zweck: **stabiler UI-/Firmware-Contract**, damit Rendering und Safety-/SBHF-Logik nicht auseinanderlaufen.  
 Prinzip: **UI zeigt Selftest nur, wenn Protokoll es explizit sagt** (kein “aus Zahlen raten”, kein Klick-Phantomzustand).
 
@@ -15,6 +15,8 @@ Prinzip: **UI zeigt Selftest nur, wenn Protokoll es explizit sagt** (kein “aus
 ---
 
 ## 1. Mega2 → ESP: SystemStatus Payload (I²C / Proto)
+
+`SystemStatus`: **Version 4**, **28 Byte**.
 
 ### 1.1 SBHF State-Machine: `sbhfState`
 
@@ -77,7 +79,8 @@ Im `state`-JSON:
 
 **Top-Level**
 - `eth.connected`, `eth.ip` (optional)
-- `safety.lock`, `safety.blockReason`, `safety.errorType`, `safety.errorIndex`, `safety.powerOn` (je nach Implementierung)
+- `safety.lock`, `safety.blockReason`, `safety.errorCause`, `safety.errorIndex`, `safety.errorDetailCode`, `safety.powerOn` (je nach Implementierung)
+- Übergangskompatibel zusätzlich: `safety.errorType = safety.errorCause`
 
 **Mega2**
 - `mega2.online`, `mega2.flags`
@@ -115,6 +118,27 @@ Die WebUI darf für Abwärtskompatibilität normalisieren:
 
 ---
 
+
+## 2.4 Safety-Ursachen (Cause Codes)
+
+Die Ursache einer Emergency wird über `safety.errorCause` übertragen. Aktueller Stand:
+
+| Code | Bedeutung | Index | Detail |
+|---:|---|---|---|
+| 0 | `ERR_CAUSE_NONE` | 0 | 0 |
+| 1 | `ERR_CAUSE_SBH_FALSE_ENTRY` | meist 6 | z. B. Stopzone/Nothalt-Fall |
+| 2 | `ERR_CAUSE_SBH_EXIT_TIMEOUT` | SBHF-Gleis 1..3 | 0 |
+| 3 | `ERR_CAUSE_SBH_WEICHE` | Weiche 12..15 | 0 |
+| 4 | `ERR_CAUSE_DOUBLE_OCCUPANCY` | Block | hard/adaptive |
+| 5 | `ERR_CAUSE_BLOCK_SHORT` | Block | 0 |
+| 6 | `ERR_CAUSE_CONTROLLER_FAULT` | 0 | Tick-Gap / Invariant |
+| 7 | `ERR_CAUSE_EXTERNAL_ESTOP` | 0 | reserviert |
+| 8 | `ERR_CAUSE_SBH_CONTROLLER_FAULT` | 0 oder Gleis | Ziel besetzt / invalid exit gleis |
+| 9 | `ERR_CAUSE_SBH_ENTRY_TIMEOUT` | SBHF-Gleis 1..3 | S12/13/14 oder GF1/2/3 Timeout |
+| 10 | `ERR_CAUSE_SBH_ENTRY_WRONG_TRACK` | Zielgleis 1..3 | tatsächlich zuerst erkanntes S-Gleis |
+
+Die Wirkung einer Emergency bleibt davon getrennt und wird in der UI als **Notaus aktiv. Fahrspannung abgeschaltet.** dargestellt.
+
 ## 3. WebUI Overlay-/ACK-Contract (Anti-Regressions)
 
 ### 3.1 ACK senden
@@ -134,6 +158,11 @@ Wenn `safety.lock == true`:
    → Overlay: **„SBHF Weichentest läuft“**, `ackRequired=false`
 
 2) Sonst: Standard-Safety-Overlay (`getSafetyOverlayTexts(safety)`), `ackRequired=true`
+
+Das Standard-Safety-Overlay basiert auf den neuen Cause-Codes und zeigt:
+- **Titel** (`safety.title`)
+- **Wirkung** (`safety.effectText`)
+- **Maßnahme** (`safety.actionText`)
 
 **Wichtig:** Selftest Overlay erscheint **nur** wenn das Protokoll es explizit meldet (`0x80`).
 
@@ -163,8 +192,15 @@ Wenn `safety.lock == true`:
    - Nach ACK: sobald `selftestRunning==true` → Overlay „Weichentest läuft“.  
    - Nach Ende: `lock=false` → Overlay weg, Warnungen ggf. aktiv.
 
-3) **Nothalt / Reverse-Entry**  
-   - Overlay „Nothalt“ (ACK ggf. blockiert, je Safety-Regel).
+3) **Falschfahrt SBHF**  
+   - Overlay-Titel „Falschfahrt SBHF“.  
+   - Wirkung: „Notaus aktiv. Fahrspannung abgeschaltet.“
+
+4) **Timeout Einfahrt SBHF / falsches Gleis / Exit Timeout**  
+   - Overlay-Titel je Cause eindeutig.
+
+5) **Controller-Fehler SBHF**  
+   - eigener Overlay-Titel, nicht mehr unter „Nothalt“ zusammengefasst.
 
 4) **UI Robustheit**  
    - Kein JS-Error bei ACK (kein `sendWsAction`).

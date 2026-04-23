@@ -1,8 +1,10 @@
 # Protokoll: Mega2 ↔ ESP ↔ WebUI
 
-Stand: 2026-01-13
+Stand: 2026-04-23
 
 ## 1) Mega2 → ESP: Status-Payload (I2C / Proto)
+
+`SystemStatus` Version 4, Größe 28 Byte.
 
 ### 1.1 ShadowYard / SBHF
 
@@ -39,7 +41,8 @@ Bedeutung: erlaubte Einfahrgleise im eingeschränkten Betrieb (Bit pro Gleis).
 ## 2) ESP → WebUI: WebSocket State Contract
 
 ### 2.1 Pflichtfelder
-- `safety.lock`, `safety.blockReason`, `safety.errorType`, `safety.errorIndex`
+- `safety.lock`, `safety.blockReason`, `safety.errorCause`, `safety.errorIndex`, `safety.errorDetailCode`
+- optional weiter für Alt-UI: `safety.errorType` als Alias von `errorCause`
 - `mega2.flags`, `mega2.allowedMask`, `mega2.warningMask`
 - **`mega2.sbhfOccupiedMask`** (inkl. Meta-Bit 0x80) oder nested `mega2.sbhf.occupiedMaskRaw`
 
@@ -55,4 +58,8 @@ Die UI darf den State umformen, aber nicht “erfinden”:
 ## 3) Overlay-/ACK-Regeln (Anti-Regressions)
 - ACK-Klick sendet nur ACK und loggt „ACK gesendet“ (kein Selftest behaupten).
 - Selftest-Overlay darf nur erscheinen, wenn `selftestRunning==true` im WS-State.
+- Standard-Safety-Overlay zeigt nun drei Ebenen:
+  - **Titel** = Ursache (`errorCause` / `errorIndex`)
+  - **Wirkung** = „Notaus aktiv. Fahrspannung abgeschaltet.“
+  - **Maßnahme** = handlungsorientierter Text je Ursache
 - Wenn `safety.lock==false` → Overlay muss schließen.

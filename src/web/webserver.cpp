@@ -358,8 +358,13 @@ static String buildWsStateJson(bool includeAnalog)
     s["blockReason"] = SystemRuntimeState::safetyBlockReason();
 
     // Fehlerdetails (für UI-Textmapping)
-    s["errorType"]  = SystemRuntimeState::errorType;
+    s["errorCause"] = SystemRuntimeState::errorCause;
     s["errorIndex"] = SystemRuntimeState::errorIndex;
+    s["errorDetailCode"] = SystemRuntimeState::errorDetailCode;
+    // Übergangskompatibilität für bestehende UI-Pfade
+    s["errorType"]  = SystemRuntimeState::errorCause;
+    s["errType"]    = SystemRuntimeState::errorCause;
+    s["errIndex"]   = SystemRuntimeState::errorIndex;
 
     // Power-Status (UI-semantisch): SYS_POWER_ON ist ein Logik-Flag
     // aus Mega2SystemStatus und bedeutet direkt "Leistung EIN".
@@ -372,8 +377,9 @@ static String buildWsStateJson(bool includeAnalog)
 
     // Klartext (ESP-seitig)
     s["text"] = SystemRuntimeState::safetyErrorText(
-        SystemRuntimeState::errorType,
-        SystemRuntimeState::errorIndex
+        SystemRuntimeState::errorCause,
+        SystemRuntimeState::errorIndex,
+        SystemRuntimeState::errorDetailCode
     );
 
     // Optional: UI kann das direkt nutzen, statt lock/reason zu heuristiken
@@ -756,8 +762,9 @@ static String buildWsStateLiteJson()
     const bool safetyLock = SystemRuntimeState::safetyLock();
     const bool powerOn = (m2.flags & SYS_POWER_ON) != 0;
     const uint8_t safetyBlockReason = SystemRuntimeState::safetyBlockReason();
-    const uint8_t safetyErrorType   = SystemRuntimeState::errorType;
+    const uint8_t safetyErrorCause   = SystemRuntimeState::errorCause;
     const uint8_t safetyErrorIndex  = SystemRuntimeState::errorIndex;
+    const uint8_t safetyErrorDetailCode = SystemRuntimeState::errorDetailCode;
     const bool notausActive = (m2.flags & SYS_NOTAUS_ACTIVE) != 0;
 
     // Autoritative Overlay-/Retry-Wahrheit fuer HMI und andere kleine Clients.
@@ -866,7 +873,7 @@ static String buildWsStateLiteJson()
 
     JsonObject summary = doc["summary"].to<JsonObject>();
     summary["warningPresent"] = warningPresent;
-    summary["emergencyPresent"] = (safetyErrorType != 0u) || notausActive || (safetyBlockReason == SAFETY_BLOCK_EMERGENCY);
+    summary["emergencyPresent"] = (safetyErrorCause != 0u) || notausActive || (safetyBlockReason == SAFETY_BLOCK_EMERGENCY);
 
     JsonObject ui = doc["ui"].to<JsonObject>();
     ui["overlayMode"] = uiOverlayMode;          // "none" | "startup" | "retry"
@@ -895,9 +902,15 @@ static String buildWsStateLiteJson()
     safety["lock"] = safetyLock;
     safety["ackRequired"] = ackRequired;
     safety["blockReason"] = safetyBlockReason;
-    safety["errorType"] = safetyErrorType;
+    safety["errorCause"] = safetyErrorCause;
     safety["errorIndex"] = safetyErrorIndex;
-    safety["text"] = SystemRuntimeState::safetyErrorText(safetyErrorType, safetyErrorIndex);
+    safety["errorDetailCode"] = safetyErrorDetailCode;
+    // Übergangskompatibilität für bestehende WebUI/HMI-Pfade
+    safety["errorType"] = safetyErrorCause;
+    safety["errType"] = safetyErrorCause;
+    safety["errIndex"] = safetyErrorIndex;
+    safety["errorIndex"] = safetyErrorIndex;
+    safety["text"] = SystemRuntimeState::safetyErrorText(safetyErrorCause, safetyErrorIndex, safetyErrorDetailCode);
     safety["notausActive"] = notausActive;
     safety["powerOn"] = powerOn;
 

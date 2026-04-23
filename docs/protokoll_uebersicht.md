@@ -9,12 +9,13 @@
 
 ## Status (Mega2 → ESP)
 
-Struktur: `SystemStatus`
+Struktur: `SystemStatus` (Version 4, 28 Byte)
 
 Wichtige Felder:
 - `flags`
-- `safetyErrorType`
-- `safetyErrorIndex`
+- `errorCause`
+- `errorIndex`
+- `errorDetailCode`
 
 ---
 

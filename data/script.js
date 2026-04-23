@@ -755,9 +755,10 @@ function getSafetyOverlayTexts(safety) {
   try {
     // Prefer numeric codes (errType/errIndex) -> text mapping from safety_ui_texts.js
     if (window.SAFETY_UI_TEXTS && typeof window.SAFETY_UI_TEXTS.fromCodes === 'function') {
-      const et = (safety?.errType  ?? safety?.errorType);
+      const et = (safety?.errType  ?? safety?.errorType ?? safety?.errorCause);
       const ei = (safety?.errIndex ?? safety?.errorIndex);
-      const t = window.SAFETY_UI_TEXTS.fromCodes(et, ei);
+      const ed = (safety?.errorDetailCode ?? 0);
+      const t = window.SAFETY_UI_TEXTS.fromCodes(et, ei, ed);
       if (t && (t.title || (t.lines && t.lines.length))) {
         return { title: t.title || 'Sicherheitsquittierung', lines: t.lines || [] };
       }
@@ -2270,7 +2271,7 @@ function renderPowerWarningsEmergencies(msg) {
 
   // 1) Emergencies / Safety-Text
   const safety = msg && msg.safety;
-  if (safety && (safety.lock === true || safety.ackRequired === true || (safety.errorType ?? safety.errType) > 0)) {
+  if (safety && (safety.lock === true || safety.ackRequired === true || (safety.errorCause ?? safety.errorType ?? safety.errType) > 0)) {
     const t = getSafetyOverlayTexts(safety);
 
     // Build a concise single-line message for the right panel

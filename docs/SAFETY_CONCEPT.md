@@ -74,14 +74,24 @@ ERROR_LOCK	sicherheitsrelevanter Fehler, quittierpflichtig
 
 Emergency = sofortige Abschaltung, lock = true, ACK erforderlich
 
+UI-Regel ab Protokoll V4:
+- **Titel** benennt die Ursache
+- **Wirkung** lautet „Notaus aktiv. Fahrspannung abgeschaltet.“
+- **Maßnahme** ist ursachenspezifisch
+
 4.1 Übersicht
 Reason	Beschreibung
 EMERG_ESTOP_CHAIN_OPEN	Hardware-Not-Aus ausgelöst
 EMERG_OVERCURRENT_BLOCK_x	Überstrom in Block x
 EMERG_SSR_STUCK_ON_TRAFO_A/B	SSR schaltet nicht ab
-EMERG_NOTHALT_SBHF	Zug im Nothalt-Kontaktgleis SBhf
+EMERG_SBH_FALSE_ENTRY	Falschfahrt SBHF: Nothalt-/Stopzone-Kontakt aktiv bei Trafo unten an und Block 6 ohne Strom
+EMERG_SBH_ENTRY_TIMEOUT	Timeout in der Einfahrt SBHF (S12/S13/S14 bzw. GF1/GF2/GF3 nicht rechtzeitig)
+EMERG_SBH_ENTRY_WRONG_TRACK	Einfahrt SBHF in falsches Gleis
+EMERG_SBH_EXIT_TIMEOUT	Aktives SBHF-Ausfahrgleis bleibt trotz Ausfahrbefehl belegt
 EMERG_WEICHENFEHLER_SBHF	Weiche SBhf erreicht Sollstellung nicht
 EMERG_DOPPELTE_BLOCKBELEGUNG_x	Mögliche Doppelbelegung
+EMERG_CONTROLLER_FAULT	Generischer Safety-Controllerfehler
+EMERG_SBH_CONTROLLER_FAULT	Interner SBHF-Ablauf-/Zustandsfehler
 4.2 Trigger-Definitionen (formal)
 Überstrom Block
 SSR_x_cmd == ON

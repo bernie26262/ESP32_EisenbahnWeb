@@ -9,9 +9,9 @@ Die Kommunikation zwischen ETH-Controller (ESP32-S3 ETH) und HMI erfolgt über U
 
 Eigenschaften:
 
-framing-basiert (binär + JSON)
+framing-basiert (binär plus JSON)
 robust gegen Teilframes
-bidirektional (Action + State)
+bidirektional (Action plus State)
 ACK-basiert synchronisiert
 logisch getrennte Datenkanäle:
 state-lite → Systemzustand (event-driven)
@@ -245,7 +245,7 @@ Das Protokoll ist:
 stabil
 effizient
 robust gegen Störungen
-optimiert für Embedded + UI
+optimiert für Embedded  UI
 skalierbar für höhere Datenraten
 Wichtig
 
@@ -262,11 +262,11 @@ Rendering-Optimierungen
 ETH                          HMI
  |                            |
  |--- state-lite -----------> |
- |                            | parse + merge + UI
+ |                            | parse plus merge plus UI
  | <--------- ack ----------- |
  |                            |
  |--- analog ---------------> |
- |                            | parse + merge + UI
+ |                            | parse plus merge plus UI
  | <--------- ack ----------- |
 Eigenschaften
 strikt sequenziell
@@ -284,11 +284,11 @@ HMI                          ETH
  |                            |
  |                            | delayed forceFull
  |--- state-lite -----------> |
- |                            | parse + merge + UI
+ |                            | parse plus merge plus UI
  | <--------- ack ----------- |
  |                            |
  |--- analog ---------------> |
- |                            | parse + merge + UI
+ |                            | parse plus merge plus UI
  | <--------- ack ----------- |
 Eigenschaften
 alte Frames werden verworfen
@@ -513,3 +513,16 @@ Guarding
 oder HMI-Rendering
 
 liegt.
+
+12. Safety Overlay (Stand 2026-04-23)
+Grundlage sind die vom ETH aus dem Mega2-Status weitergereichten Felder:
+- `safety.errorCause`
+- `safety.errorIndex`
+- `safety.errorDetailCode`
+
+Das HMI-Overlay folgt demselben Schema wie die WebUI:
+- **Titel** = Ursache, z. B. „Falschfahrt SBHF“, „Timeout Einfahrt SBHF“, „SBHF Exit Timeout“
+- **Wirkung** = „Notaus aktiv. Fahrspannung abgeschaltet.“
+- **Maßnahme** = ursachenspezifischer Handlungstext
+
+Übergangskompatibel kann ETH zusätzlich `safety.errorType` als Alias von `safety.errorCause` mitsenden.

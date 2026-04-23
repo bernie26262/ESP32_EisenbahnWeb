@@ -19,7 +19,7 @@ Der ESP32 dient ausschließlich der Anzeige, Bedienung und Kommunikation
 - Erzeugt:
   - `SystemStatus.flags`
   - `blockReason`
-  - `safetyErrorType / safetyErrorIndex`
+  - `errorCause / errorIndex / errorDetailCode`
 - Ist **Single Source of Truth** für Safety
 
 👉 Mega2 entscheidet **immer**, ob Leistung erlaubt ist.
@@ -41,11 +41,11 @@ Der ESP32 dient ausschließlich der Anzeige, Bedienung und Kommunikation
 ---
 
 ### WebUI (Browser)
-- Reine Darstellung + Eingabe
+- Reine Darstellung  Eingabe
 - Zeigt:
   - Safety-Zustand
   - Klartextmeldungen
-  - Overlay bei Sperre
+  - Overlay bei Sperre mit Ursache, Wirkung und Maßnahme
 - Sendet:
   - `safetyAck`
   - `powerOn`
@@ -58,9 +58,9 @@ Der ESP32 dient ausschließlich der Anzeige, Bedienung und Kommunikation
 ## Datenfluss (vereinfacht)
 
 Mega2  
-→ (I2C, SystemStatus)  
+→ (I2C, SystemStatus V4 / 28 Byte)  
 ESP32 `SystemRuntimeState`  
-→ (WebSocket JSON)  
+→ (WebSocket JSON mit `safety.errorCause`, `safety.errorIndex`, `safety.errorDetailCode`)  
 Browser UI
 
 ---

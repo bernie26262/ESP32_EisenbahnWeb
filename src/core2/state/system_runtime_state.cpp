@@ -59,8 +59,9 @@ static uint32_t         s_lastBlocksRxMs = 0;
 static uint32_t         s_lastShadowRxMs = 0;
 
 static uint32_t     s_lastRxMsM1 = 0;
-uint8_t SystemRuntimeState::errorType  = 0;
-uint8_t SystemRuntimeState::errorIndex = 0;
+uint8_t SystemRuntimeState::errorCause      = 0;
+uint8_t SystemRuntimeState::errorIndex      = 0;
+uint8_t SystemRuntimeState::errorDetailCode = 0;
 
 // Online-edge tracking (for checklist logic)
 static bool         s_m2OnlinePrev = false;
@@ -213,8 +214,9 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     if (prev.sbhfCurrentGleis  != st.sbhfCurrentGleis)  changed = true;
     if (prev.turnoutSollMask   != st.turnoutSollMask)   changed = true;
     if (prev.turnoutIstMask    != st.turnoutIstMask)    changed = true;
-    if (prev.safetyErrorType   != st.safetyErrorType)   changed = true;
-    if (prev.safetyErrorIndex  != st.safetyErrorIndex)  changed = true;
+    if (prev.errorCause       != st.errorCause)       changed = true;
+    if (prev.errorIndex       != st.errorIndex)       changed = true;
+    if (prev.errorDetailCode  != st.errorDetailCode)  changed = true;
 
     const bool wasOnlinePrev = s_m2OnlinePrev;
 
@@ -266,8 +268,9 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
     s_blockReasonUi = deriveUiBlockReason(st);
 
     // Fehlerdetails aus Mega2
-    errorType  = st.safetyErrorType;
-    errorIndex = st.safetyErrorIndex;
+    errorCause      = st.errorCause;
+    errorIndex      = st.errorIndex;
+    errorDetailCode = st.errorDetailCode;
 
     // REMOVE / DISABLE: checklist auto-clear for Mega2
 // if (s_m2Boot.needsChecklist)
@@ -288,13 +291,14 @@ void SystemRuntimeState::updateMega2Status(const SystemStatus& st)
         lastFlags = st.flags;
 
         DBG_PRINTF(
-            "[SAFETY] lock=%d reason=%u blockUi=%u flags=0x%04X errT=%u errI=%u\n",
+            "[SAFETY] lock=%d reason=%u blockUi=%u flags=0x%04X errC=%u errI=%u errD=%u\n",
             s_safetyLock,
             (uint8_t)s_safetyReason,
             s_blockReasonUi,
             st.flags,
-            errorType,
-            errorIndex
+            errorCause,
+            errorIndex,
+            errorDetailCode
         );
     }
     // WS: only mark dirty if something relevant changed.
@@ -618,27 +622,55 @@ bool SystemRuntimeState::bypassSbhfSelftest()
 // ----------------------------------------------------
 // Klartext für WebUI
 // ----------------------------------------------------
-const char* SystemRuntimeState::safetyErrorText(uint8_t type, uint8_t index)
+const char* SystemRuntimeState::safetyErrorText(uint8_t cause, uint8_t index, uint8_t detailCode)
 {
-    if (type != 0)
+    (void)detailCode;
+
+    if (cause != 0)
     {
-        switch (type)
+        switch (cause)
         {
             case 1:
-                return "Nothalt ausgelöst";
+                return "Falschfahrt SBHF";
 
-            case 2: {
-                static char buf[32];
-                snprintf(buf, sizeof(buf), "Kurzschluss in Block %u", index);
+            case 2:
+                return "Timeout Einfahrt SBHF";
+
+            case 3:
+                return "Einfahrt SBHF in falsches Gleis";
+
+            case 4: {
+                static char buf[40];
+                snprintf(buf, sizeof(buf), "SBHF Exit Timeout Gleis %u", index);
                 return buf;
             }
 
-            case 3: {
+            case 5: {
                 static char buf[48];
-                snprintf(buf, sizeof(buf),
-                         "Schattenbahnhof: Fehler an Weiche %u", index);
+                snprintf(buf, sizeof(buf), "Weichenfehler SBHF W%u", index);
                 return buf;
             }
+
+            case 6: {
+                static char buf[40];
+                snprintf(buf, sizeof(buf), "Doppelbelegung Block %u", index);
+                return buf;
+            }
+
+            case 7: {
+                static char buf[40];
+                snprintf(buf, sizeof(buf), "Kurzschluss Block %u", index);
+                return buf;
+            }
+
+            case 8:
+                return "Controller-Fehler";
+
+            case 9:
+                return "Not-Aus";
+
+            case 10:
+                return "Controller-Fehler SBHF";
 
             default:
                 return "Unbekannter Sicherheitsfehler";
@@ -652,7 +684,7 @@ const char* SystemRuntimeState::safetyErrorText(uint8_t type, uint8_t index)
         return "Systemstart – Quittierung erforderlich";
 
     if (s_blockReasonUi == SAFETY_BLOCK_EMERGENCY)
-        return "NOT-AUS – Anlage gestoppt";
+        return "Notaus aktiv";
 
     return "Safety aktiv – bitte quittieren (ACK)";
 }

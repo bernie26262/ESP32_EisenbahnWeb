@@ -247,9 +247,10 @@ function sendM1SelftestRetry() {
 function getSafetyOverlayTexts(safety) {
   try {
     if (window.SAFETY_UI_TEXTS && typeof window.SAFETY_UI_TEXTS.fromCodes === "function") {
-      const et = (safety?.errType ?? safety?.errorType);
+      const et = (safety?.errType ?? safety?.errorType ?? safety?.errorCause);
       const ei = (safety?.errIndex ?? safety?.errorIndex);
-      const t = window.SAFETY_UI_TEXTS.fromCodes(et, ei);
+      const ed = (safety?.errorDetailCode ?? 0);
+      const t = window.SAFETY_UI_TEXTS.fromCodes(et, ei, ed);
       if (t && (t.title || (t.lines && t.lines.length))) {
         return { title: t.title || "Sicherheitsquittierung", lines: t.lines || [] };
       }
@@ -675,7 +676,7 @@ function renderPowerWarningsEmergencies(msg) {
   }
 
   const safety = msg?.safety;
-  if (safety && (safety.lock === true || safety.ackRequired === true || (safety.errorType ?? safety.errType) > 0)) {
+  if (safety && (safety.lock === true || safety.ackRequired === true || (safety.errorCause ?? safety.errorType ?? safety.errType) > 0)) {
     const t = getSafetyOverlayTexts(safety);
     const title = (t?.title || "").trim();
     const first = (Array.isArray(t?.lines) && t.lines.length) ? String(t.lines[0]).trim() : "";

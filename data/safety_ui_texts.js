@@ -208,23 +208,115 @@ window.safetyUiMap = {
         icon: "stop",
         overlay: true,
         ackRequired: true,
-        title: "NOT-AUS – Anlage gestoppt",
+        title: "Not-Aus",
         text: [
-            "Der Not-Halt wurde ausgelöst.",
+            "Notaus aktiv. Fahrspannung abgeschaltet.",
             "",
             "Bitte Ursache prüfen, Not-Halt entriegeln",
             "und anschließend bestätigen (ACK)."
         ]
     },
 
+    
+    "EMERG_SBH_FALSE_ENTRY": {
+        level: "EMERGENCY",
+        color: "red",
+        icon: "stop",
+        overlay: true,
+        ackRequired: true,
+        title: "Falschfahrt SBHF",
+        text: [
+            "Notaus aktiv. Fahrspannung abgeschaltet.",
+            "",
+            "Trafos auf 0 drehen, Zug aus dem Nothaltbereich entfernen,",
+            "bestätigen und Trafos erst danach wieder einschalten."
+        ]
+    },
+
+    "EMERG_SBH_ENTRY_TIMEOUT": {
+        level: "EMERGENCY",
+        color: "red",
+        icon: "stop",
+        overlay: true,
+        ackRequired: true,
+        title: "Timeout Einfahrt SBHF",
+        text: [
+            "Notaus aktiv. Fahrspannung abgeschaltet.",
+            "",
+            "Einfahrt in den Schattenbahnhof hat das Sollziel nicht rechtzeitig erreicht.",
+            "Zuglage prüfen, Ursache beseitigen, dann bestätigen (ACK)."
+        ]
+    },
+
+    "EMERG_SBH_ENTRY_WRONG_TRACK": {
+        level: "EMERGENCY",
+        color: "red",
+        icon: "stop",
+        overlay: true,
+        ackRequired: true,
+        title: "Einfahrt SBHF in falsches Gleis",
+        text: [
+            "Notaus aktiv. Fahrspannung abgeschaltet.",
+            "",
+            "Der Zug ist nicht in das vorgesehene SBHF-Gleis eingefahren.",
+            "Weichenlage und Zugposition prüfen, dann bestätigen (ACK)."
+        ]
+    },
+
+    "EMERG_SBH_EXIT_TIMEOUT": {
+        level: "EMERGENCY",
+        color: "red",
+        icon: "stop",
+        overlay: true,
+        ackRequired: true,
+        title: "SBHF Exit Timeout",
+        text: [
+            "Notaus aktiv. Fahrspannung abgeschaltet.",
+            "",
+            "Das aktive SBHF-Gleis {x} blieb nach der Ausfahrt zu lange belegt.",
+            "Zuglage prüfen, Ursache beseitigen, dann bestätigen (ACK)."
+        ]
+    },
+
+    "EMERG_CONTROLLER_FAULT": {
+        level: "EMERGENCY",
+        color: "red",
+        icon: "alert",
+        overlay: true,
+        ackRequired: true,
+        title: "Controller-Fehler",
+        text: [
+            "Notaus aktiv. Fahrspannung abgeschaltet.",
+            "",
+            "Interner Safety-/Controller-Fehler erkannt.",
+            "Bitte bestätigen und Systemzustand prüfen."
+        ]
+    },
+
+    "EMERG_SBH_CONTROLLER_FAULT": {
+        level: "EMERGENCY",
+        color: "red",
+        icon: "alert",
+        overlay: true,
+        ackRequired: true,
+        title: "Controller-Fehler SBHF",
+        text: [
+            "Notaus aktiv. Fahrspannung abgeschaltet.",
+            "",
+            "Interner SBHF-Ablauf-/Zustandsfehler erkannt.",
+            "Bitte bestätigen und SBHF-Zustand prüfen."
+        ]
+    },
     "EMERG_WEICHENFEHLER_SBHF": {
         level: "EMERGENCY",
         color: "red",
         icon: "stop",
         overlay: true,
         ackRequired: true,
-        title: "NOT-AUS – Anlage gestoppt",
+        title: "Weichenfehler SBHF",
         text: [
+            "Notaus aktiv. Fahrspannung abgeschaltet.",
+            "",
             "Weichenfehler im Schattenbahnhof.",
             "",
             "Weiche {x} hat nicht korrekt geschaltet.",
@@ -239,11 +331,11 @@ window.safetyUiMap = {
         icon: "alert",
         overlay: true,
         ackRequired: true,
-        title: "Not-Aus – Kurzschluss / Überstrom",
+        title: "Kurzschluss / Überstrom",
         text: [
             "Kurzschluss oder Überstrom erkannt: {x}.",
             "",
-            "Anlage wurde abgeschaltet.",
+            "Notaus aktiv. Fahrspannung abgeschaltet.",
             "Ursache prüfen (Verdrahtung, Fahrzeug, Weiche, Block).",
             "Nach Beseitigung: ACK."
         ]
@@ -271,11 +363,11 @@ window.safetyUiMap = {
         icon: "alert",
         overlay: true,
         ackRequired: true,
-        title: "Doppelte Blockbelegung",
+        title: "Doppelbelegung",
         text: [
             "Doppelte Belegung erkannt: {x}.",
             "",
-            "Anlage wurde abgeschaltet.",
+            "Notaus aktiv. Fahrspannung abgeschaltet.",
             "Ursache prüfen; Quittierung erst möglich, wenn die Ursache weg ist",
             "(z.B. Override aus / Strom ~0 mA).",
             "Nach Beseitigung: ACK."
@@ -420,18 +512,23 @@ const SAFETY_TEXTS = window.safetyUiMap;
 
 
 // ---------------------------------------------------------------------------
-// Numeric errorType/errorIndex support (ESP sends codes to keep WS payload small)
-// ---------------------------------------------------------------------------
-// Mega2 safety_error.h (errType):
-// 0=NONE, 1=NOTAUS, 2=BLOCK_SHORT, 3=SBH_WEICHE, 4=SSR_STUCK, 5=DOUBLE_OCC (patched)
-// If your enums differ, adjust this mapping.
+// Numeric errorCause/errorIndex support (ESP sends codes to keep WS payload small)
+// Mega2 ErrorCause enum (v4):
+// 0=NONE, 1=SBH_FALSE_ENTRY, 2=SBH_ENTRY_TIMEOUT, 3=SBH_ENTRY_WRONG_TRACK,
+// 4=SBH_EXIT_TIMEOUT, 5=SBH_WEICHE, 6=DOUBLE_OCCUPANCY, 7=BLOCK_SHORT,
+// 8=CONTROLLER_FAULT, 9=EXTERNAL_ESTOP, 10=SBH_CONTROLLER_FAULT
 const SAFETY_ERRTYPE_TO_KEY = {
   0: null,
-  1: "EMERG_ESTOP_CHAIN_OPEN",
-  2: "EMERG_BLOCK_SHORT",
-  3: "EMERG_WEICHENFEHLER_SBHF",
-  4: "EMERG_SSR_STUCK",
-  5: "EMERG_DOUBLE_OCCUPANCY",
+  1: "EMERG_SBH_FALSE_ENTRY",
+  2: "EMERG_SBH_ENTRY_TIMEOUT",
+  3: "EMERG_SBH_ENTRY_WRONG_TRACK",
+  4: "EMERG_SBH_EXIT_TIMEOUT",
+  5: "EMERG_WEICHENFEHLER_SBHF",
+  6: "EMERG_DOUBLE_OCCUPANCY",
+  7: "EMERG_BLOCK_SHORT",
+  8: "EMERG_CONTROLLER_FAULT",
+  9: "EMERG_ESTOP_CHAIN_OPEN",
+  10: "EMERG_SBH_CONTROLLER_FAULT",
 };
 
 // Optional: block display names (used for SBhf blocks in UI)
@@ -488,7 +585,7 @@ window.SAFETY_UI_TEXTS.fromKey = function(key) {
  * Build { title, lines[] } from numeric errType/errIndex.
  * Returns null if errType is unknown.
  */
-window.SAFETY_UI_TEXTS.fromCodes = function(errType, errIndex) {
+window.SAFETY_UI_TEXTS.fromCodes = function(errType, errIndex, detailCode) {
   const t = Number(errType);
   const idx = Number(errIndex);
 
@@ -515,7 +612,11 @@ window.SAFETY_UI_TEXTS.fromCodes = function(errType, errIndex) {
   // idx formatting: for block-related errors, show "Block B<idx>" (Mega2 prints B%d)
   let idxFmt = idx;
   if (key === "EMERG_BLOCK_SHORT" || key === "EMERG_DOUBLE_OCCUPANCY") {
-    idxFmt = `Block B${idx}`;
+    idxFmt = `Block ${idx}`;
+  } else if (key === "EMERG_SBH_EXIT_TIMEOUT") {
+    idxFmt = `${idx}`;
+  } else if (key === "EMERG_WEICHENFEHLER_SBHF") {
+    idxFmt = `${idx}`;
   } else if (key === "EMERG_SSR_STUCK") {
     idxFmt = (idx === 0 ? "A" : "B");
   }

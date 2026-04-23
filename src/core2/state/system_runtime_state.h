@@ -84,10 +84,11 @@ namespace SystemRuntimeState
     // Abgeleitete Safety-Informationen
     bool safetyLock();
     SafetyReason safetyReason();
-    const char* safetyErrorText(uint8_t type, uint8_t index);
+    const char* safetyErrorText(uint8_t cause, uint8_t index, uint8_t detailCode);
 
-    extern uint8_t  errorType;
+    extern uint8_t  errorCause;
     extern uint8_t  errorIndex;
+    extern uint8_t  errorDetailCode;
 
     uint8_t safetyBlockReason();
     const char* safetyLockText();
