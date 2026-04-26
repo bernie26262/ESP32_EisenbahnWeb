@@ -855,10 +855,17 @@ static String buildWsStateLiteJson()
         const bool stDone =
             ((m2shadow.selftestFlags & 0x02u) != 0u) ||
             ((m2.sbhfOccupiedMask & 0x40u) != 0u);
+        const uint8_t allowedMask = (uint8_t)((m2.reserved >> 8) & 0xFFu);
+        const uint8_t sbhfWarningMask = m2WarningMask;
+        const bool restricted = (allowedMask != 0x07u && allowedMask != 0x00u);
+
         sbhf["state"] = m2.sbhfState;
         sbhf["currentGleis"] = m2.sbhfCurrentGleis;
         sbhf["currentTrack"] = m2.sbhfCurrentGleis;
         sbhf["block5ToSbhfActive"] = ((m2.sbhfFlags & 0x01u) != 0u);
+        sbhf["allowedMask"] = allowedMask;
+        sbhf["warningMask"] = sbhfWarningMask;
+        sbhf["restricted"] = restricted;
         sbhf["selftestRunning"] = stRunning;
         sbhf["startPending"] = startPending;
         sbhf["selftestDone"] = stDone;
