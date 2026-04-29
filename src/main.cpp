@@ -23,6 +23,46 @@
 
 #include "debug.h"
 
+#if EE_DEBUG_REACT
+static uint32_t g_reactLastLoopStartMs = 0;
+static uint32_t g_reactLastSummaryMs = 0;
+static uint32_t g_reactLoopCount = 0;
+static uint32_t g_reactLoopMaxMs = 0;
+
+static inline void reactLoopBegin()
+{
+    g_reactLastLoopStartMs = (uint32_t)millis();
+}
+
+static inline void reactLoopEnd()
+{
+    const uint32_t now = (uint32_t)millis();
+    const uint32_t dt = (uint32_t)(now - g_reactLastLoopStartMs);
+    ++g_reactLoopCount;
+    if (dt > g_reactLoopMaxMs) g_reactLoopMaxMs = dt;
+
+    if (dt >= 50) {
+        LOG_REACT("loop slow dt=%lu heap=%lu",
+                  (unsigned long)dt,
+                  (unsigned long)ESP.getFreeHeap());
+    }
+
+    if ((uint32_t)(now - g_reactLastSummaryMs) >= 5000) {
+        LOG_REACT("loop summary count=%lu maxDt=%lu heap=%lu minHeap=%lu",
+                  (unsigned long)g_reactLoopCount,
+                  (unsigned long)g_reactLoopMaxMs,
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)ESP.getMinFreeHeap());
+        g_reactLastSummaryMs = now;
+        g_reactLoopCount = 0;
+        g_reactLoopMaxMs = 0;
+    }
+}
+#else
+static inline void reactLoopBegin() {}
+static inline void reactLoopEnd() {}
+#endif
+
 static void disableWirelessHard()
 {
   WiFi.persistent(false);
@@ -43,6 +83,9 @@ static void disableWirelessHard()
 // ============================================================================
 void setup()
 {
+#if EE_DEBUG_REACT
+    const uint32_t reactSetupStartMs = (uint32_t)millis();
+#endif
     disableWirelessHard(); // <-- ganz am Anfang
     Serial.begin(115200);
     delay(200);
@@ -94,6 +137,12 @@ void setup()
     EE_LOGI("BOOT", "Setup abgeschlossen");
 
     HMI::begin();
+#if EE_DEBUG_REACT
+    LOG_REACT("setup done dt=%lu heap=%lu minHeap=%lu",
+              (unsigned long)((uint32_t)millis() - reactSetupStartMs),
+              (unsigned long)ESP.getFreeHeap(),
+              (unsigned long)ESP.getMinFreeHeap());
+#endif
 }
 
 static constexpr uint32_t HMI_CMD_FORCEFULL_DELAY_MS = 100;
@@ -285,6 +334,8 @@ static void handleHmiActionLine(const String& line)
 // ============================================================================
 void loop()
 {
+    reactLoopBegin();
+
     Web::loop();
     Mega2Link::update();
 
@@ -313,4 +364,6 @@ void loop()
     HmiPush::loopAnalog();
 
     Ui::OledStatus::tick();
+
+    reactLoopEnd();
 }

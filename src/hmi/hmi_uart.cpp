@@ -136,6 +136,13 @@ namespace HMI
             s_hasInFlight = (s_inFlight.seq != 0);
             s_inFlight.dropped = false;
 
+            LOG_HMILAT("send seq=%lu kind=%s len=%u q=%u ageQueueMs=%lu",
+                       (unsigned long)s_inFlight.seq,
+                       kindName(s_inFlight.kind),
+                       (unsigned)s_inFlight.json.length(),
+                       (unsigned)s_qCount,
+                       (unsigned long)(now - s_inFlight.createdMs));
+
             EE_LOGI("HMIUART",
                     "TX seq=%lu kind=%s len=%u q=%u",
                     (unsigned long)s_inFlight.seq,
@@ -235,6 +242,11 @@ namespace HMI
             s_inFlight.seq = seq;
             s_inFlight.createdMs = now;
             s_inFlight.kind = TxKind::Other;
+            LOG_HMILAT("send seq=%lu kind=%s len=%u q=%u ageQueueMs=0",
+                       (unsigned long)seq,
+                       kindName(TxKind::Other),
+                       (unsigned)s.length(),
+                       (unsigned)s_qCount);
             EE_LOGI("HMIUART",
                     "TX seq=%lu len=%u",
                     (unsigned long)seq,
@@ -351,6 +363,11 @@ namespace HMI
 
         if (s_waitAck && seq == s_lastTxSeq)
         {
+            LOG_HMILAT("ack seq=%lu kind=%s dt=%lu q=%u",
+                       (unsigned long)seq,
+                       kindName(s_inFlight.kind),
+                       (unsigned long)dt,
+                       (unsigned)s_qCount);
             s_waitAck = false;
             s_hasInFlight = false;
             s_inFlight = TxFrame{};

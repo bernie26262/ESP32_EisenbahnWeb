@@ -239,10 +239,45 @@ static void diagLeaseTick() {
 }
 
 static void wsTextToBase(const String& payload) {
+    uint16_t clients = 0;
+    for (auto &c : s_wsClients) {
+        if (c.used && c.subBase) ++clients;
+    }
+
+    const uint32_t t0 = (uint32_t)millis();
+    LOG_WSLAT("broadcast start clients=%u len=%u",
+              (unsigned)clients,
+              (unsigned)payload.length());
+
     for (auto &c : s_wsClients) {
         if (!c.used || !c.subBase) continue;
         ws.text(c.id, payload);
     }
+
+    const uint32_t dt = (uint32_t)((uint32_t)millis() - t0);
+    LOG_WSLAT("broadcast done dt=%lu clients=%u len=%u",
+              (unsigned long)dt,
+              (unsigned)clients,
+              (unsigned)payload.length());
+}
+
+static void sendTimedStatic(AsyncWebServerRequest* req,
+                            const char* url,
+                            const char* path,
+                            const char* contentType,
+                            const char* cacheControl)
+{
+    const uint32_t t0 = (uint32_t)millis();
+    AsyncWebServerResponse* res = req->beginResponse(LittleFS, path, contentType);
+    if (cacheControl && cacheControl[0]) {
+        res->addHeader("Cache-Control", cacheControl);
+    }
+    req->send(res);
+    const uint32_t dt = (uint32_t)((uint32_t)millis() - t0);
+    LOG_HTTP("GET %s dt=%lu heap=%lu",
+             url,
+             (unsigned long)dt,
+             (unsigned long)ESP.getFreeHeap());
 }
 
 static void wsTextToDiag(const String& payload) {
@@ -1318,6 +1353,22 @@ if (type != WS_EVT_DATA)
     if (!action)
         return;
 
+    const uint32_t reactWsStartMs = (uint32_t)millis();
+    LOG_REACT("ws rx id=%u action=%s len=%u heap=%lu",
+              (unsigned)(client ? client->id() : 0),
+              action,
+              (unsigned)len,
+              (unsigned long)ESP.getFreeHeap());
+
+    auto reactWsDone = [&]() {
+        const uint32_t dt = (uint32_t)((uint32_t)millis() - reactWsStartMs);
+        LOG_REACT("ws done id=%u action=%s dt=%lu heap=%lu",
+                  (unsigned)(client ? client->id() : 0),
+                  action,
+                  (unsigned long)dt,
+                  (unsigned long)ESP.getFreeHeap());
+    };
+
     LOG_WS("action rx: %s", action);
 
     // Update lastSeen for this client (used for diag lease + presence)
@@ -1359,6 +1410,7 @@ if (type != WS_EVT_DATA)
 
         (void)oldDiag; // aktuell nicht genutzt, aber bewusst gelesen
     }
+    reactWsDone();
     return;
 }
 
@@ -1647,6 +1699,7 @@ if (type != WS_EVT_DATA)
     {
         Mega2Link::safetyAck();
         markStateDirtyAll();
+        reactWsDone();
         return;
     }
 
@@ -1654,6 +1707,7 @@ if (type != WS_EVT_DATA)
     {
         Mega2Link::nothalt();
         markStateDirtyAll();
+        reactWsDone();
         return;
     }
 
@@ -1662,6 +1716,7 @@ if (type != WS_EVT_DATA)
         EE_LOGI("WS", "action powerOn received");
         Mega2Link::powerOn();
         markStateDirtyAll();
+        reactWsDone();
         return;
     }
 
@@ -1670,6 +1725,7 @@ if (type != WS_EVT_DATA)
         EE_LOGI("WS", "action powerOff received");
         Mega2Link::powerOff();
         markStateDirtyAll();
+        reactWsDone();
         return;
     }
 
@@ -1681,6 +1737,7 @@ if (type != WS_EVT_DATA)
         else                Mega2Link::powerOn();
 
         markStateDirtyAll();
+        reactWsDone();
         return;
     }
 
@@ -2047,14 +2104,18 @@ void Web::begin()
 
     // HTML bewusst nicht hart cachen, damit UI-Änderungen / neue Versionen
     // beim nächsten Seitenaufruf sicher sichtbar werden.
-    server.serveStatic("/index.htm", LittleFS, "/index.htm")
-        .setCacheControl("no-cache, must-revalidate");
-    server.serveStatic("/index_tabs.htm", LittleFS, "/index_tabs.htm")
-        .setCacheControl("no-cache, must-revalidate");
-    server.serveStatic("/trackdiagram.htm", LittleFS, "/trackdiagram.htm")
-        .setCacheControl("no-cache, must-revalidate");
-    server.serveStatic("/diag.htm", LittleFS, "/diag.htm")
-        .setCacheControl("no-cache, must-revalidate");
+    server.on("/index.htm", HTTP_GET, [](AsyncWebServerRequest* req) {
+        sendTimedStatic(req, "/index.htm", "/index.htm", "text/html", "no-cache, must-revalidate");
+    });
+    server.on("/index_tabs.htm", HTTP_GET, [](AsyncWebServerRequest* req) {
+        sendTimedStatic(req, "/index_tabs.htm", "/index_tabs.htm", "text/html", "no-cache, must-revalidate");
+    });
+    server.on("/trackdiagram.htm", HTTP_GET, [](AsyncWebServerRequest* req) {
+        sendTimedStatic(req, "/trackdiagram.htm", "/trackdiagram.htm", "text/html", "no-cache, must-revalidate");
+    });
+    server.on("/diag.htm", HTTP_GET, [](AsyncWebServerRequest* req) {
+        sendTimedStatic(req, "/diag.htm", "/diag.htm", "text/html", "no-cache, must-revalidate");
+    });
 
     // JS/CSS dürfen aggressiv gecacht werden.
     server.serveStatic("/script.js", LittleFS, "/script.js")

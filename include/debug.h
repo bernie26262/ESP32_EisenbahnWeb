@@ -46,28 +46,65 @@
 #ifndef EE_DEBUG_DIAG
   #define EE_DEBUG_DIAG 0
 #endif
+#ifndef EE_DEBUG_REACT
+  #define EE_DEBUG_REACT 0
+#endif
+#ifndef EE_DEBUG_HTTP
+  #define EE_DEBUG_HTTP 0
+#endif
+#ifndef EE_DEBUG_HMILAT
+  #define EE_DEBUG_HMILAT 0
+#endif
+
+
+#ifndef EE_LOG_ONLY_WHEN_SERIAL_CONNECTED
+  // Default fuer alle Environments: haeufige Serial-Logs nicht in den USB-CDC-Puffer
+  // schreiben, solange kein Monitor verbunden ist. Das verhindert Kaltstart-Bremsen
+  // durch Debug-Ausgaben ohne lesenden Host. Bei Bedarf explizit mit
+  // -DEE_LOG_ONLY_WHEN_SERIAL_CONNECTED=0 uebersteuerbar.
+  #define EE_LOG_ONLY_WHEN_SERIAL_CONNECTED 1
+#endif
+
+static inline bool eeLogSerialReady() {
+#if EE_LOG_ONLY_WHEN_SERIAL_CONNECTED
+  // Testmodus: keine Serial-Ausgaben erzeugen, solange kein Monitor liest.
+  // availableForWrite() ist hier absichtlich robuster als nur `if (Serial)`,
+  // weil der Monitor in dieser Env mit DTR/RTS=0 geöffnet wird.
+  return Serial.availableForWrite() > 64;
+#else
+  return true;
+#endif
+}
+
+#define EE_LOG_PRINTF_LINE(prefix, fmt, ...) \
+  do { \
+    if (eeLogSerialReady()) { \
+      Serial.printf(prefix fmt, ##__VA_ARGS__); \
+      Serial.println(); \
+    } \
+  } while (0)
 
 // ---------- internal helpers ----------
 #if EE_LOG_ENABLE_ERROR
-  #define EE_LOGE(tag, fmt, ...) do { Serial.printf("[E][%s] " fmt, tag, ##__VA_ARGS__); Serial.println(); } while (0)
+  #define EE_LOGE(tag, fmt, ...) EE_LOG_PRINTF_LINE("[E][%s] ", fmt, tag, ##__VA_ARGS__)
 #else
   #define EE_LOGE(tag, fmt, ...) do {} while (0)
 #endif
 
 #if EE_LOG_ENABLE_WARN
-  #define EE_LOGW(tag, fmt, ...) do { Serial.printf("[W][%s] " fmt, tag, ##__VA_ARGS__); Serial.println(); } while (0)
+  #define EE_LOGW(tag, fmt, ...) EE_LOG_PRINTF_LINE("[W][%s] ", fmt, tag, ##__VA_ARGS__)
 #else
   #define EE_LOGW(tag, fmt, ...) do {} while (0)
 #endif
 
 #if EE_LOG_ENABLE_INFO
-  #define EE_LOGI(tag, fmt, ...) do { Serial.printf("[I][%s] " fmt, tag, ##__VA_ARGS__); Serial.println(); } while (0)
+  #define EE_LOGI(tag, fmt, ...) EE_LOG_PRINTF_LINE("[I][%s] ", fmt, tag, ##__VA_ARGS__)
 #else
   #define EE_LOGI(tag, fmt, ...) do {} while (0)
 #endif
 
 #if EE_LOG_ENABLE_DEBUG
-  #define EE_LOGD(tag, fmt, ...) do { Serial.printf("[D][%s] " fmt, tag, ##__VA_ARGS__); Serial.println(); } while (0)
+  #define EE_LOGD(tag, fmt, ...) EE_LOG_PRINTF_LINE("[D][%s] ", fmt, tag, ##__VA_ARGS__)
 #else
   #define EE_LOGD(tag, fmt, ...) do {} while (0)
 #endif
@@ -80,7 +117,7 @@
 #endif
 
 #if EE_DEBUG_WSLAT
-  #define LOG_WSLAT(...) EE_LOGD("WSLAT", __VA_ARGS__)
+  #define LOG_WSLAT(fmt, ...) EE_LOG_PRINTF_LINE("[WS] ", fmt, ##__VA_ARGS__)
 #else
   #define LOG_WSLAT(...) do {} while (0)
 #endif
@@ -115,12 +152,30 @@
   #define LOG_DIAG(...)  do {} while (0)
 #endif
 
+#if EE_DEBUG_REACT
+  #define LOG_REACT(fmt, ...) EE_LOG_PRINTF_LINE("[REACT] ", fmt, ##__VA_ARGS__)
+#else
+  #define LOG_REACT(...) do {} while (0)
+#endif
+
+#if EE_DEBUG_HTTP
+  #define LOG_HTTP(fmt, ...) EE_LOG_PRINTF_LINE("[HTTP] ", fmt, ##__VA_ARGS__)
+#else
+  #define LOG_HTTP(...) do {} while (0)
+#endif
+
+#if EE_DEBUG_HMILAT
+  #define LOG_HMILAT(fmt, ...) EE_LOG_PRINTF_LINE("[HMILAT] ", fmt, ##__VA_ARGS__)
+#else
+  #define LOG_HMILAT(...) do {} while (0)
+#endif
+
 // ---------- Backward compatibility (optional) ----------
 // Wenn im Code noch DBG_* verwendet wird: an EE_LOGD hängen.
 // (Und bleibt im Release aus, solange EE_LOG_ENABLE_DEBUG=0 ist.)
-#define DBG_PRINT(x)    do { if (EE_LOG_ENABLE_DEBUG) Serial.print(x); } while (0)
-#define DBG_PRINTLN(x)  do { if (EE_LOG_ENABLE_DEBUG) Serial.println(x); } while (0)
-#define DBG_PRINTF(...) do { if (EE_LOG_ENABLE_DEBUG) Serial.printf(__VA_ARGS__); } while (0)
+#define DBG_PRINT(x)    do { if (EE_LOG_ENABLE_DEBUG && eeLogSerialReady()) Serial.print(x); } while (0)
+#define DBG_PRINTLN(x)  do { if (EE_LOG_ENABLE_DEBUG && eeLogSerialReady()) Serial.println(x); } while (0)
+#define DBG_PRINTF(...) do { if (EE_LOG_ENABLE_DEBUG && eeLogSerialReady()) Serial.printf(__VA_ARGS__); } while (0)
 
 // ---------- Compatibility aliases ----------
 // Manche Stellen nutzen LOG_I/LOG_E printf-artig (fmt, ...), inkl. "[TAG]" im Formatstring.
