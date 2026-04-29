@@ -2,14 +2,23 @@
 
 ## Überblick
 
-Die Blocksteuerung läuft vollständig auf Mega2 und übernimmt: -
-Belegungserkennung - Freigabelogik (Grant) - Sicherheitsregeln -
-Speziallogik Block 4 - Integration SBHF
+Die Blocksteuerung läuft vollständig auf Mega2 und übernimmt:
+
+- Belegungserkennung
+- Freigabelogik (Grant)
+- Sicherheitsregeln
+- Speziallogik Block 4
+- Integration SBHF
+- Trafo-getrennte Energiepfadsteuerung
+
+---
 
 ## Blockstruktur
 
-Blöcke 1--6: Strecke\
-Blöcke 7--9: SBHF
+Blöcke 1–6: Strecke  
+Blöcke 7–9: SBHF
+
+---
 
 ## Belegung
 
@@ -17,103 +26,189 @@ occupied = contactActive OR currentAboveThreshold
 
 ### Kontaktgleis
 
--   digital, active LOW
--   sofort
+- digital, active LOW
+- sofort wirksam
 
 ### Strom
 
--   RMS-basiert
--   kontinuierlich
+- RMS-basiert
+- kontinuierlich
+- mit Stabilitätsbewertung
+
+---
 
 ## Blocklogik
 
-isOccupied() isReallyFree(now)
+- isOccupied()
+- isReallyFree(now)
 
-Freigabeverzögerung \~2.5 s
+Freigabeverzögerung: ~2.5 s
+
+---
 
 ## Grant-Logik
 
 canEnter(from, to)
 
+entscheidet über Einfahrfreigaben unter Berücksichtigung von:
+
+- Belegung
+- Stabilität
+- Trafo-Zustand
+- SBHF-Zustand
+
+---
+
+## Trafo-getrennte Sperrlogik (seit 127f)
+
+Die Freigabelogik ist vollständig nach Energiepfaden getrennt.
+
+### Konzept
+
+Nicht der Startblock bestimmt die Freigabe, sondern:
+
+👉 der Energiezustand des Zielbereichs
+
+---
+
+### 🔵 Trafo oben (Blöcke 1–3)
+
+Betroffene Pfade:
+
+- 4 → 1
+- 1 → 2
+- 2 → 3
+
+Wenn Trafo oben AUS:
+
+- diese Einfahrten sind gesperrt
+
+---
+
+### 🟢 Trafo unten (Blöcke 4–6 + SBHF)
+
+Betroffene Pfade:
+
+- 3 → 4
+- 4 → 5
+- 5 → SBHF
+- SBHF → 6
+- 6 → 4
+
+Wenn Trafo unten AUS:
+
+- diese Einfahrten sind gesperrt
+
+---
+
+## Trafo-Grenzen
+
+Besonders kritisch sind:
+
+- 4 → 1 (Übergang unten → oben)
+- 3 → 4 (Übergang oben → unten)
+
+Diese werden jeweils durch den Ziel-Trafo gesteuert.
+
+---
+
+## Verhalten bei Trafo AUS
+
+Beim Unterschreiten der AUS-Schwelle:
+
+- nur betroffene Pfade werden gesperrt
+- keine globale Blockade
+- bestehende Belegungen bleiben gültig
+
+---
+
+## Verhalten bei Trafo EIN (Recovery)
+
+Beim Wiedereinschalten:
+
+- getrennte Recovery-Timer:
+  - oben
+  - unten
+
+Während Recovery:
+
+- keine Freigaben im jeweiligen Pfad
+
+Ziel:
+
+- stabile Messwerte vor Freigabe
+
+---
+
 ## Spezialfall Block 4
 
--   3→4 abhängig von Block 6 + Lastverteilung
--   6→4 abhängig von Block 1--3
--   Priorität: Block 6
+- 3→4 abhängig vom unteren Pfad
+- 6→4 abhängig von Block 1–3
+- Priorität: Block 6
+
+---
 
 ## Relais
 
 updateBlockGrantRelays()
 
-## Sperre bei Trafo AUS / Erholung nach Trafo EIN
+setzt physische Sperr-/Freigaberelais entsprechend der Grant-Logik
 
-### Aktuell wirksame Logik
+---
 
-Im aktuellen Implementierungsstand wird die Einfahrt nicht primär über den
-früheren Grant-Freeze geschützt, sondern über die Kombination aus:
+## SBHF-Integration
 
-- `m_powerUnavailable`
-- `m_powerRecoveryBlockUntilMs
+Der SBHF ist vollständig dem unteren Trafo zugeordnet.
 
-### 1. Power unavailable
+### Konsequenzen
 
-Sobald mindestens einer der beiden Trafos unter die AUS-Schwelle fällt,
-setzt `updateTrafoPowerRecoveryBlock()`:
+- Trafo oben beeinflusst SBHF nicht
+- Trafo unten steuert SBHF vollständig
 
-- `setPowerUnavailable(true)`
+---
 
-Folge:
+## Timeout-Logik SBHF (kritisch)
 
-- `canEnter()` liefert sofort `false`
-- alle neuen Einfahrten sind gesperrt
+### Exit Timeout
 
-Log:
+- wird bei Trafo unten AUS:
+  - gestoppt
+  - nach EIN neu gestartet
 
-- `[BLK] power unavailable -> block all entries`
+### Entry Timeout (seit 127f fix)
 
-### 2. Power recovery block
+- wird bei Trafo unten AUS:
+  - deaktiviert
+  - Timer werden zurückgesetzt
 
-Sobald nach einer Low-Phase **beide** Trafos wieder oberhalb der
-EIN-Schwelle liegen, wird gestartet:
+- nach Trafo unten EIN:
+  - kompletter Neustart der Überwachung
 
-- `startPowerRecoveryBlock(now)`
+### Ziel
 
-Dauer:
+- keine falschen Emergencies bei Spannungsverlust
+- deterministisches Verhalten bei Resume
 
-- **4000 ms**
+---
 
-Folge:
+## Abgrenzung zum alten System
 
-- `canEnter()` bleibt weiterhin gesperrt
-- auch nach Rückkehr der Trafospannung werden zunächst keine neuen Einfahrten
-  erlaubt
+Vor 127f:
 
-Log:
+- globale Sperre (`m_powerUnavailable`)
+- globale Recovery
 
-- `[BLK] power recovery block start (4000 ms)`
-- `[BLK] power recovery block end`
+Jetzt:
 
-### Technische Wirkung
+- getrennte Pfade
+- keine unnötigen Blockierungen
+- klar nachvollziehbare Freigaben
 
-`canEnter()` blockiert im aktuellen Stand über:
+---
 
-- `m_powerUnavailable || isPowerRecoveryBlockActive(now)`
+## Zielsystem
 
-Die Belegungserkennung selbst läuft weiter.
-
-### Abgrenzung zum alten Grant-Freeze
-
-Im `BlockController` existiert weiterhin zusätzlich:
-
-- `m_grantFreezeUntilMs`
-- `GRANT_FREEZE_MS = 2000`
-
-Dieser Mechanismus ist im aktuellen Hauptpfad jedoch **nicht** die maßgebliche
-Trafo-Erholsperre.
-
-## Ziel
-
--   kein ungewolltes Losfahren
--   deterministisch
--   keine Freigabe unmittelbar nach Wiederkehr der Trafospannung
--   stabile Belegungs- und Stromauswertung vor neuen Einfahrten
+- keine Einfahrt in spannungslose Bereiche
+- stabile Blockfreigaben
+- robuste SBHF-Integration
+- keine Fehlalarme durch Trafo-Aus/EIN
