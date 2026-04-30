@@ -114,3 +114,7 @@ Nach Trafo unten EIN:
 - keine unnötigen globalen Sperren
 - deterministische und nachvollziehbare Freigabelogik
 - stabile SBHF-Integration
+
+## Trafo-getrennte Sperrlogik
+
+![Trafo-Logik](img/trafo_freeze_logic.png)

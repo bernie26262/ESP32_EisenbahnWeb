@@ -212,3 +212,7 @@ Jetzt:
 - stabile Blockfreigaben
 - robuste SBHF-Integration
 - keine Fehlalarme durch Trafo-Aus/EIN
+
+## Trafo-getrennte Sperrlogik
+
+![Trafo-Logik](img/trafo_freeze_logic.png)
