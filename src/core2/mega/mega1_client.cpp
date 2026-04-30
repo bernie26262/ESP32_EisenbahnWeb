@@ -71,6 +71,7 @@ static constexpr uint8_t CMD_SET_MODE         = 0x02;
 static constexpr uint8_t CMD_SET_WEICHE       = 0x03;
 static constexpr uint8_t CMD_SET_BHF_PWR      = 0x06; // neu in Mega1 (Power/Signal)
 static constexpr uint8_t CMD_SELFTEST_START   = 0x07;
+static constexpr uint8_t CMD_AUTO_RESET       = 0x08;
 
 namespace Mega1Client
 {
@@ -263,6 +264,12 @@ I2CBus::Result pollPendingMask(uint16_t& outMask)
     I2CBus::Result cmdStartSelftest()
     {
         const uint8_t buf[1] = { CMD_SELFTEST_START };
+        return sendCmdWithAck(buf, sizeof(buf));
+    }
+
+    I2CBus::Result cmdAutoReset()
+    {
+        const uint8_t buf[1] = { CMD_AUTO_RESET };
         return sendCmdWithAck(buf, sizeof(buf));
     }
 

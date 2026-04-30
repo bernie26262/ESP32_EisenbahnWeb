@@ -1052,6 +1052,7 @@ if (bPw) {
   }
 
   const btnMode = document.getElementById("btn-mode");
+  const btnAutoReset = document.getElementById("btn-auto-reset");
   if (btnMode) {
     btnMode.classList.toggle("is-offline", !mega1online);
     const modeRaw = msg?.mega1?.diag?.mode;
@@ -1068,6 +1069,13 @@ if (bPw) {
 
     btnMode.disabled = (!wsOk || !mega1online) ? true
                       : (lock || startupChecklistActive);
+
+    if (btnAutoReset) {
+      const backendCan = msg?.actions?.canAutoReset;
+      btnAutoReset.disabled = (backendCan === undefined)
+        ? ((!wsOk || !mega1online) || lock || startupChecklistActive || !isAuto)
+        : !backendCan;
+    }
   }
 
   const ledPower = document.getElementById("led-power");
@@ -1247,6 +1255,26 @@ function sendModeToggle() {
   if (ok) logLine("Mode gesetzt: " + (newMode === 1 ? "Auto" : "Manuell"));
 }
 
+
+function sendAutoReset() {
+  const mega1online = !!(lastStateMsg && lastStateMsg.mega1 && lastStateMsg.mega1.online);
+  if (!wsConnected || !socket || socket.readyState !== 1) {
+    logLine("WS nicht verbunden - Auto Reset nicht gesendet");
+    return;
+  }
+  if (!mega1online) {
+    logLine("Mega1 offline - Auto Reset nicht gesendet");
+    return;
+  }
+  const modeRaw = lastStateMsg?.mega1?.diag?.mode;
+  const mode = (modeRaw === undefined || modeRaw === null) ? -1 : Number(modeRaw);
+  if (mode !== 1) {
+    logLine("Auto Reset nur im Auto-Modus aktiv");
+    return;
+  }
+  const ok = wsSend({ action: "autoReset" });
+  if (ok) logLine("Auto Reset gesendet");
+}
 
 function sendM1BhfToggle(bhf1) {
   const mega1online = !!(lastStateMsg && lastStateMsg.mega1 && lastStateMsg.mega1.online);

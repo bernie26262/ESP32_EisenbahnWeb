@@ -246,6 +246,12 @@ static void handleHmiActionLine(const String& line)
         return;
     }
 
+    if (!strcmp(action, "autoReset") || !strcmp(action, "m1AutoReset")) {
+        Mega1Link::queueAutoReset();
+        markStateDirtyAllAndForceHmiDelayed();
+        return;
+    }
+
     if (!strcmp(action, "m1WeicheSet") || !strcmp(action, "m1TurnoutSet")) {
         const int idx_i = doc["idx"] | -1;
         if (idx_i < 0 || idx_i > 11) {

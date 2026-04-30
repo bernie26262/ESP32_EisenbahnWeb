@@ -103,6 +103,13 @@
   font-weight: 800;
 }
 
+.mode-button-pair {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 0.45rem;
+  width: 100%;
+}
+
 .btn-mode {
   width: 100%;
   padding: 0.65rem;
@@ -124,6 +131,23 @@
   background: #1f6feb;
   color: #fff;
   border: none;
+}
+
+.btn-auto-reset {
+  width: 100%;
+  padding: 0.65rem 0.35rem;
+  margin-top: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff7d6;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.btn-auto-reset:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .btn-mini {

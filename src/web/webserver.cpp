@@ -969,6 +969,8 @@ static String buildWsStateLiteJson()
                           && startupReady && (!safetyLock) && (!notausActive) && (!modeAuto);
     actions["canManual"]   = (!writeLockedByDiag) && ethConnected && m1online && m2online
                           && startupReady && (!safetyLock) && (!notausActive) && modeAuto;
+    actions["canAutoReset"] = (!writeLockedByDiag) && ethConnected && m1online && m2online
+                          && startupReady && (!safetyLock) && (!notausActive) && modeAuto;
     actions["canStartM1Selftest"] = (!writeLockedByDiag) && m1online && m1Needs && (!m1SelftestDone) && (!m1SelftestRunning);
     actions["canStartM2Selftest"] = (!writeLockedByDiag) && m2online && m2Needs && (!m2SelftestDone) && (!m2SelftestRunning);
     actions["canM1Selftest"] = actions["canStartM1Selftest"];
@@ -1589,6 +1591,8 @@ if (type != WS_EVT_DATA)
              || !strcmp(a,"m1SetMode")
              || !strcmp(a,"setAuto")
              || !strcmp(a,"setManual")
+             || !strcmp(a,"autoReset")
+             || !strcmp(a,"m1AutoReset")
              || !strcmp(a,"m1TurnoutSet")
              || !strcmp(a,"m1DiagRelaySet")
              || !strcmp(a,"m2DiagRelaySet")
@@ -1961,6 +1965,17 @@ if (type != WS_EVT_DATA)
         EE_LOGW("DIAG", "m1DiagRelaySet reject: unknown relay='%s'", relayS.c_str());
         return;
     }
+if (!strcmp(action, "autoReset") || !strcmp(action, "m1AutoReset"))
+    {
+        const bool ok = Mega1Link::queueAutoReset();
+        if (!ok) {
+            LOG_WS("autoReset rejected (queue full)");
+        }
+        markStateDirtyAll();
+        reactWsDone();
+        return;
+    }
+
 if (!strcmp(action, "m1SetMode") || !strcmp(action, "setAuto") || !strcmp(action, "setManual"))
     
     {

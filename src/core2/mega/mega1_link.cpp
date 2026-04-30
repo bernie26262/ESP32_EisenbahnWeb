@@ -28,7 +28,7 @@ extern volatile bool g_diagDirty;
 // ------------------------------------------------------------
 namespace
 {
-    enum : uint8_t { CMDQ_SET_MODE = 1, CMDQ_SET_WEICHE = 2, CMDQ_SET_BHF_POWER = 3, CMDQ_START_SELFTEST = 4 };
+    enum : uint8_t { CMDQ_SET_MODE = 1, CMDQ_SET_WEICHE = 2, CMDQ_SET_BHF_POWER = 3, CMDQ_START_SELFTEST = 4, CMDQ_AUTO_RESET = 5 };
 
     // Mega1 I2C protocol (see Mega1 include/I2CProtocol.h):
     // CMD_START_SELFTEST = 0x07, Mega1 addr = 0x10
@@ -771,6 +771,11 @@ if (drdyActive && (uint32_t)(now - s_lastDrdyPollMs) >= DRDY_COOLDOWN_MS)
                 // Use Mega1Client helper so we always consume the 1-byte ACK
                 cr = Mega1Client::cmdStartSelftest();
             } break;
+            case CMDQ_AUTO_RESET:
+            {
+                // Explicit Auto Reset: Mega1 validates mode/selftest and returns its 1-byte ACK.
+                cr = Mega1Client::cmdAutoReset();
+            } break;
             default:
                 cr = I2CBus::Result::ERROR;
                 break;
@@ -827,4 +832,9 @@ bool Mega1Link::queueStartSelftest()
 {
     // keine Parameter (reflects Mega1 default: startSelftest())
     return cmdqPush(CMDQ_START_SELFTEST, 0, 0);
+}
+
+bool Mega1Link::queueAutoReset()
+{
+    return cmdqPush(CMDQ_AUTO_RESET, 0, 0);
 }

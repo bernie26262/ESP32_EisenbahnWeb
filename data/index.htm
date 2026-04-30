@@ -93,11 +93,16 @@
                 </button>
             </div>
 
-            <div class="action-row">
+            <div class="action-row action-row-mode">
                 <span id="led-mode" class="status-led led-off" aria-hidden="true"></span>
-                <button id="btn-mode" class="btn-mode" onclick="sendModeToggle()" disabled>
-                    AUTO / MANUELL
-                </button>
+                <div class="mode-button-pair">
+                    <button id="btn-mode" class="btn-mode" onclick="sendModeToggle()" disabled>
+                        AUTO / MANUELL
+                    </button>
+                    <button id="btn-auto-reset" class="btn-auto-reset" onclick="sendAutoReset()" disabled>
+                        RESET
+                    </button>
+                </div>
             </div>
         </section>
 
