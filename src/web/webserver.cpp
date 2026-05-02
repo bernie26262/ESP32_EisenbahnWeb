@@ -894,10 +894,21 @@ static String buildWsStateLiteJson()
         const uint8_t sbhfWarningMask = m2WarningMask;
         const bool restricted = (allowedMask != 0x07u && allowedMask != 0x00u);
 
+        // SBHF-Belegung auch im state-lite publizieren.
+        // Wichtig fuer P4-HMI: Das HMI bekommt nicht den WebUI-Full-State,
+        // sondern buildWsStateLiteJson(). Ohne diese Felder kann es die
+        // SBHF-Belegt-Zeile in der Gleisbild-Info-Box nicht aktualisieren.
+        const uint8_t sbhfOccRaw = m2.sbhfOccupiedMask;
+        const uint8_t sbhfOcc    = (uint8_t)(sbhfOccRaw & 0x07u);
+
+        mega2["sbhfOccupiedMask"] = sbhfOccRaw;
+
         sbhf["state"] = m2.sbhfState;
         sbhf["currentGleis"] = m2.sbhfCurrentGleis;
         sbhf["currentTrack"] = m2.sbhfCurrentGleis;
         sbhf["block5ToSbhfActive"] = ((m2.sbhfFlags & 0x01u) != 0u);
+        sbhf["occupiedMask"] = sbhfOcc;
+        sbhf["occupiedMaskRaw"] = sbhfOccRaw;
         sbhf["allowedMask"] = allowedMask;
         sbhf["warningMask"] = sbhfWarningMask;
         sbhf["restricted"] = restricted;

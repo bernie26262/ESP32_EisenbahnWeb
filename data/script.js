@@ -1031,6 +1031,7 @@ if (bPw) {
 
   const btnPowerOn = document.getElementById("btn-power-on");
   const btnPowerOff = document.getElementById("btn-power-off");
+  const diagLeaseActive = !!(msg?.diagCtrl?.active);
 
   if (btnPowerOn) {
     // fixed label (Aktion). Status ist ueber Pill/Badge sichtbar.
@@ -1039,16 +1040,21 @@ if (bPw) {
     // enabled nur wenn Power aus und keine Sperre
     // PLUS: im Startup-Checklist-Modus NIE PowerOn erlauben (bis ready==true)
     const startupNotReady = (startup && startup.ready === false);
-    btnPowerOn.disabled = (!wsOk || !mega2online) ? true
-                        : (powerOn || notausActive || lock || startupNotReady);
+    const backendCanPowerOn = msg?.actions?.canPowerOn;
+    btnPowerOn.disabled = (backendCanPowerOn === undefined)
+                        ? ((!wsOk || !mega2online) ? true
+                           : (powerOn || notausActive || lock || startupNotReady || diagLeaseActive || msg?.actions?.canWrite === false))
+                        : (!backendCanPowerOn || diagLeaseActive || msg?.actions?.canWrite === false);
   }
 
   if (btnPowerOff) {
     btnPowerOff.textContent = " STOP / POWER OFF";
     btnPowerOff.classList.toggle("is-offline", !mega2online);
     // enabled nur wenn Power an
-    btnPowerOff.disabled = (!wsOk || !mega2online) ? true
-                         : (!powerOn || lock);
+    const backendCanPowerOff = msg?.actions?.canPowerOff;
+    btnPowerOff.disabled = (backendCanPowerOff === undefined)
+                          ? ((!wsOk || !mega2online) ? true : (!powerOn || lock || diagLeaseActive || msg?.actions?.canWrite === false))
+                          : (!backendCanPowerOff || diagLeaseActive || msg?.actions?.canWrite === false);
   }
 
   const btnMode = document.getElementById("btn-mode");
@@ -1067,14 +1073,16 @@ if (bPw) {
     const startupChecklistActive =
       !!(startup && startup.ready === false);
 
-    btnMode.disabled = (!wsOk || !mega1online) ? true
-                      : (lock || startupChecklistActive);
+    const backendCanMode = isAuto ? msg?.actions?.canManual : msg?.actions?.canAuto;
+    btnMode.disabled = (backendCanMode === undefined)
+                     ? ((!wsOk || !mega1online) ? true : (lock || startupChecklistActive || diagLeaseActive || msg?.actions?.canWrite === false))
+                     : (!backendCanMode || diagLeaseActive || msg?.actions?.canWrite === false);
 
     if (btnAutoReset) {
       const backendCan = msg?.actions?.canAutoReset;
       btnAutoReset.disabled = (backendCan === undefined)
-        ? ((!wsOk || !mega1online) || lock || startupChecklistActive || !isAuto)
-        : !backendCan;
+        ? ((!wsOk || !mega1online) || lock || startupChecklistActive || diagLeaseActive || msg?.actions?.canWrite === false || !isAuto)
+        : (!backendCan || diagLeaseActive || msg?.actions?.canWrite === false);
     }
   }
 
@@ -2011,7 +2019,8 @@ function tdUpdateCommandButtons(msg) {
   const wsOk = (wsConnected === true);
   const lock = !!(msg?.safety?.lock === true);
   const notausActive = !!(msg?.safety?.notausActive === true);
-  const canCmd = wsOk && m1online && !lock && !notausActive;
+  const canWrite = (msg?.actions?.canWrite !== false) && !(msg?.diagCtrl?.active === true);
+  const canCmd = wsOk && m1online && !lock && !notausActive && canWrite;
 
   tdSetButtonEnabled("td-btn-w9", canCmd);
   tdSetButtonEnabled("td-btn-w10", canCmd);
@@ -2506,7 +2515,8 @@ function getMega1DiagContext(msg) {
   const notausActive = !!(lastSafetyState?.notausActive === true);
 
   // Enable rules for CMD buttons
-  const canCmd = wsOk && mega1online && !lock && !notausActive;
+  const canWrite = (msg?.actions?.canWrite !== false) && !(msg?.diagCtrl?.active === true);
+  const canCmd = wsOk && mega1online && !lock && !notausActive && canWrite;
 
   return { mega1online, hasDiag, diag, wsOk, lock, notausActive, canCmd };
 }

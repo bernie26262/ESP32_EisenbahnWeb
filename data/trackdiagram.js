@@ -791,14 +791,30 @@ function applyUiState(ui, msg) {
   const btnPowerOff = document.getElementById("btn-power-off");
   const btnMode = document.getElementById("btn-mode");
   const btnAutoReset = document.getElementById("btn-auto-reset");
-  if (btnPowerOn) btnPowerOn.disabled = (!wsOk || !mega2online) ? true : (powerOn || notausActive || lock || (startup && startup.ready === false));
-  if (btnPowerOff) btnPowerOff.disabled = (!wsOk || !mega2online) ? true : (!powerOn || lock);
-  if (btnMode) btnMode.disabled = (!wsOk || !mega1online) ? true : (lock || !!(startup && startup.ready === false));
+  const diagLeaseActive = !!(msg?.diagCtrl?.active);
+  if (btnPowerOn) {
+    const backendCanPowerOn = msg?.actions?.canPowerOn;
+    btnPowerOn.disabled = (backendCanPowerOn === undefined)
+      ? ((!wsOk || !mega2online) ? true : (powerOn || notausActive || lock || (startup && startup.ready === false) || diagLeaseActive || msg?.actions?.canWrite === false))
+      : (!backendCanPowerOn || diagLeaseActive || msg?.actions?.canWrite === false);
+  }
+  if (btnPowerOff) {
+    const backendCanPowerOff = msg?.actions?.canPowerOff;
+    btnPowerOff.disabled = (backendCanPowerOff === undefined)
+      ? ((!wsOk || !mega2online) ? true : (!powerOn || lock || diagLeaseActive || msg?.actions?.canWrite === false))
+      : (!backendCanPowerOff || diagLeaseActive || msg?.actions?.canWrite === false);
+  }
+  if (btnMode) {
+    const backendCanMode = isAuto ? msg?.actions?.canManual : msg?.actions?.canAuto;
+    btnMode.disabled = (backendCanMode === undefined)
+      ? ((!wsOk || !mega1online) ? true : (lock || !!(startup && startup.ready === false) || diagLeaseActive || msg?.actions?.canWrite === false))
+      : (!backendCanMode || diagLeaseActive || msg?.actions?.canWrite === false);
+  }
   if (btnAutoReset) {
     const backendCan = msg?.actions?.canAutoReset;
     btnAutoReset.disabled = (backendCan === undefined)
-      ? ((!wsOk || !mega1online) || lock || !!(startup && startup.ready === false) || !isAuto)
-      : !backendCan;
+      ? ((!wsOk || !mega1online) || lock || !!(startup && startup.ready === false) || diagLeaseActive || msg?.actions?.canWrite === false || !isAuto)
+      : (!backendCan || diagLeaseActive || msg?.actions?.canWrite === false);
   }
 
   const ledPower = document.getElementById("led-power");
@@ -929,7 +945,8 @@ function tdRenderSbhfStatus(msg) {
 
 function tdUpdateCommandButtons(msg) {
   if (!tdHasDiagram()) return;
-  const canCmd = (wsConnected === true) && !!(msg?.mega1?.online) && !(msg?.safety?.lock === true) && !(msg?.safety?.notausActive === true);
+  const canWrite = (msg?.actions?.canWrite !== false) && !(msg?.diagCtrl?.active === true);
+  const canCmd = (wsConnected === true) && !!(msg?.mega1?.online) && !(msg?.safety?.lock === true) && !(msg?.safety?.notausActive === true) && canWrite;
   tdSetButtonEnabled("td-btn-w0", canCmd);
   tdSetButtonEnabled("td-btn-w1", canCmd);
   tdSetButtonEnabled("td-btn-w2", canCmd);
